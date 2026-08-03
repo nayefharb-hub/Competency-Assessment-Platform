@@ -3,6 +3,35 @@
 Last updated: 2026-08-03. Read this first — it says where the build is and what
 the next step is. Everything referenced here is committed.
 
+## Why this exists (don't lose this framing)
+
+**Prototype:** assess KIB's ~9 PMs against IPMA ICB4 this cycle. The Head of
+Strategy asked for it; it's a committed line in this year's business plan. The
+Head of PMO (the builder) is the sole assessor.
+
+**Long term:** an open, multi-tenant platform — any organisation defines or
+imports its own framework (domain → competency → indicator + scoring) and
+assesses its people against it, sold by subscription. KIB is the first customer
+and design partner; commercial demand elsewhere is a thesis, not evidence, and
+does **not** drive prototype scope.
+
+**The wedge:** the pains are all in the *assessment loop* — collection,
+self/assessor reconciliation, rollup, trends — not in framework authoring. So
+the prototype ships ICB4 only, with **no multi-framework authoring/import
+engine**. Admin editing of *this* framework is in scope; a framework *builder*
+is not.
+
+**What the prototype is really testing:** whether PMs actually finish the
+assessment online when they might not finish a spreadsheet, and whether the
+rollup changes real training and staffing decisions. The existing Excel workbook
+already satisfies the business-plan commitment, which de-risks the app — it can
+be an honest product test rather than a must-ship dependency.
+
+Consequences that are load-bearing in the code: framework stored as **data, not
+constants**; rating scale as a **swappable module** (PDCF variant later);
+`lib/framework.ts` as a **single seam** for the data source. These are cheap now
+and keep the platform reachable — don't remove them as "unused generality."
+
 ## Where we are
 
 | Task | State |

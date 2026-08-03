@@ -1,8 +1,30 @@
 # Competency Assessment Platform
 
-Internal web tool for KIB's PMO: project managers self-assess against the IPMA ICB4
-framework, the Head of PMO reviews and approves, and a dashboard shows capability
-against APM role-profile targets.
+**Two horizons — hold both.**
+
+**Now (the prototype):** an internal web tool for KIB's PMO. Project managers
+self-assess against the IPMA ICB4 framework, the Head of PMO reviews and
+approves, and a dashboard shows capability against APM role-profile targets.
+Requested by the Head of Strategy as a committed item in this year's business
+plan. ~9 people; the Head of PMO is the sole assessor.
+
+**Long term (the product):** an open platform where *any* organisation defines
+or imports its own competency framework — domain → competency → indicator, with
+a scoring mechanism at each level — and assesses its staff against it, offered
+by subscription. KIB is the first customer and design partner, not the whole
+market.
+
+**The discipline that connects them:** ship the narrow thing first. The pain is
+in the *assessment loop* (collecting, reconciling, rolling up), not in framework
+authoring — so the prototype does ICB4 only and there is **no multi-framework
+authoring/import engine** until a pilot earns it. Generality is the last thing
+added, not the first.
+
+That is why the architecture looks the way it does, and these are load-bearing:
+the framework is stored as **data, not constants**; the rating scale is a
+**swappable module**; and `lib/framework.ts` is a **single clean seam** for the
+data source. Do not "simplify" these away — they are the cheap options that keep
+the platform reachable without building it now.
 
 ## Start here
 `docs/STATUS.md` — current state, next step, and decisions that must not be
