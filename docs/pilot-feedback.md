@@ -400,10 +400,80 @@ record still disappears from day-to-day use.
 - `invite remove` refuses when the person has assessment data, since today the
   destructive path is the default one
 
-Awaiting go-ahead to build.
+Superseded in part by N7 — see below. The archive is still worth having, but for
+a narrower reason than "defend the metric".
+
+### N7 — an assessment is *assigned* by the admin, not created by logging in
+
+**Status:** Open — accepted design, supersedes the metric argument in N6
+
+> "invite does not mean assessment start flag is on, we can add a control for
+> the admin to trigger a certain assessment for a user, meaning logging in does
+> not automatically show him an assessment is pending unless the admin triggers
+> an assessment cycle for the users, so 80% would mean i have started an
+> assessment for him but he hasn't completed it"
+
+This is a better answer than anything proposed in N6, and it dissolves that
+objection rather than mitigating it.
+
+**Why the current model produced the ambiguity.** `getOrCreateAssessment`
+creates a row the first time somebody opens `/assess`, so an assessment exists
+because the *assessee* showed up, not because the PMO asked for one. Nothing in
+the system records who was asked. `completionStats` therefore has to guess a
+denominator — `invited: Math.max(count of assessee users, number of
+assessments)` — and that guess is what made deletion ambiguous: removing the
+login changed the denominator, removing only the assessment did not.
+
+**Under N7 the denominator is a fact, not an inference.** The admin triggers a
+cycle for named people; the assignments are the denominator. 80% means five
+assigned and four finished. Deleting an assignment drops the denominator
+*correctly*, because withdrawing the ask is a deliberate act with an obvious
+meaning — quite unlike "the login was also deleted".
+
+It also matches the domain. An assessment cycle is something a PMO **runs**,
+with a start and a named population. It is not something that materialises
+because somebody browsed to a page.
+
+**What it changes:**
+
+- **Assignment becomes explicit.** New columns on `assessment` (`assigned_at`,
+  `assigned_by`), or the row's existence alone means assigned. Needs a decision
+  on whether a distinct `assigned` state earns its place over reusing `draft`.
+- **`getOrCreateAssessment` stops creating on visit.** Assessments exist only
+  when assigned. `/assess` and `/assess/controls` need an honest "nothing has
+  been assigned to you yet" state instead of silently manufacturing one.
+- **An admin screen to run a cycle:** pick people, start cycle 2026, see who has
+  been assigned. Bulk by nature — the whole point is triggering it for a group.
+- **`completionStats` simplifies.** `invited` becomes `assigned` = count of
+  assessments in the cycle. The `Math.max` fudge is deleted outright.
+- **It removes an existing workaround.** The `assessee_is_pm` filter exists only
+  because the Head of PMO opening `/assess` created a stray row that polluted
+  the completion figures. With assignment, no assignment means no row, and that
+  class of problem disappears. N7 should delete that filter rather than build on
+  top of it.
+
+**What the archive is still for, post-N7:** recording that an assignment was
+*withdrawn mid-cycle* rather than never made. The metric is defensible either
+way now; the archive just keeps the history legible.
+
+**Size:** this is the largest item in the log — a schema change, a new admin
+screen, a changed entry path for every assessee, and edits to the completion
+maths. Bigger than N4 and N5 combined. Worth sequencing deliberately rather than
+folding into the same pass.
 
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 4 | 1 | 1 | 1 | 0 |
+| 5 | 1 | 1 | 1 | 0 |
+
+Open items, in the order they should probably be built:
+
+1. **N7** — assignment (largest; changes the entry path and the metric's denominator)
+2. **N6** — archive, which is cleaner to design once N7 exists
+3. **N5** — filter the controls list
+4. **N4** — scored-state emphasis, decided together with N5
+
+Plus one hazard worth fixing independently of all of the above: `invite remove`
+hard-deletes a live assessment today, silently, via `on delete cascade` from
+`app_user`. Verified against the live database.
