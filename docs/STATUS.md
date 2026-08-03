@@ -90,11 +90,16 @@ Verified 2026-08-03 against the live database:
 
 ## Next step
 
-**Deploy to Vercel** (still not set up), then run the pilot. Before that:
+**Deploy to Vercel** (still not set up), then run the pilot.
 
-1. Set the four env vars in Vercel from `.env.example`.
-2. Invite the ~9 PMs: `npm run invite add <email> "<Name>" assessee --title "..."`.
-3. Confirm the completion baseline desk check (open item 1 below) — the median
+Click-by-click steps are in `docs/deploy.md` — web UI only, no terminal. In
+short: connect the repo, add the four env vars from `.env.example`, deploy.
+No Supabase auth configuration is needed (password sign-in, not magic links).
+
+Then:
+
+1. Invite the ~9 PMs: `npm run invite add <email> "<Name>" assessee --title "..."`.
+2. Confirm the completion baseline desk check (open item 1 below) — the median
    time-to-complete number means little without it.
 
 ## Supabase
