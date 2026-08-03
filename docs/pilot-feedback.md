@@ -503,20 +503,77 @@ an SMTP decision, not just a code change.
 or from an agent session with database access. Neither is a substitute for the
 screen.
 
+### N9 — password reset, for admins and for users
+
+**Status:** Open — two of three parts buildable now, one blocked on an SMTP decision
+
+> "Also for admin, and for normal user we need a feature to reset passwords as
+> well might as well do it"
+
+Three distinct features get called "password reset". They have very different
+costs, and separating them matters because one is blocked and two are not.
+
+| | Needs email? | Buildable today |
+|---|---|---|
+| **Change my own password** (signed in) | no | **yes** — `auth.updateUser({ password })` on the current session |
+| **Admin resets someone's password** | no | **yes** — `auth.admin.updateUserById`, same call `invite.mjs` makes |
+| **Forgot my password** (signed out) | **yes** | **no** — needs SMTP |
+
+"Forgot password" cannot work without outbound mail: the whole mechanism is a
+link sent to an address the user proved they control. Supabase's built-in mail
+is rate-limited and does not deliver to non-team addresses, which is exactly why
+password sign-in was chosen during the wiring rather than magic links.
+
+**The SMTP decision now blocks a cluster, not one feature.** It gates emailed
+invite links (N8), self-service password reset here, and the awkward
+hand-the-password-over step in both. Configuring it once unblocks all of them
+and removes the need to ever display a colleague's password on screen. Worth
+deciding deliberately rather than per-feature.
+
+For a bank there is a further question that is not technical: whether auth email
+may go through a third-party sender (Resend, Postmark, SendGrid) or must use
+KIB's own mail infrastructure. That is an IT/policy answer, not a code one, and
+it should be asked before any of this is built.
+
+**An integrity problem specific to this product, worth naming.** If an admin can
+set a user's password and see it, the admin can sign in *as* that user. In this
+tool the admin is also the assessor, so that means the assessor could enter or
+alter someone's **self**-assessment. The entire design rests on `self_level` and
+`assessor_level` being two independent judgements; a reset flow that hands the
+assessor a working password quietly undermines that distinction.
+
+This is not a suggestion anyone would do it — it is that the pilot's central
+comparison should not depend on trust when it does not have to. Mitigations,
+cheapest first:
+
+1. **Emailed reset links** — the admin triggers a reset but never sees the
+   password. Removes the problem rather than managing it. Needs SMTP.
+2. **Force a password change on first sign-in**, so an admin-set password is
+   valid only until the real user uses it once.
+3. **Record resets** (`who`, `whom`, `when`) so the action is at least visible.
+
+Option 1 is the real answer, and it is the same SMTP decision as above.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 6 | 1 | 1 | 1 | 0 |
+| 7 | 1 | 1 | 1 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N7 + N8** — the admin People screen: add a person, and assign them a cycle.
-   One screen, one workflow. Largest item; also changes the entry path for every
-   assessee and the completion metric's denominator.
+1. **N7 + N8 + N9** — the admin People screen: add a person, assign them a
+   cycle, reset a password. One screen, one workflow. Largest item; also changes
+   the entry path for every assessee and the completion metric's denominator.
+   The "change my own password" half of N9 is independent and can ship first.
 2. **N6** — archive, cleaner to design once N7 exists
 3. **N5** — filter the controls list
 4. **N4** — scored-state emphasis, decided together with N5
+
+**Blocked on a decision, not on code:** emailed invite links (N8) and
+self-service password reset (N9) both need outbound mail. One SMTP decision
+unblocks both, and needs an IT/policy answer about whether a third-party sender
+is acceptable for a bank.
 
 Plus one hazard worth fixing independently of all of the above: `invite remove`
 hard-deletes a live assessment today, silently, via `on delete cascade` from
