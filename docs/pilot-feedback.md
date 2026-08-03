@@ -122,6 +122,37 @@ The cheap fix, worth doing as part of N1b rather than after:
 That gives a one-query answer to "what has this database had?" in both places,
 which is the only thing that makes a two-environment setup honest.
 
+##### Why git does not already cover this
+
+> "isn't this the role of github, or we will still need the fix as a backup so
+> we do not only depend on github"
+
+Neither — it is not git's job, and the table is not a backup of git. They hold
+two different facts and neither can answer the other's question.
+
+| Question | Answered by |
+|---|---|
+| What migrations exist, what do they contain, who wrote them, when? | git |
+| Which of them have actually been run against **this** database? | only that database |
+
+The files are byte-identical whether or not anyone has run them, and identical
+between staging and production. The difference lives in the databases. So no
+amount of looking at GitHub can tell you whether `0003` was applied to
+production — you would have to open Supabase, inspect the schema, and reason
+backwards ("there is a `notes` column, so `0003` probably ran"). That inference
+is the guesswork, and it gets worse with every migration added.
+
+This is not a bespoke invention: a table recording applied migrations is exactly
+what Rails, Django, Flyway, Alembic and the Supabase CLI all maintain under the
+hood. Hand-applying SQL through the dashboard is the one workflow that skips it.
+
+**The alternative worth weighing:** adopt the Supabase CLI (`supabase db push`),
+which keeps this table itself and applies migrations in order. That removes the
+hand-paste step entirely and is the better long-term answer. It costs a terminal
+and a local toolchain, which is exactly what the current setup has deliberately
+avoided. Decide that at the same time as N1b — if the CLI is adopted, the
+hand-rolled table is unnecessary.
+
 
 ### N2 — sign-in box suggested a `@kib.com` domain
 
