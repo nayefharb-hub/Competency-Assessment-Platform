@@ -35,7 +35,7 @@ export default async function AssessPage({
   const locked = assessment.state !== "draft";
 
   return (
-    <div className="section">
+    <div className="section reading">
       <div className="card pad">
         <div className="assess-nav">
           <Link className="btn btn-secondary btn-sm" href="/assess/controls">
@@ -75,7 +75,9 @@ export default async function AssessPage({
 
         <h2 style={{ fontSize: 17, fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
         {control.description && (
-          <p style={{ margin: "8px 0 0", fontSize: 15 }}>{control.description}</p>
+          <p className="lede" style={{ margin: "8px 0 0", fontSize: 15 }}>
+            {control.description}
+          </p>
         )}
 
         {measures.length > 0 && (

@@ -36,6 +36,16 @@ export async function authClient() {
   });
 }
 
+/**
+ * The columns that make an AppUser. Kept in one constant because this list is a
+ * silent-failure surface: a column added to the table but forgotten here reads
+ * back as `undefined`, and for a boolean flag that means falsy — a gate that
+ * never fires, with nothing thrown anywhere. `must_change_password` is exactly
+ * that shape, so it lives here and nowhere else.
+ */
+const APP_USER_COLUMNS =
+  "id, email, full_name, job_title, role, must_change_password";
+
 /** The signed-in, invited user — or null. Never throws for "not logged in". */
 export async function currentUser(): Promise<AppUser | null> {
   const auth = await authClient();
@@ -44,7 +54,7 @@ export async function currentUser(): Promise<AppUser | null> {
 
   const row = await db()
     .from("app_user")
-    .select("id, email, full_name, job_title, role")
+    .select(APP_USER_COLUMNS)
     .eq("id", data.user.id)
     .maybeSingle();
 
@@ -59,18 +69,40 @@ export async function currentUser(): Promise<AppUser | null> {
  * Without that, such an account would hold a valid session forever and bounce
  * between the app and /login.
  */
-export async function requireUser(): Promise<AppUser> {
+export async function requireUser(
+  opts: {
+    /**
+     * Only /change-password passes this. That page needs the signed-in user,
+     * so it has to call requireUser — and if requireUser bounced it to
+     * /change-password the redirect would be infinite. Exactly the shape of the
+     * /logout bounce below, which is why it is a named option rather than an
+     * implicit exception someone can delete by accident.
+     */
+    skipPasswordGate?: boolean;
+  } = {},
+): Promise<AppUser> {
   const auth = await authClient();
   const { data, error } = await auth.auth.getUser();
   if (error || !data.user) redirect("/login");
 
   const row = await db()
     .from("app_user")
-    .select("id, email, full_name, job_title, role")
+    .select(APP_USER_COLUMNS)
     .eq("id", data.user.id)
     .maybeSingle();
   if (row.error || !row.data) redirect("/logout?denied=1");
-  return row.data as AppUser;
+
+  const user = row.data as AppUser;
+
+  // The password gate. Server-side on purpose: it cannot live in proxy.ts,
+  // which runs on the edge holding only the anon key and cannot read app_user
+  // at all. A client-side nudge would be decorative — someone could type
+  // /assess and be scoring against a password an admin chose and still knows.
+  if (user.must_change_password && !opts.skipPasswordGate) {
+    redirect("/change-password");
+  }
+
+  return user;
 }
 
 /** Role gate. `assessor` and `admin` are both held by the Head of PMO today. */

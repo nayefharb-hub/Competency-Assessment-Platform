@@ -34,6 +34,9 @@ decision; do not deviate without explicit approval.
   `globals.css` already picks it up, no other change needed.
 - **Scale:** display 28/680 · h2 20/650 · h3 16–17/650 · body 15/400 · small 13–14 ·
   label 12 uppercase, letter-spacing .06em.
+- **Line height:** prose 1.6 · UI and dense data 1.5 · headings 1.25. Prose means
+  anything read in sentences — ICB4 indicator descriptions, measures, notes,
+  banners. UI means labels, table cells, pills, buttons.
 
 ## Color
 - **Approach:** balanced — navy brand + azure interactive + reserved status colors.
@@ -59,7 +62,19 @@ decision; do not deviate without explicit approval.
 
 ## Layout
 - **Approach:** grid-disciplined app shell — navy sidebar/top bar + content area.
-- **Max content width:** ~1080px for reading; full-width for the dashboard.
+- **Container max-width:** three cases, and they are not interchangeable —
+  **reading pages 780px** (one control at a time: self-assessment, admin editor)
+  · **app shell 1080px** (lists, review, results) · **full-width** for the
+  dashboard. A reading page in a 1080px container strands its prose in the left
+  half while its controls span the full width.
+- **Reading measure:** **60–70 characters** on any block read in sentences.
+  This is NOT the same as container width, and conflating the two is what
+  produced 131-character lines in the first build — a container is how wide the
+  page may get, a measure is how wide a *sentence* may get.
+  - Implemented as `--measure: 52ch`, **not** `68ch`. The CSS `ch` unit is the
+    width of the "0" glyph, and Geist's digits run about 1.3× its average
+    letter, so `ch` overshoots: `68ch` measured 89 real characters, `52ch`
+    lands at 68. Re-derive this if the body typeface ever changes.
 - **Border radius:** inputs/buttons 6px · cards 10px · pills 999px.
 
 ## Motion
@@ -86,3 +101,6 @@ decision; do not deviate without explicit approval.
 | 2026-08-03 | Level 0 label is "Unaware" — no "N/A" option | Use the real APM level-0 label (user decision) |
 | 2026-08-03 | Fonts General Sans + Geist, not Calibri | Modern web product; Calibri kept for Office exports only |
 | 2026-08-03 | Bar-on-bar as the results mark, no radar | Legibility over 28-axis radar (per handover brief §8) |
+| 2026-08-03 | Reading measure split from container width; `68ch` cap | Measured 131 chars/line against a comfortable 45–75. "~1080px for reading" was read as a measure and stretched sentences to fill the card. The system's own aim — "makes a dense 132-control assessment feel calm and legible" — was being defeated by its own layout line |
+| 2026-08-03 | Line height added to the scale (prose 1.6 / UI 1.5 / headings 1.25) | The scale specified size and weight but no leading, so 1.5 was inherited everywhere including long prose |
+| 2026-08-03 | Palette left unchanged after a readability complaint | Light ink-on-surface measures 16.4:1 vs dark mode's 14.1:1 — light is the harsher of the two. But measure was the dominant fatigue driver, so it is fixed first and the palette re-judged after. If still tiring, soften the reading **surface** toward dark's ~14:1 rather than lightening the ink: ink `#16202E` carries the "serious, trustworthy" anchor, and lifting it compresses the ink/muted hierarchy |

@@ -109,6 +109,12 @@ export interface AppUser {
   full_name: string;
   job_title: string | null;
   role: UserRole;
+  /**
+   * Set when an admin creates the account or resets the password; cleared when
+   * the user sets their own. Enforced in requireUser(), which refuses every
+   * route except /change-password while it is true.
+   */
+  must_change_password: boolean;
 }
 
 /* ---------- assessment ---------- */

@@ -39,6 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <Link href="/assess">Self-assessment</Link>
                 <Link href="/results">Results</Link>
                 {isAssessor && <Link href="/review">Review</Link>}
+                {user.role === "admin" && <Link href="/admin/people">People</Link>}
                 {user.role === "admin" && <Link href="/admin">Framework</Link>}
               </nav>
             )}

@@ -1,7 +1,12 @@
 # Project status & handoff
 
-Last updated: 2026-08-03 (app wired to Supabase). Read this first — it says where
-the build is and what the next step is. Everything referenced here is committed.
+Last updated: 2026-08-03 (deployed to Vercel; admin People screen + password
+gate). Read this first — it says where the build is and what the next step is.
+Everything referenced here is committed.
+
+**Live.** Deployed on Vercel from `main`. Migration `0003` is applied. Pilot
+feedback from using it is logged in `docs/pilot-feedback.md` (13 notes, triaged);
+the plan for the rest is `docs/eng-plan-admin-and-ux.md`.
 
 ## Why this exists (don't lose this framing)
 
@@ -60,10 +65,11 @@ Verified 2026-08-03 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — 67/67 through a real browser against the running app, then
+- `npm run e2e` — **92/92** through a real browser against the running app, then
   checked in Postgres directly. Covers auth, role gates, target blinding,
   score persistence, submit, review, accept-all, approve + snapshot, locking,
-  cross-user access, rollup arithmetic, and the admin editor.
+  cross-user access, rollup arithmetic, the admin editor, the password gate and
+  the People screen.
 
 ## What was built
 
@@ -90,22 +96,24 @@ Verified 2026-08-03 against the live database:
 
 ## Next step
 
-**Deploy to Vercel** (still not set up), then run the pilot.
-
-Click-by-click steps are in `docs/deploy.md` — web UI only, no terminal. In
-short: connect the repo, add the four env vars from `.env.example`, deploy.
-No Supabase auth configuration is needed (password sign-in, not magic links).
+**Invite the nine PMs and run the cycle.** Deployment is done
+(`docs/deploy.md`); adding people no longer needs a terminal — sign in as an
+admin and use **People** in the nav.
 
 Then:
 
-1. Invite the ~9 PMs: `npm run invite add <email> "<Name>" assessee --title "..."`.
-2. Confirm the completion baseline desk check (open item 1 below) — the median
+1. Confirm the completion baseline desk check (open item 1 below) — the median
    time-to-complete number means little without it.
+2. Work through the remaining pilot-feedback items in the order set out in
+   `docs/eng-plan-admin-and-ux.md`: **A2** (assignment — makes the completion
+   denominator a fact rather than a guess), **B** (archive), then **C** (the
+   rest of the UX pass: mobile, theme toggle, controls filter).
 
 ## Supabase
 
 Project ref `gkqydskmnexhneqsvvvt`. Applied via the SQL Editor, in this order:
-`supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`.
+`supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`,
+then `0003_assignment_and_archive.sql` (applied 2026-08-03).
 All three returned success; `seed.sql` self-verifies and rolls back on any
 count mismatch. See `supabase/README.md`.
 
@@ -134,8 +142,9 @@ reaches every table the app needs):
 
 ```bash
 npm run verify:db            # 11 schema/seed checks, exits non-zero on mismatch
-npm run e2e                  # full loop through a browser; needs the app running
-                             # ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run e2e
+npm run e2e                  # full loop through a browser; needs the app running.
+                             # Self-contained: it creates and deletes its own QA
+                             # accounts, and needs no real credentials.
 ```
 
 `e2e` writes to whatever database it is pointed at. It refuses to run without
@@ -208,13 +217,19 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
 3. **Escalation reads oddly in the UI**: a CE at 3.0/3 can show "Capability
    Deficit" when one control sits 2+ levels below its own target. Correct per
    the brief; may want a visual cue explaining why.
-4. **Vercel deploy** not set up yet.
+4. ~~**Vercel deploy**~~ — done. See `docs/deploy.md`.
+8. **Migration tracking.** Nothing records which migrations have been applied to
+   which database. Survivable with one database, guesswork with two — close it
+   before standing up staging (pilot-feedback N1b).
+9. **SMTP.** Blocks emailed invite links and self-service password reset. Needs
+   an IT answer on whether a third-party sender is acceptable, not just code.
 5. **General Sans is not in the repo.** `DESIGN.md` specifies it for headings;
    Fontshare is unreachable from the build environment, so headings currently
    fall back to Geist (which IS self-hosted, per spec, for body/UI/data). One
    file drop finishes it — see the Typography section of `DESIGN.md`.
-6. **Rotate the admin's temporary password.** The account was created during the
-   wiring session and its first password was printed to a transcript.
+6. ~~**Rotate the admin's temporary password.**~~ — enforced rather than
+   remembered: every existing account now carries `must_change_password`, so the
+   transcript-exposed password stops working the moment it is used once.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other
