@@ -126,6 +126,13 @@ Full rationale is in the design doc and `CLAUDE.md`; the short version:
 - **Auth is an invite-only allowlist** for the pilot; SSO/AD deferred.
 - **The tool supports a decision, never gates one.** No pass/fail verdicts.
 
+## Use gstack for the next phase
+
+The SessionStart hook installs gstack. Once the app is wired to the database,
+run these before shipping: `/review` on the diff, `/qa` against the running app,
+`/design-review` against `DESIGN.md`, then `/ship`. Use `/investigate` for bugs
+rather than ad-hoc debugging. See the routing table in `CLAUDE.md`.
+
 ## Open items
 
 1. **Completion baseline** — has this team had completion/lateness problems

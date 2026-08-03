@@ -68,3 +68,29 @@ the client never holds a table-capable key.
 - The tool **supports a decision, never gates one** — no pass/fail verdicts.
 - Language: never use "interest" in the financial sense (Sharia-compliant bank);
   use "profit rate" / "rate of return" / "return".
+
+## Skill routing (gstack)
+
+gstack is installed automatically by the SessionStart hook. When a request
+matches a skill, invoke it via the Skill tool rather than answering ad hoc —
+the skills carry checklists and quality gates. When in doubt, invoke the skill.
+
+| Situation | Skill |
+|---|---|
+| Bug, error, "why is this broken" | `/investigate` |
+| Review the diff before landing | `/review` |
+| Does the running app actually work | `/qa` (or `/browse` to drive it) |
+| UI drifted from DESIGN.md | `/design-review` |
+| Ship / deploy / open a PR | `/ship` or `/land-and-deploy` |
+| Architecture of a new plan | `/plan-eng-review` |
+| Security / OWASP pass | `/cso` |
+| New product idea or scope question | `/office-hours` |
+| Save or resume working context | `/context-save`, `/context-restore` |
+
+**Most relevant next:** once the app is wired to Supabase, run `/review` on the
+diff, `/qa` against the running app, and `/design-review` to check the built UI
+against `DESIGN.md` — then `/ship`.
+
+Note: in Claude Code on the web only the top-level `gstack` router is registered
+as a slash command; the sub-skills are invoked by name or in plain language
+("run office hours on…", "review this diff"), not as `/qa`-style commands.
