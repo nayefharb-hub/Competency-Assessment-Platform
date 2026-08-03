@@ -104,18 +104,39 @@ async function add() {
 
 async function remove() {
   const email = (process.argv[3] ?? "").trim().toLowerCase();
+  const force = process.argv.includes("--force");
   if (!email) die("Which email?");
   const { data, error } = await db.from("app_user").select("id").eq("email", email).maybeSingle();
   if (error) die(error.message);
   if (!data) die(`${email} is not on the allowlist.`);
 
-  // Removing the app_user row alone is enough to refuse sign-in, but leaving a
-  // live auth account behind is untidy — delete both.
+  // `assessment.assessee_id` is `on delete cascade` from `app_user`, and
+  // `score` and `target_snapshot` cascade from `assessment`. So deleting this
+  // one row silently destroys their entire assessment — verified against a live
+  // database: an approved record with 132 scores and 50 frozen targets vanished
+  // in full. That is a reasonable thing to want, and a terrible default for a
+  // command whose name suggests it only manages sign-in.
+  const { count } = await db
+    .from("assessment")
+    .select("*", { count: "exact", head: true })
+    .eq("assessee_id", data.id);
+
+  if ((count ?? 0) > 0 && !force) {
+    die(
+      `${email} holds ${count} assessment${count === 1 ? "" : "s"}.\n` +
+        `  Removing them DELETES it, along with every score and the targets frozen\n` +
+        `  at approval. That also changes the completion figures for the cycle,\n` +
+        `  with nothing left to show it happened.\n\n` +
+        `  If that is genuinely what you want:  npm run invite remove ${email} --force`,
+    );
+  }
+
   const gone = await db.from("app_user").delete().eq("id", data.id);
   if (gone.error) die(gone.error.message);
   const authGone = await db.auth.admin.deleteUser(data.id);
   if (authGone.error) console.warn(`! app_user removed; auth account not deleted: ${authGone.error.message}`);
   console.log(`✓ ${email} removed from the allowlist`);
+  if ((count ?? 0) > 0) console.log(`  ${count} assessment(s) deleted with them.`);
 }
 
 const command = process.argv[2] ?? "list";

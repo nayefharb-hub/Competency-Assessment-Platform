@@ -204,7 +204,7 @@ never about production. Confirming the live URL is the owner's step.
 
 | Risk | Handling |
 |---|---|
-| Code merges before the migration is applied → production 500s | migration is additive and applied first; PR A does not merge until confirmed |
+| Code merges before the migration is applied → **everyone is signed out**, not a 500 | Verified against the live database: selecting `must_change_password` before it exists returns `column app_user.must_change_password does not exist`, so `requireUser` sees `row.error`, treats it as "not on the allowlist" and redirects to `/logout?denied=1`. It fails CLOSED, which is the right direction, but the message is misleading. Migration is additive and must be applied first; A1 does not merge until confirmed |
 | Owner locked out by their own `must_change_password` flag | intended — it also rotates the password exposed in a session transcript. `/change-password` is reachable while the flag is set |
 | e2e rewritten at the same time as the behaviour it tests | new assertions written against the intended behaviour first, then the code; both reviewed in the same diff |
 | Design consultation changes the locked palette | `DESIGN.md` updated in the same commit, with the rationale |
