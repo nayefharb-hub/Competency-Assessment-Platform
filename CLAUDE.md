@@ -4,6 +4,10 @@ Internal web tool for KIB's PMO: project managers self-assess against the IPMA I
 framework, the Head of PMO reviews and approves, and a dashboard shows capability
 against APM role-profile targets.
 
+## Start here
+`docs/STATUS.md` — current state, next step, and decisions that must not be
+re-litigated. Read it before anything else.
+
 ## Source of truth
 - `docs/design-competency-assessment-platform.md` — approved product design doc
   (problem, wedge, scale strategy, results design).
