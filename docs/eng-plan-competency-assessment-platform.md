@@ -66,9 +66,10 @@ Notes:
 ```
  draft ──PM submits──▶ self_submitted ──assessor review──▶ APPROVED (locked)
 
- draft:          PM self-scores each active control (label picker; level-0 = "N/A / no
-                 awareness" escape → 5 substantive rungs). PM is blind to target,
-                 priority, reason, kib_note, and assessor_level.
+ draft:          PM self-scores each active control (vertical option list; levels are
+                 Unaware→Expert, level-0 label is "Unaware" — there is NO "N/A"
+                 option). PM is blind to target, priority, reason, kib_note, and
+                 assessor_level.
  self_submitted: assessor sees self-scores; assessor_level pre-filled = self_level.
                  Assessor "Accept all" OR overrides specific controls (review-and-revise).
  APPROVED:      targets snapshotted; rollup computed; results revealed to PM;
@@ -154,7 +155,8 @@ reinvent.
 - [ ] **T3 (P1)** — Seed ICB4 from the workbook (133 controls, 28 CEs, 3 areas,
   targets, priorities, active/inactive, measures, kib_note) + APM scale with
   `kib_gloss` per level. Verify: counts = 133/132-active/1-inactive; spot-check CEs.
-- [ ] **T4 (P1)** — Assessment loop (PM): label picker, level-0 escape, blind to
+- [ ] **T4 (P1)** — Assessment loop (PM): vertical option-list picker (Unaware→Expert,
+  no N/A), domain→competency→control→measures context, back-to-controls nav, blind to
   targets, self-score + evidence, submit. Verify: submit transitions draft→self_submitted.
 - [ ] **T5 (P1)** — Assessor review-and-revise: see self-scores, "Accept all" or
   override specific controls, finalize (snapshot + lock). Verify: assessor_level
