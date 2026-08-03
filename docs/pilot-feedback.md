@@ -79,6 +79,49 @@ that it creates and deletes its own `@example.test` accounts.
 Not blocking the pilot. Worth doing before anyone other than the Head of PMO is
 making changes, because the value is protecting real data from work in progress.
 
+#### How database changes flow once staging exists
+
+> "what happens when we change the database, we change in staging first test
+> then update production?"
+
+Yes — but only for one of the two things that get called a database change.
+
+**Schema changes** (new column, new table, changed constraint) are code: numbered
+files in `supabase/migrations/`. Write the migration, run it on staging, point
+the app at staging and confirm it works, then run **the same file** on
+production. One file, applied twice, in that order.
+
+**Framework content** (a target level, a priority, a `kib_note`, marking a
+control inactive) does **not** flow that way. It is edited live in production
+through the admin screen, which is the entire reason the framework is stored as
+data rather than constants. There is no migration for "change 4.3.1.3's target
+to 4", and there should not be.
+
+**The consequence to plan for: the two databases drift, deliberately.** Staging
+is seeded once from `supabase/seed.sql`; production then accumulates admin edits
+nobody replays into staging. So staging is a good rehearsal for "does this
+schema change break the app" and a poor one for "does this work against our
+actual framework". Do not treat a green staging run as proof for anything that
+depends on edited content — and do not "fix" the drift by syncing production
+data down, which would put real assessment records somewhere with weaker access
+control.
+
+**Gap to close before two environments exist.** Nothing currently records which
+migrations have been applied to which database — they are pasted into the
+Supabase SQL Editor by hand, and `0001`/`0002` are tracked only by being in the
+repo. With one database that is survivable; with two it becomes guesswork, and
+guessing wrong against production is how a column ends up missing in one place.
+
+The cheap fix, worth doing as part of N1b rather than after:
+
+- a `schema_migrations` table (`filename`, `applied_at`);
+- every migration inserts its own filename as its last statement;
+- every migration written to be safely re-runnable (`if not exists`, guarded
+  `alter`), so applying one twice is a no-op rather than an error.
+
+That gives a one-query answer to "what has this database had?" in both places,
+which is the only thing that makes a two-environment setup honest.
+
 
 ### N2 — sign-in box suggested a `@kib.com` domain
 
