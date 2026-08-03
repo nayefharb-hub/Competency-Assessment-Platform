@@ -12,7 +12,12 @@ the next step is. Everything referenced here is committed.
 | Design system (`/design-consultation`) | **LOCKED** — `DESIGN.md` |
 | T0 — extract & verify workbook | **DONE** — `data/seed/`, `docs/rollup-spec.md` |
 | T1 — app scaffold, four screens | **DONE** — running on seed data |
-| T2 — database | **schema applied & seeded in Supabase**; app NOT yet wired to it |
+| T2 — database | **applied, seeded, and VERIFIED in Supabase**; app NOT yet wired to it |
+
+Database verified 2026-08-03 by running the query below in the SQL Editor — all
+11 checks matched: 133 controls (132 active, 4.3.2.6 inactive), 28 elements,
+3 areas, 586 measures, 6 scale levels, 4 benchmark profiles, 116 benchmark
+targets, RLS on all 13 tables with 0 policies.
 
 ## Next step
 
