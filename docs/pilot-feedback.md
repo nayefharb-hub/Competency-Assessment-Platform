@@ -774,6 +774,23 @@ Recorded here rather than quietly corrected, because "the tool showed me
 something that then vanished" is precisely the class of report that destroys
 trust in an assessment system, and the answer needs to be findable.
 
+## Where this stands (end of 2026-08-03)
+
+Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
+leading, N13. Migration `0003` applied to the pilot database.
+
+Still open, in build order — the reasoning for each is in its note above:
+
+1. **N7** assignment — largest, and the one that makes the completion figure a
+   fact rather than an inference. Specified and reviewed; columns already exist.
+2. **N6** archive — columns already exist too.
+3. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
+   scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
+   quietening rather than amplifying.
+4. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
+   migration-tracking gap that should close before a second database exists.
+5. **N11 palette** and **SMTP** — both waiting on the owner, not on code.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |

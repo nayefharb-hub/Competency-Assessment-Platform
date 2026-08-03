@@ -8,6 +8,73 @@ Everything referenced here is committed.
 feedback from using it is logged in `docs/pilot-feedback.md` (13 notes, triaged);
 the plan for the rest is `docs/eng-plan-admin-and-ux.md`.
 
+---
+
+## Picking this up in a new session — read this first
+
+**1. Recreate `.env.local` before anything else.** It is gitignored and the
+session container is ephemeral, so a fresh session has no credentials and every
+script fails with "Missing SUPABASE_URL". Copy `.env.example` and fill in the
+four values from Supabase → Project Settings → API. Nothing else works until
+this exists.
+
+**2. Network access.** `*.supabase.co` must be in the environment's Network
+access allowlist (Custom + "include default package managers"), or the session
+cannot reach the database at all. `*.vercel.app` is **not** reachable from the
+agent sandbox and probably cannot be — so nothing an agent says about the
+deployed site is verified. Test the code locally against the real database;
+confirming production is the owner's step.
+
+**3. The password gate is live.** Every account carries
+`must_change_password = true` until its owner replaces the password. On first
+sign-in you land on `/change-password` and cannot leave it. This is expected, not
+a bug. `scripts/e2e.mjs` is unaffected — it creates and deletes its own QA
+accounts and needs no real credentials.
+
+**4. Prove the environment before building anything:**
+
+```bash
+npm install
+npm run verify:db          # expect 11/11
+npm run build && npm start &
+npm run e2e                # expect 92/92 — writes, then cleans up after itself
+```
+
+If `verify:db` fails, stop: it is credentials or network, not code.
+
+**5. Where things are.**
+
+| Want | Read |
+|---|---|
+| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N13) |
+| What to build next and in what order | `docs/eng-plan-admin-and-ux.md` |
+| Visual rules — locked, do not deviate | `DESIGN.md` |
+| Rollup arithmetic contract | `docs/rollup-spec.md` |
+
+**6. Next task is PR A2 — assignment (N7).** Already specified in the eng plan
+and already reviewed. The columns (`assigned_at`, `assigned_by`) exist in the
+database, so no migration is needed. In short: delete `getOrCreateAssessment`
+so an assessment only exists when an admin assigns it, add an Assign control to
+`/admin/people`, make the completion denominator the count of assignments, and
+delete both the `Math.max(invitedCount, …)` fudge and the `assessee_is_pm`
+filter — they exist only to paper over assessments appearing unbidden. The e2e
+rewrite ships **with** it, not after: every current test assumes an assessment
+appears on first visit, which A2 removes.
+
+**7. Two things blocked on the owner, not on code.**
+- **SMTP** — gates emailed invite links and self-service password reset. Needs
+  an IT/policy answer on whether a third-party sender is acceptable for a bank.
+- **Palette** — approved but deliberately deferred until the fixed reading
+  measure has been judged. See the `DESIGN.md` decisions log for the reasoning
+  and the recommended direction if it is still wanted.
+
+**8. Do not use the owner's account for testing.** Use a disposable
+`@example.test` account, as `scripts/e2e.mjs` does. Filling and then emptying
+the owner's live assessment mid-session is a mistake that has already been made
+once — see N13.
+
+---
+
 ## Why this exists (don't lose this framing)
 
 **Prototype:** assess KIB's ~9 PMs against IPMA ICB4 this cycle. The Head of
