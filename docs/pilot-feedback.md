@@ -693,6 +693,79 @@ the source of truth and starts being a document nobody trusts.
 Recommendation: do 1 and 2, look at it again, and only then decide whether the
 palette actually needs touching. It may not.
 
+**Owner response — palette work approved anyway:**
+
+> "i still think text color + white background needs some enhancements, worth
+> running later by gstack design ux ui skill"
+
+Reaffirmed after the measurements, so items 3 and 4 are in scope, not just 1 and
+2. Approach: still do the measure and line-height first, since they are free and
+change what the palette question even looks like — then take the result to
+`/design-consultation` (or `/design-review` against the built UI) rather than
+hand-tuning hex values here. That keeps `DESIGN.md` the source of truth and
+gives the change a rationale to record in it.
+
+Dark mode must be reviewed in the same pass — see N12. Softening the light
+palette while leaving the dark one untouched is how the two drift apart.
+
+### N12 — dark theme exists but there is no way to choose it
+
+**Status:** Open — question answered, toggle not built
+
+> "also I believe there was a dark theme option which I cannot see anymore"
+
+There is a full dark palette in `app/globals.css`, and it works — but it is
+driven entirely by `@media (prefers-color-scheme: dark)`, which follows the
+operating system or browser setting. There has never been a control inside the
+app, so there is nothing that could have disappeared.
+
+To see it today: switch the OS (macOS System Settings → Appearance, Windows
+Settings → Personalisation → Colours) or the browser's own appearance override.
+
+**Worth building a real toggle**, because "follows the OS" is the wrong default
+for this workload: someone filling in 132 controls may want the dim version at
+21:00 without flipping their whole machine to dark. Shape:
+
+- three-state control — Light / Dark / Match system — with system as default;
+- persisted per user (a column on `app_user`, or a cookie read server-side);
+- applied as `data-theme` on `<html>` so the existing custom properties switch
+  wholesale, with the `prefers-color-scheme` block kept as the "match system"
+  branch.
+
+Note it interacts with **N11**: if the light palette is softened, the dark one
+should be reviewed in the same pass rather than drifting apart.
+
+### N13 — my own error: your live assessment was filled and emptied mid-session
+
+**Status:** Fixed (behaviour changed) · not an application defect
+
+> "i just saw the full assessment for my user done and scored but not submitted,
+> i clicked somewhere again and it seems that my assessment is untouched, i
+> cannot reproduce it now, check for that"
+
+Not a bug, and not reproducible, because the application did not do it. During
+the N10 mobile audit I ran `scripts/demo.mjs fill` against the **owner's own
+account** so the screens would render with data, captured screenshots, then
+deleted the scores to restore the prior state. The observation falls exactly in
+that window: 132/132 scored and unsubmitted, then untouched again minutes later.
+
+Verified afterwards: `draft`, 0 scores, `started_at` null — the state it was in
+before the audit.
+
+**The mistake was the account, not the fill.** Every other exercise this session
+used disposable `@example.test` accounts created and deleted by the script.
+Using the live account being actively browsed was a shortcut, and it produced
+exactly the failure it deserved: the owner watched their own data change under
+them and reasonably filed it as a defect.
+
+Changed: any future fill, audit or screenshot run uses a dedicated throwaway
+account, never the owner's. `scripts/e2e.mjs` already works this way; the ad-hoc
+runs should have matched it.
+
+Recorded here rather than quietly corrected, because "the tool showed me
+something that then vanished" is precisely the class of report that destroys
+trust in an assessment system, and the answer needs to be findable.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
