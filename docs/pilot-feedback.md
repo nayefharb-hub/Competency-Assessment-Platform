@@ -52,8 +52,32 @@ Options, cheapest first:
    it. Costs a second seed run, gives a genuine staging environment.
 3. Accept it for a nine-person internal pilot and revisit if the tool goes wider.
 
-No action taken — this is a judgement call about a real database, so it is
-recorded rather than decided unilaterally.
+**Decision (owner):** option 1 now, option 2 later. Untick Preview and
+Development on the two secret-bearing variables so only Production can reach the
+database, and stand up a separate Supabase project for staging when there is
+reason to. Recorded as N1b.
+
+The Vercel change is in the project's own settings, not in this repo, so it
+cannot be made from here — the clicks were handed over instead.
+
+### N1b — separate Supabase project for staging
+
+**Status:** Deferred — wanted, not yet needed
+
+> "yes need a staging setup later"
+
+A second Supabase project, seeded from `supabase/seed.sql` the same way, with
+Vercel's Preview scope pointed at it. That turns preview deployments from a
+liability into the thing they should be: somewhere to try a change against
+fake people before it touches real ones.
+
+What it costs: a second project, one seed run, and a second set of environment
+variables scoped to Preview. `scripts/e2e.mjs` should then be pointed at staging
+rather than production — it writes, and today the only thing keeping it safe is
+that it creates and deletes its own `@example.test` accounts.
+
+Not blocking the pilot. Worth doing before anyone other than the Head of PMO is
+making changes, because the value is protecting real data from work in progress.
 
 
 ### N2 — sign-in box suggested a `@kib.com` domain
@@ -151,8 +175,47 @@ Worth checking whether this makes the existing "Continue — control N" button
 redundant; it already jumps to the first unscored control, which is the same
 need answered a different way.
 
+### N6 — can an admin delete an assessment?
+
+**Status:** Open — question answered, design decision outstanding
+
+> "can and admin delete a certain assessment?"
+
+**Today: no.** There is no delete anywhere in `app/` or `lib/` — the app has
+never removed an assessment. The only deletion paths are command-line scripts
+(`npm run demo reset <email>`, and the cleanup inside `scripts/e2e.mjs`).
+
+Before building one, it is worth separating two needs that look alike:
+
+1. **Undo a wrong transition.** Someone submits before they meant to, or gets
+   approved too early. This is the common case and it is not a delete — it is
+   moving the record back a state. Scores survive, which is what the person
+   actually wants.
+2. **Destroy a record.** A test run, a duplicate, someone who left. Rare, and
+   genuinely destructive.
+
+Reasons to be careful with (2), beyond the obvious:
+
+- Deleting an assessment deletes its `started_at` / `completed_at`, which are
+  the completion instrumentation. Removing one finished assessment **silently
+  moves the median time-to-complete** — the number the entire pilot exists to
+  produce. A delete that quietly edits the headline metric is the kind of thing
+  that discredits a result later.
+- An approved assessment is the cycle's record, with targets frozen into
+  `target_snapshot`. Deleting it destroys the evidence for a decision that may
+  already have been taken on the back of it.
+
+Suggested shape, for discussion rather than as a decision:
+
+- **Reopen** (approved → self_submitted, self_submitted → draft), admin only,
+  as the everyday tool. Cheap, reversible, keeps the scores.
+- **Delete** restricted to `draft` assessments, so a live record cannot be
+  removed by accident. Anything beyond that stays a deliberate script run.
+
+Needs a decision on what the real need is before either is built.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 3 | 1 | 1 | 0 | 0 |
+| 4 | 1 | 1 | 1 | 0 |
