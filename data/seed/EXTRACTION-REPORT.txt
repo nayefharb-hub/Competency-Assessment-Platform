@@ -1,0 +1,33 @@
+SCALE: 6 levels -> ['Unaware', 'Aware', 'Practised', 'Competent', 'Proficient', 'Expert']
+BENCHMARKS: 29 APM competences (expect 29)
+AREAS: 3 -> ['Perspective', 'People', 'Practice']
+COMPETENCE ELEMENTS: 28 (expect 28)
+CONTROLS: 133 (expect 133)
+  active=132 (expect 132) · inactive=1 (expect 1)
+MEASURES: 586 rows
+CE TARGETS (Results sheet): 28 (expect 28)
+
+--- VERIFICATION ---
+  [OK ] controls total: got 133, expect 133
+  [OK ] controls active: got 132, expect 132
+  [OK ] competence elements: got 28, expect 28
+  [OK ] areas: got 3, expect 3
+  [OK ] CE targets rows: got 28, expect 28
+  [OK ] Perspective controls: got 24, expect 24
+  [OK ] People controls: got 49, expect 49
+  [OK ] Practice controls: got 60, expect 60
+  [OK ] Perspective competence elements: got 5, expect 5
+  [OK ] People competence elements: got 10, expect 10
+  [OK ] Practice competence elements: got 13, expect 13
+  [OK ] per-CE declared vs ACTIVE control counts: 0 mismatches
+  [OK ] Results vs Framework active counts: 0 mismatches
+  [OK ] CE codes match Framework vs Results
+  [OK ] measures reference known controls (0 orphans)
+  [OK ] active controls with a target level (0 missing)
+  [OK ] active controls with a priority (0 missing)
+  priority distribution (active): {'Medium': 17, 'High': 112, 'Low': 3}  [brief: High 112, Medium 17, Low 3]
+  target source (active): {'Derived (priority rule)': 31, 'APM (published)': 101}  [brief: APM-published 101, derived 31]
+  inactive control(s): ['4.3.2.6']  [brief: 4.3.2.6]
+
+WROTE /home/user/Competency-Assessment-Platform/data/seed/icb4-framework.json
+WROTE /home/user/Competency-Assessment-Platform/data/seed/controls.csv, /home/user/Competency-Assessment-Platform/data/seed/measures.csv
