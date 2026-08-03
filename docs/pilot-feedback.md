@@ -461,16 +461,60 @@ screen, a changed entry path for every assessee, and edits to the completion
 maths. Bigger than N4 and N5 combined. Worth sequencing deliberately rather than
 folding into the same pass.
 
+### N8 — no way to invite anyone from inside the app
+
+**Status:** Open — to fix, and it reshapes N7
+
+> "how can i invite a user for the assessment"
+
+Hit while trying to do the most basic administrative task there is. Today the
+only route is `npm run invite add …`, which needs a local clone, Node, and
+`.env.local` — precisely the toolchain this setup deliberately avoided. So the
+Head of PMO cannot add one of their own PMs without either a terminal or someone
+else running a command for them.
+
+That is a genuine hole in the product, not just an inconvenience. An assessment
+tool whose administrator cannot add a person is not administrable.
+
+**This belongs with N7, not beside it.** Inviting and assigning are one
+workflow, not two — the real task is "add these nine people and start their 2026
+assessment". Building an admin People screen for N7 and a separate invite path
+would be building the same screen twice. N7's scope should absorb this:
+
+- **People** screen, admin only: who is on the allowlist, their role, whether
+  they have an assessment this cycle.
+- **Add person**: email, full name, job title, role. Creates the auth account
+  and the `app_user` row, the same two halves `scripts/invite.mjs` writes today.
+- **Assign** (N7): trigger the cycle for selected people from that same screen.
+- **Remove**: subject to the `invite remove` hazard already logged — must refuse,
+  or archive, when the person has assessment data.
+
+**The password problem this exposes.** `invite.mjs` generates a temporary
+password and prints it once to a terminal. A web screen cannot "print once to a
+terminal" safely — showing a colleague's password on screen for the admin to
+copy is workable but poor, and it is the reason there is still no
+change-password flow. Worth deciding at the same time whether the pilot moves to
+emailed magic links or invite links, which removes password handling entirely.
+That was deferred during the wiring work because Supabase's default mail is
+rate-limited and undeliverable to non-team addresses without SMTP — so it needs
+an SMTP decision, not just a code change.
+
+**Interim:** accounts can be created by whoever has the repo and `.env.local`,
+or from an agent session with database access. Neither is a substitute for the
+screen.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 5 | 1 | 1 | 1 | 0 |
+| 6 | 1 | 1 | 1 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N7** — assignment (largest; changes the entry path and the metric's denominator)
-2. **N6** — archive, which is cleaner to design once N7 exists
+1. **N7 + N8** — the admin People screen: add a person, and assign them a cycle.
+   One screen, one workflow. Largest item; also changes the entry path for every
+   assessee and the completion metric's denominator.
+2. **N6** — archive, cleaner to design once N7 exists
 3. **N5** — filter the controls list
 4. **N4** — scored-state emphasis, decided together with N5
 
