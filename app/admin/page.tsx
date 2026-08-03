@@ -31,7 +31,7 @@ export default async function AdminPage({
   const measures = fw.measuresFor(code);
 
   return (
-    <div className="section">
+    <div className="section reading">
       <div className="sec-head">
         <h2>Framework admin</h2>
         <span className="rule" />

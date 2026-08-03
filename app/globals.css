@@ -19,6 +19,15 @@
   --deficit-bg: #fbe7e7;
   --track: #e5eaf1;
 
+  /* Reading measure — DESIGN.md Layout. NOT the container width: 1080px is how
+     wide the page may get, this is how wide a sentence may get. Conflating them
+     is what produced 131-character lines.
+
+     52ch, not 68ch: the `ch` unit is the width of the "0" glyph, and Geist's
+     digits are wider than its average letter, so `ch` overshoots by ~1.3x.
+     Measured: 68ch rendered 89 characters. 52ch lands at ~68. */
+  --measure: 52ch;
+
   --radius-in: 6px;
   --radius-card: 10px;
   --radius-pill: 999px;
@@ -83,6 +92,12 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 
 /* ---------- shell ---------- */
 .shell { max-width: 1080px; margin: 0 auto; padding: 24px 24px 72px; }
+
+/* Reading pages (one control at a time) get a narrower container than list and
+   dashboard pages. Capping the measure inside a 1080px card leaves the prose
+   marooned in the left half while option rows span the full width, which reads
+   as broken rather than deliberate. DESIGN.md Layout names all three widths. */
+.reading { max-width: 780px; margin-left: auto; margin-right: auto; }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -191,7 +206,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 .measures { margin: 12px 0 0; padding: 0; list-style: none; }
 .measures li {
   position: relative; padding: 6px 0 6px 22px; font-size: 14px;
-  line-height: 1.55; color: var(--ink);
+  color: var(--ink);
 }
 .measures li::before {
   content: ""; position: absolute; left: 5px; top: 14px; width: 6px; height: 6px;
@@ -371,3 +386,21 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 .grid td { padding: 10px; border-bottom: 1px solid var(--border); }
 .grid tr:last-child td { border-bottom: 0; }
 .grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- reading measure (DESIGN.md Layout + Typography) ----------
+   Anything read in sentences gets capped at ~68 characters and set at 1.6.
+   Everything else — labels, table cells, pills, bar rows — keeps 1.5 and full
+   width, because those are scanned, not read. */
+.lede,
+.ro p,
+.measures li,
+.note,
+.banner,
+.opt span.gloss {
+  max-width: var(--measure);
+  line-height: 1.6;
+}
+/* The gloss sits inside a radio row that already constrains it; the cap is
+   there for the wide-viewport case only. */
+.optlist .opt b { line-height: 1.35; }
+h1, h2, h3 { line-height: 1.25; }
