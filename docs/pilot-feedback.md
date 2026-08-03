@@ -641,6 +641,58 @@ controls in odd moments is exactly the behaviour the pilot is trying to produce.
 
 Worth pairing with N4 and N5, since all three touch the controls list.
 
+### N11 — body text is tiring to read
+
+**Status:** Open — measured; needs a DESIGN.md decision, not just a CSS change
+
+> "i find the text is hard to read, perhaps the white background with the
+> current font combination needs enhancements it is eye draining"
+
+Measured on the running app rather than judged by eye. The instinct is right;
+the cause is mostly not the one named.
+
+| Measured | Value | Comfortable range |
+|---|---|---|
+| **Characters per line** (indicator description) | **131** | 45–75, ideal ~66 |
+| Font size | 15px | fine |
+| Line height | 22.5px (1.50) | 1.6–1.7 for prose at length |
+| Ink on card | `#16202e` on `#ffffff` | — |
+| **Contrast ratio** | **≈16.4 : 1** | WCAG AAA needs 7:1 |
+
+**The dominant cause is line length, not colour.** At 131 characters the eye has
+to travel nearly twice the comfortable distance and then hunt for the start of
+the next line. That return sweep is what produces the specific feeling of
+draining, and it gets worse the longer the text — which is why the ICB4
+description paragraphs and the measures list are where it bites hardest. This is
+a layout property; it is independent of typeface and palette.
+
+**Contrast is a genuine but secondary factor.** 16.4:1 is more than double the
+strictest accessibility threshold. Maximum-contrast dark-on-pure-white is
+comfortable in short bursts and harsh over sustained reading, which is exactly
+the workload here: 132 controls, each with a paragraph and up to six measures.
+
+Fixes, in order of effect per unit of change:
+
+1. **Cap the reading measure at ~68ch** on prose blocks (indicator description,
+   measures, notes). Biggest single improvement, and it touches **no** colour or
+   type token — purely layout, so it is compatible with `DESIGN.md` as locked.
+   Worth trying alone first before changing anything else.
+2. **Raise line height to ~1.6** on those same prose blocks. Cheap, additive.
+3. **Soften the surface and ink** — a slightly off-white card and marginally
+   lighter ink, landing nearer 12–13:1. Still far above AA. **This changes the
+   locked palette** and needs explicit sign-off plus a `DESIGN.md` update.
+4. **Consider 16px** for the long description text specifically, leaving UI
+   chrome at 15px.
+
+**Process note.** `CLAUDE.md` states that `DESIGN.md` is the source of truth for
+all colour and type, and that deviation needs explicit approval. Items 1 and 2
+are layout and sit inside that. Items 3 and 4 do not — if they are wanted,
+`DESIGN.md` must be updated in the same change, or the design system stops being
+the source of truth and starts being a document nobody trusts.
+
+Recommendation: do 1 and 2, look at it again, and only then decide whether the
+palette actually needs touching. It may not.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
