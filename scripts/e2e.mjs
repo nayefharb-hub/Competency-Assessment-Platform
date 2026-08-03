@@ -14,25 +14,20 @@
  * --write, and it only ever touches the two @example.test QA accounts, which
  * it creates and deletes itself.
  *
- * Prerequisites: an assessor/admin account, passed as
- *   ADMIN_EMAIL=... ADMIN_PASSWORD=... node --env-file=.env.local scripts/e2e.mjs --write
+ * No credentials needed beyond the Supabase keys: the suite creates its own QA
+ * admin and PMs, and deletes them afterwards.
  */
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000";
 const CHROME = process.env.E2E_CHROMIUM ?? undefined;
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 if (!process.argv.includes("--write")) {
   console.error("This test writes to the database. Re-run with --write if that is what you want.");
   process.exit(1);
 }
-if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-  console.error("Set ADMIN_EMAIL and ADMIN_PASSWORD to an assessor/admin account.");
-  process.exit(1);
-}
+// No real admin credentials needed: the suite creates its own QA admin.
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -40,6 +35,16 @@ const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 
 const PM = { email: "qa.pm1@example.test", name: "QA Test PM One", password: "QaTestPm1!pass" };
 const OTHER = { email: "qa.pm2@example.test", name: "QA Test PM Two", password: "QaTestPm2!pass" };
+/**
+ * The suite brings its own admin rather than borrowing a real one. Two reasons:
+ * a real account gets `must_change_password` set and would be redirected out of
+ * every admin test, and — the N13 lesson — a test run should never touch the
+ * data of someone who might be using the app at the time.
+ */
+const BOSS = {
+  email: "qa.admin@example.test", name: "QA Assessor",
+  password: "QaAdmin1!passw", role: "admin",
+};
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail = "") => {
@@ -71,6 +76,8 @@ async function ensure(person) {
   const { data: existing } = await db.from("app_user").select("id").eq("email", person.email).maybeSingle();
   if (existing) {
     await db.auth.admin.updateUserById(existing.id, { password: person.password, email_confirm: true });
+    // Fixtures start unflagged; the password-gate tests set the flag themselves.
+    await db.from("app_user").update({ must_change_password: false }).eq("id", existing.id);
     return;
   }
   const created = await db.auth.admin.createUser({
@@ -79,14 +86,23 @@ async function ensure(person) {
   if (created.error) throw new Error(created.error.message);
   const { error } = await db.from("app_user").insert({
     id: created.data.user.id, email: person.email, full_name: person.name,
-    job_title: "Project Manager", role: "assessee",
+    job_title: person.role === "admin" ? "Head of PMO" : "Project Manager",
+    role: person.role ?? "assessee",
+    must_change_password: false,
   });
   if (error) throw new Error(error.message);
 }
 
+const flag = async (email, value) => {
+  const { data } = await db.from("app_user").select("id").eq("email", email).single();
+  await db.from("app_user").update({ must_change_password: value }).eq("id", data.id);
+  return data.id;
+};
+
 console.log("Preparing QA accounts…");
 await ensure(PM);
 await ensure(OTHER);
+await ensure(BOSS);
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 async function session(email, password) {
@@ -125,7 +141,7 @@ console.log("\n[1] Invite-only auth");
 
 const pm = await session(PM.email, PM.password);
 check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
-const boss = await session(ADMIN_EMAIL, ADMIN_PASSWORD);
+const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 
 /* -------------------------------------- 2. role gates and target blinding */
@@ -417,10 +433,142 @@ console.log("\n[9] Framework admin writes the tunable layer only");
     restored.kib_note === original.kib_note, `${restored.kib_note}`);
 }
 
+
+/* ------------------------------- 10. password gate and the People screen */
+console.log("\n[10] Password gate (A1)");
+{
+  // F1 regression: if must_change_password is missing from the column list in
+  // lib/auth.ts it reads back undefined, therefore falsy, therefore the gate
+  // silently never fires. Only a test that flags a user and walks the app can
+  // catch that — nothing throws.
+  await flag(OTHER.email, true);
+  const gated = await session(OTHER.email, OTHER.password);
+
+  for (const route of ["/", "/assess", "/assess/controls", "/results", "/review", "/admin"]) {
+    await gated.page.goto(route);
+    check(`flagged user is pushed off ${route}`,
+      gated.page.url().includes("/change-password"), gated.page.url());
+  }
+
+  // F2 regression: /change-password itself must be reachable while flagged, or
+  // requireUser bounces it to itself forever.
+  await gated.page.goto("/change-password");
+  check("/change-password is reachable while flagged (no redirect loop)",
+    gated.page.url().includes("/change-password")
+      && (await gated.page.locator("#password").count()) === 1);
+  check("the forced version explains why",
+    (await gated.page.content()).includes("someone else chose"));
+
+  // the gate is server-side, so posting the action directly is refused too
+  await gated.page.goto("/assess?c=4.3.1.1");
+  check("cannot score while flagged",
+    gated.page.url().includes("/change-password"));
+
+  // too-short and mismatched passwords are rejected
+  await gated.page.goto("/change-password");
+  await gated.page.fill("#password", "short");
+  await gated.page.fill("#confirm", "short");
+  await gated.page.evaluate(() => {
+    document.querySelectorAll("input").forEach((i) => i.removeAttribute("minLength"));
+  });
+  await gated.page.click('button[type="submit"]');
+  await gated.page.waitForLoadState("networkidle");
+  check("a short password is refused", (await gated.page.content()).includes("at least 10"));
+
+  await gated.page.goto("/change-password");
+  await gated.page.fill("#password", "LongEnough1!aa");
+  await gated.page.fill("#confirm", "DifferentOne1!a");
+  await gated.page.click('button[type="submit"]');
+  await gated.page.waitForLoadState("networkidle");
+  check("mismatched passwords are refused", (await gated.page.content()).includes("do not match"));
+
+  // the happy path clears the flag and releases the app
+  const NEWPASS = "QaChanged1!pass";
+  await gated.page.goto("/change-password");
+  await gated.page.fill("#password", NEWPASS);
+  await gated.page.fill("#confirm", NEWPASS);
+  await gated.page.click('button[type="submit"]');
+  await gated.page.waitForLoadState("networkidle");
+
+  const { data: after } = await db.from("app_user")
+    .select("must_change_password").eq("email", OTHER.email).single();
+  check("changing the password clears the flag", after.must_change_password === false);
+  await gated.page.goto("/assess/controls");
+  check("the app is reachable once the flag clears",
+    !gated.page.url().includes("/change-password"), gated.page.url());
+
+  // and the new password is the one that works
+  await gated.ctx.close();
+  const relogin = await session(OTHER.email, NEWPASS);
+  check("the new password signs in", !relogin.page.url().includes("/login"));
+  await relogin.ctx.close();
+  OTHER.password = NEWPASS;
+}
+
+console.log("\n[11] People screen (A1)");
+{
+  await pm.page.goto("/admin/people");
+  check("a PM cannot reach the People screen", pm.page.url().includes("denied=1"), pm.page.url());
+
+  await boss.page.goto("/admin/people");
+  check("an admin can", boss.page.url().includes("/admin/people"));
+  check("the allowlist is listed", (await boss.page.content()).includes(PM.email));
+
+  const NEWMAIL = "qa.added@example.test";
+  await db.from("app_user").delete().eq("email", NEWMAIL);
+  await boss.page.fill("#full_name", "QA Added Person");
+  await boss.page.fill("#email", NEWMAIL);
+  await boss.page.fill("#job_title", "Project Manager");
+  await boss.page.selectOption("#role", "assessee");
+  await boss.page.fill("#password", "AddedByAdmin1!");
+  await boss.page.click('button:has-text("Add person")');
+  await boss.page.waitForLoadState("networkidle");
+
+  const { data: made } = await db.from("app_user")
+    .select("id, role, must_change_password").eq("email", NEWMAIL).maybeSingle();
+  check("the person is on the allowlist", made !== null);
+  check("created flagged to set their own password", made?.must_change_password === true);
+  check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
+
+  // the account really works, and lands on the gate
+  const fresh = await session(NEWMAIL, "AddedByAdmin1!");
+  check("the added person can sign in", !fresh.page.url().includes("/login"), fresh.page.url());
+  check("and is sent straight to set their own password",
+    fresh.page.url().includes("/change-password"), fresh.page.url());
+  await fresh.ctx.close();
+
+  // duplicate is refused rather than silently creating a second identity
+  await boss.page.goto("/admin/people");
+  await boss.page.fill("#full_name", "QA Added Person");
+  await boss.page.fill("#email", NEWMAIL);
+  await boss.page.fill("#password", "AnotherOne1!aa");
+  await boss.page.click('button:has-text("Add person")');
+  await boss.page.waitForLoadState("networkidle");
+  check("a duplicate email is refused", (await boss.page.content()).includes("already on the allowlist"));
+
+  // admin reset re-arms the gate
+  await db.from("app_user").update({ must_change_password: false }).eq("email", NEWMAIL);
+  await boss.page.goto("/admin/people");
+  const row = boss.page.locator("tr", { hasText: NEWMAIL });
+  await row.locator('input[name="password"]').fill("ResetByAdmin1!");
+  await row.locator('button:has-text("Reset")').click();
+  await boss.page.waitForLoadState("networkidle");
+  const { data: afterReset } = await db.from("app_user")
+    .select("must_change_password").eq("email", NEWMAIL).single();
+  check("an admin reset re-arms the must-change flag", afterReset.must_change_password === true);
+  const resetLogin = await session(NEWMAIL, "ResetByAdmin1!");
+  check("the reset password works and lands on the gate",
+    resetLogin.page.url().includes("/change-password"), resetLogin.page.url());
+  await resetLogin.ctx.close();
+
+  await purge(NEWMAIL);
+}
+
 /* ---------------------------------------------------------------- cleanup */
 console.log("\nCleaning up QA data and accounts…");
 await purge(PM.email);
 await purge(OTHER.email);
+await purge(BOSS.email);
 const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
 check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
   (leftovers ?? []).map((u) => u.email).join(","));
