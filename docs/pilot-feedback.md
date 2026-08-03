@@ -119,8 +119,40 @@ that is the state a PM actually lives in.
 
 Do not fix in isolation — the owner asked for all notes to be collected first.
 
+### N5 — filter the controls list by scored / not scored
+
+**Status:** Open — to fix
+
+> "need a filter on the controls so that the user can filter by the one scored,
+> not scored"
+
+Three views on `/assess/controls`: all, not scored, scored.
+
+Notes for the implementation:
+
+- **Do it with a query parameter** (`?show=unscored`), not client state. Every
+  page in this app is a server component and there is not a single client
+  component yet; a filter is not a good reason to introduce the first one. Links
+  keep it shareable, back-button friendly and free of hydration.
+- **Keep the counts honest under filtering.** The progress bar and the `N / 132`
+  headline must keep reporting the whole assessment, not the filtered subset,
+  or the filter quietly becomes a way to misread your own progress. Same for the
+  per-element `0/5 scored` labels.
+- **Empty states matter here.** "Not scored" on a finished assessment should say
+  so plainly rather than render an empty page.
+
+**Related to N4, and possibly the better answer to it.** N4 is "I cannot see
+what is left"; a filter answers that directly, where louder badges only make the
+scanning easier. Decide them together: if the filter lands well, the badges may
+only need quietening (option 2 in N4) rather than amplifying, since the filtered
+list makes every visible row mean the same thing anyway.
+
+Worth checking whether this makes the existing "Continue — control N" button
+redundant; it already jumps to the first unscored control, which is the same
+need answered a different way.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 2 | 1 | 1 | 0 | 0 |
+| 3 | 1 | 1 | 0 | 0 |
