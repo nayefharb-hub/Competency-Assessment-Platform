@@ -1,0 +1,587 @@
+control_code,ce_name,no,text
+4.3.1.1,Strategy,1,Reflects the mission and vision of the organisation
+4.3.1.1,Strategy,2,"Aligns the project goals with the mission, vision and strategy by using diagnostic control management systems (top-down approach and pre-set goals)"
+4.3.1.1,Strategy,3,"Controls whether the project’s objectives and benefits are in sync with the mission, vision and strategy"
+4.3.1.1,Strategy,4,"Develops and implements measures of strategic alignment (e.g. critical success factors, key performance indicators, etc)"
+4.3.1.1,Strategy,5,Checks whether the project is delivering benefits to the organisation
+4.3.1.2,Strategy,1,Knows the strategy-making process
+4.3.1.2,Strategy,2,Identifies new risks and opportunities which could alter the strategy
+4.3.1.2,Strategy,3,Engages co-workers in questioning the organisational strategy by implementing interactive control management systems (bottom-up approach and stretch goals)
+4.3.1.2,Strategy,4,Identifies strategic improvements
+4.3.1.2,Strategy,5,Influences the strategy-making process by suggesting changes to strategy
+4.3.1.3,Strategy,1,Reflects and defines the business and/or organisational justification
+4.3.1.3,Strategy,2,Identifies objectives needed in a project to generate the planned benefits
+4.3.1.3,Strategy,3,Validates and sells the business and/or organisation justification to the sponsors and/or owners of the projects
+4.3.1.3,Strategy,4,Re-assesses and validates the justification within the higher context
+4.3.1.3,Strategy,5,Defines and manages the project configuration (the integral completeness and functionality of the project organisation)
+4.3.1.3,Strategy,6,Applies benefits realisation management to check whether the project configuration is generating the desired results
+4.3.1.3,Strategy,7,Scans to determine whether there is a need to terminate the project because of redundancy or obsolete strategic importance and change the configuration
+4.3.1.4,Strategy,1,Derives and/or develops a set of critical success factors (CSFs) for the strategic objectives
+4.3.1.4,Strategy,2,"Uses formal CSFs for strategic alignment, but also identifies their informal context"
+4.3.1.4,Strategy,3,Involves subordinates to question the organisation strategy while developing CSFs (interactive management control – stretch goals)
+4.3.1.4,Strategy,4,Uses the CSFs for strategic alignment of or within a project
+4.3.1.4,Strategy,5,Uses the CSFs for managing stakeholders
+4.3.1.4,Strategy,6,Uses the CSFs for developing incentives/rewards and a motivated culture
+4.3.1.4,Strategy,7,Re-assesses CSF realisation within the higher strategic context
+4.3.1.5,Strategy,1,Derives and/or develops a KPI (or set of KPIs) for each critical success factor
+4.3.1.5,Strategy,2,"Decides on the use of leading, lagging and real-time measures when developing KPIs"
+4.3.1.5,Strategy,3,Uses KPIs for managing strategic performance
+4.3.1.5,Strategy,4,Uses KPIs to influence stakeholders
+4.3.1.5,Strategy,5,Uses KPIs for developing personal development plans
+4.3.1.5,Strategy,6,Uses KPIs for developing an incentive/reward system
+4.3.1.5,Strategy,7,Re-assesses project configuration by employing KPIs and performing benefits realisation management
+4.3.2.1,"Governance, structures and processes",1,Recognises a project in practice and has a knowledge of project management principles
+4.3.2.1,"Governance, structures and processes",2,"Explains characteristics of a functional, project and matrix oriented organisation and recognises one in practice"
+4.3.2.1,"Governance, structures and processes",3,Explains and practises the concept of management by projects
+4.3.2.1,"Governance, structures and processes",4,Perceives and sets up management by projects concepts within the organisation
+4.3.2.1,"Governance, structures and processes",5,Explains and identifies the current maturity level of an organisation
+4.3.2.2,"Governance, structures and processes",1,"Explains characteristics of a programme (goals, inputs, outputs, outcomes, benefits)"
+4.3.2.2,"Governance, structures and processes",2,Explains the concept of programme management
+4.3.2.3,"Governance, structures and processes",1,Explains characteristics of a portfolio – critical success factors (CSFs) and key performance indicators (KPIs)
+4.3.2.3,"Governance, structures and processes",2,Knows the concept of managing a portfolio (organisational structures and processes)
+4.3.2.3,"Governance, structures and processes",3,Successfully communicates within a respective portfolio in order to successfully manage a project
+4.3.2.4,"Governance, structures and processes",1,"Knows people, processes and services of supporting functions"
+4.3.2.4,"Governance, structures and processes",2,Uses the project supporting function of the parent organisation for efficient support of the project
+4.3.2.4,"Governance, structures and processes",3,Establishes and maintains relationships with the project supporting function
+4.3.2.4,"Governance, structures and processes",4,"Applies the reporting standards of the parent organisation to the project, using specific tools and methods"
+4.3.2.5,"Governance, structures and processes",1,Identifies the organisation’s routine and special rules for decision-making in cases beyond his or her authority and responsibility
+4.3.2.5,"Governance, structures and processes",2,Aligns the communication in projects with the needs of the permanent organisation
+4.3.2.5,"Governance, structures and processes",3,"Applies the reporting standards of the parent organisation to the project, using specific tools and methods"
+4.3.2.5,"Governance, structures and processes",4,Applies the organisation’s way of quality assurance when setting up a reporting system within the permanent organisation
+4.3.2.6,"Governance, structures and processes",1,Uses the human resource function for acquiring staff with the required authorities
+4.3.2.6,"Governance, structures and processes",2,Deals with the boundaries between the temporary organisation and the human resource function
+4.3.2.6,"Governance, structures and processes",3,Establishes and maintains relationships with the human resource function
+4.3.2.6,"Governance, structures and processes",4,Uses human resource processes to provide training and individual development
+4.3.2.7,"Governance, structures and processes",1,Knows the processes of the finance and control function
+4.3.2.7,"Governance, structures and processes",2,Distinguishes between the compulsory and optional utilities of the finance and control function
+4.3.2.7,"Governance, structures and processes",3,"Monitors and controls whether rules, guidelines and other financial utilities are effectively and efficiently used in projects to the benefit of the project"
+4.3.2.7,"Governance, structures and processes",4,Communicates and reports the status and trends of financial tasks clearly and objectively
+4.3.3.1,"Compliance, standards and regulations",1,Acknowledges the legal context and its applications
+4.3.3.1,"Compliance, standards and regulations",2,Filters out and uses the relevant law regulation
+4.3.3.1,"Compliance, standards and regulations",3,Identifies risks in the regulations in relation to the project and consults the experts
+4.3.3.1,"Compliance, standards and regulations",4,Acknowledges and manages the regulatory agencies as stakeholders
+4.3.3.1,"Compliance, standards and regulations",5,Aligns procurement routes with the regulations
+4.3.3.2,"Compliance, standards and regulations",1,Identifies the relevant HSSE regulations for the project
+4.3.3.2,"Compliance, standards and regulations",2,Defines the HSSE context for the project
+4.3.3.2,"Compliance, standards and regulations",3,Identifies risks arising from implementing HSSE measures to the project
+4.3.3.2,"Compliance, standards and regulations",4,"Provides a safe, secure and healthy environment for the project team members"
+4.3.3.2,"Compliance, standards and regulations",5,Applies HSSE for project sustainability
+4.3.3.3,"Compliance, standards and regulations",1,Knows the appropriate codes of business conduct
+4.3.3.3,"Compliance, standards and regulations",2,"Knows the appropriate professional regulation for the particular industry sector (public administration, civil engineering, information technology, telecommunication, etc)"
+4.3.3.3,"Compliance, standards and regulations",3,Identifies ethics principles
+4.3.3.3,"Compliance, standards and regulations",4,Identifies and uses the tacit trading laws not set by the code
+4.3.3.3,"Compliance, standards and regulations",5,Aligns procurement practices with the codes of business conduct
+4.3.3.3,"Compliance, standards and regulations",6,Works to prevent violation of the code by the project team members
+4.3.3.4,"Compliance, standards and regulations",1,Identifies the social and environmental consequences of the project
+4.3.3.4,"Compliance, standards and regulations",2,Defines and communicates the sustainability targets for the project and its outcomes
+4.3.3.4,"Compliance, standards and regulations",3,Aligns objectives with organisational strategy for sustainability
+4.3.3.4,"Compliance, standards and regulations",4,"Balances the demands of society, the environment and the economy (people, planet, profit) with project processes and products"
+4.3.3.4,"Compliance, standards and regulations",5,Encourages the development and diffusion of environmentally friendly technologies
+4.3.3.5,"Compliance, standards and regulations",1,Identifies and uses the relevant professional standards
+4.3.3.5,"Compliance, standards and regulations",2,Identifies the specifics of a standard and manages the risks arising from applying a standard to a project
+4.3.3.5,"Compliance, standards and regulations",3,Identifies and uses the best practice for managing a project
+4.3.3.5,"Compliance, standards and regulations",4,Develops and implements custom made standards for managing project team members
+4.3.3.6,"Compliance, standards and regulations",1,Identifies and assesses the relevant deficient areas of organisational competence in project management
+4.3.3.6,"Compliance, standards and regulations",2,Identifies and sets relevant benchmarks for the deficient areas
+4.3.3.6,"Compliance, standards and regulations",3,Identifies the benchmarking baseline and best practice
+4.3.3.6,"Compliance, standards and regulations",4,Benchmarks current performance against the best practice
+4.3.3.6,"Compliance, standards and regulations",5,Identifies measures for the needed improvements
+4.3.3.6,"Compliance, standards and regulations",6,Implements the identified measures and assesses the benefits gained
+4.3.3.6,"Compliance, standards and regulations",7,Disseminates the acquired know-how throughout the project organisation
+4.3.4.1,Power and interest,1,Acknowledges and assesses the personal ambitions and interests of relevant people or groups
+4.3.4.1,Power and interest,2,Acknowledges and assesses the differences between personal and organisational interests and goals
+4.3.4.2,Power and interest,1,"Acknowledges and can estimate the influence, power and reach of certain individuals in various settings"
+4.3.4.2,Power and interest,2,Is able to discern group affiliations and relationships in relation to the project
+4.3.4.3,Power and interest,1,Identifies and acknowledges the differences between behavioural style and personality
+4.3.4.3,Power and interest,2,Identifies and acknowledges the differences between cultural aspects and personality
+4.3.5.1,Culture and values,1,"Knows and acknowledges the cultural values, norms and demands of a society"
+4.3.5.1,Culture and values,2,"Knows, acknowledges and understands the implications of cultural values, norms and demands for the project"
+4.3.5.1,Culture and values,3,Works according to societal cultural demands and values without compromising personal values
+4.3.5.2,Culture and values,1,Acknowledges and respects the organisation’s formal norms and demands
+4.3.5.2,Culture and values,2,Knows and applies the organisation’s corporate values and mission
+4.3.5.2,Culture and values,3,Knows and applies the quality policy of an organisation
+4.3.5.2,Culture and values,4,"Acknowledges the implications of formal norms, demands, corporate values and mission and quality policy for the project"
+4.3.5.2,Culture and values,5,Acts sustainably by practising corporate social responsibility
+4.3.5.3,Culture and values,1,"Acknowledges, analyses and respects the informal culture and values of the organisation(s)"
+4.3.5.3,Culture and values,2,"Identifies the implications of the organisation’s informal culture and values for the project, in conformity with the organisation’s informal values and norms. 66 People 67"
+4.4.1.1,Self-reflection and self-management,1,Reflects on own values
+4.4.1.1,Self-reflection and self-management,2,Uses own values and ideals to shape decisions
+4.4.1.1,Self-reflection and self-management,3,Communicates own principles and personal demands
+4.4.1.1,Self-reflection and self-management,4,Expresses and discusses own experience
+4.4.1.1,Self-reflection and self-management,5,Puts own experience in perspective
+4.4.1.1,Self-reflection and self-management,6,Uses own experience to build hypotheses about people and situations
+4.4.1.2,Self-reflection and self-management,1,"Identifies own strengths, talents, limits and weaknesses"
+4.4.1.2,Self-reflection and self-management,2,"Leverages strengths, talents and passions"
+4.4.1.2,Self-reflection and self-management,3,Identifies solutions to overcoming personal weaknesses and limitations
+4.4.1.2,Self-reflection and self-management,4,Maintains eye contact even in stressful situations
+4.4.1.2,Self-reflection and self-management,5,Accepts setbacks without losing confidence
+4.4.1.3,Self-reflection and self-management,1,Demonstrates knowledge of own motivations
+4.4.1.3,Self-reflection and self-management,2,Sets personal and professional goals and priorities
+4.4.1.3,Self-reflection and self-management,3,Selects actions that contribute to the personal goals
+4.4.1.3,Self-reflection and self-management,4,Names personal distractors; People 71
+4.4.1.3,Self-reflection and self-management,5,Regularly reflects in order to maintain focus on the goals
+4.4.1.3,Self-reflection and self-management,6,Delivers personal commitments on time
+4.4.1.3,Self-reflection and self-management,7,Focuses on tasks despite numerous distractions or interruptions
+4.4.1.3,Self-reflection and self-management,8,Provides own direction or seeks clarification in uncertain situations
+4.4.1.4,Self-reflection and self-management,1,Keeps record of own time planning
+4.4.1.4,Self-reflection and self-management,2,Prioritises competing demands
+4.4.1.4,Self-reflection and self-management,3,Says no when appropriate
+4.4.1.4,Self-reflection and self-management,4,Engages resources to maximise delivery
+4.4.1.4,Self-reflection and self-management,5,Adapts language
+4.4.1.4,Self-reflection and self-management,6,Develops tactics appropriate to the situation
+4.4.1.5,Self-reflection and self-management,1,Uses mistakes or bad results as an impulse for learning activities
+4.4.1.5,Self-reflection and self-management,2,Uses feedback as a chance for personal development
+4.4.1.5,Self-reflection and self-management,3,Seeks consultation
+4.4.1.5,Self-reflection and self-management,4,Measures own performance
+4.4.1.5,Self-reflection and self-management,5,Focuses on continuous improvement of own work and capacities. People 73
+4.4.2.1,Personal integrity and reliability,1,Knows and reflects own values
+4.4.2.1,Personal integrity and reliability,2,Uses own values and ideals to shape decisions
+4.4.2.1,Personal integrity and reliability,3,Communicates own principles
+4.4.2.2,Personal integrity and reliability,1,Proactively addresses sustainability issues in solutions
+4.4.2.2,Personal integrity and reliability,2,Considers and incorporates long-term outcomes into the solution
+4.4.2.3,Personal integrity and reliability,1,Assumes full responsibility for own decisions and actions
+4.4.2.3,Personal integrity and reliability,2,Demonstrates ownership of both positive and negative results
+4.4.2.3,Personal integrity and reliability,3,Takes decisions and sticks to agreements established with others
+4.4.2.3,Personal integrity and reliability,4,Addresses personal and professional shortcomings that get in the way of professional success
+4.4.2.4,Personal integrity and reliability,1,Demonstrates alignment between words and actions
+4.4.2.4,Personal integrity and reliability,2,Uses similar approaches to solve similar problems
+4.4.2.4,Personal integrity and reliability,3,Adjusts personal behaviour to the context of the situation
+4.4.2.5,Personal integrity and reliability,1,Completes work assignments thoroughly and carefully
+4.4.2.5,Personal integrity and reliability,2,Earns confidence through the delivery of complete and accurate work
+4.4.3.1,Personal communication,1,Structures information logically depending on the audience and the situation
+4.4.3.1,Personal communication,2,Considers using story-telling when appropriate
+4.4.3.1,Personal communication,3,Uses language that is easy to understand
+4.4.3.1,Personal communication,4,Leverages public speaking and presentations
+4.4.3.1,Personal communication,5,Coaches and gives training
+4.4.3.1,Personal communication,6,Leads and facilitates meetings
+4.4.3.1,Personal communication,7,"Uses visualisation, body language and intonation to support and emphasise messages"
+4.4.3.2,Personal communication,1,Creates an open and respectful atmosphere
+4.4.3.2,Personal communication,2,"Listens actively and patiently by confirming what has been heard, re-stating or paraphrasing the speaker’s own words and confirming understanding"
+4.4.3.2,Personal communication,3,Does not interrupt or start talking while others are talking
+4.4.3.2,Personal communication,4,Is open and shows true interest in new ideas
+4.4.3.2,Personal communication,5,"Confirms message/information is understood or, when needed, asks for clarification, examples and/or details"
+4.4.3.2,Personal communication,6,"Makes clear when, where and how ideas, emotions and opinions are welcome"
+4.4.3.2,Personal communication,7,Makes clear how ideas and opinions will be treated
+4.4.3.3,Personal communication,1,Selects appropriate communication channels and style depending on the target audience
+4.4.3.3,Personal communication,2,Communicates via selected channels according to the selected style
+4.4.3.3,Personal communication,3,Monitors and controls communication
+4.4.3.3,Personal communication,4,Changes the communication channels and style depending on the situation. People 79
+4.4.3.4,Personal communication,1,"Uses modern communication technology, (e.g. webinars, tele-conferences, chat, cloud computing)"
+4.4.3.4,Personal communication,2,Defines and maintains clear communication processes and procedures
+4.4.3.4,Personal communication,3,Promotes cohesion and team building
+4.4.3.5,Personal communication,1,Changes communication perspectives
+4.4.3.5,Personal communication,2,Decreases tension by use of humour
+4.4.4.1,Relationships and engagement,1,Actively seeks possibilities and situations to make new contacts
+4.4.4.1,Relationships and engagement,2,Demonstrates interest in meeting new people
+4.4.4.1,Relationships and engagement,3,Uses humour as an icebreaker
+4.4.4.1,Relationships and engagement,4,"Is present, available and open for dialogue"
+4.4.4.1,Relationships and engagement,5,"Stays actively in contact, establishes a routine for bilateral meetings"
+4.4.4.1,Relationships and engagement,6,Keeps others informed
+4.4.4.2,Relationships and engagement,1,Joins and contributes to social networks
+4.4.4.2,Relationships and engagement,2,Creates and facilitates social networks
+4.4.4.2,Relationships and engagement,3,Organises events for networking
+4.4.4.2,Relationships and engagement,4,Facilitates support for networking
+4.4.4.3,Relationships and engagement,1,Listens actively
+4.4.4.3,Relationships and engagement,2,Makes others feel heard
+4.4.4.3,Relationships and engagement,3,Asks questions for clarification
+4.4.4.3,Relationships and engagement,4,Relates to the problems of others and offers help
+4.4.4.3,Relationships and engagement,5,Familiarises with the values and standards of others
+4.4.4.3,Relationships and engagement,6,Responds to communication within a reasonable time. People 83
+4.4.4.4,Relationships and engagement,1,Relies on a given word
+4.4.4.4,Relationships and engagement,2,Assigns tasks to team members based on confidence
+4.4.4.4,Relationships and engagement,3,Expects others to act according to common values and agreements
+4.4.4.4,Relationships and engagement,4,Delegates work without monitoring and controlling every single step
+4.4.4.4,Relationships and engagement,5,"Asks others for their ideas, wishes and concerns"
+4.4.4.4,Relationships and engagement,6,Notices and respects differences between people
+4.4.4.4,Relationships and engagement,7,Embraces the importance of professional and personal variety
+4.4.4.5,Relationships and engagement,1,Acts positively
+4.4.4.5,Relationships and engagement,2,"Clearly communicates vision, goals and outcomes"
+4.4.4.5,Relationships and engagement,3,"Invites debate and critique of the vision, goals and outcomes"
+4.4.4.5,Relationships and engagement,4,Involves people in planning and decision-making
+4.4.4.5,Relationships and engagement,5,Asks for commitment on specific tasks
+4.4.4.5,Relationships and engagement,6,Takes individual contributions seriously
+4.4.4.5,Relationships and engagement,7,Emphasises the commitment of all to realise success. People 85
+4.4.5.1,Leadership,1,Proposes or exerts actions
+4.4.5.1,Leadership,2,Offers unrequested help or advice
+4.4.5.1,Leadership,3,Thinks and acts with a future orientation (i.e. one step ahead)
+4.4.5.1,Leadership,4,Balances initiative and risk
+4.4.5.2,Leadership,1,"Demonstrates ownership and commitment in behaviour, speech and attitudes"
+4.4.5.2,Leadership,2,Talks about the project in positive terms
+4.4.5.2,Leadership,3,Rallies and generates enthusiasm for the project
+4.4.5.2,Leadership,4,Sets up measures and performance indicators
+4.4.5.2,Leadership,5,Looks for ways to improve the project processes
+4.4.5.2,Leadership,6,Drives learning
+4.4.5.3,Leadership,1,Provides direction for people and teams
+4.4.5.3,Leadership,2,Coaches and mentors team members to improve their capabilities
+4.4.5.3,Leadership,3,Establishes a vision and values and leads according to these principles
+4.4.5.3,Leadership,4,Aligns individual objectives with common objectives and describes the way to achieve them
+4.4.5.4,Leadership,1,Uses various means of exerting influence and power
+4.4.5.4,Leadership,2,Demonstrates timely use of influence and/or power
+4.4.5.4,Leadership,3,Perceived by stakeholders as the leader of the project or team
+4.4.5.5,Leadership,1,Deals with uncertainty
+4.4.5.5,Leadership,2,Invites opinion and discussion prior to decision-making in a timely and appropriate fashion
+4.4.5.5,Leadership,3,Explains the rationale for decisions
+4.4.5.5,Leadership,4,Influences decisions of stakeholders by offering analyses and interpretations
+4.4.5.5,Leadership,5,Communicates the decision and intent clearly
+4.4.5.5,Leadership,6,Reviews decisions and changes decisions according to new facts
+4.4.5.5,Leadership,7,Reflects on past situations to improve decision processes
+4.4.6.1,Teamwork,1,"Considers individual competences, strengths, weaknesses and motivation when deciding on team inclusion, roles and tasks"
+4.4.6.1,Teamwork,2,Clarifies objectives and creates a common vision
+4.4.6.1,Teamwork,3,"Sets the team objectives, agenda and completion criteria"
+4.4.6.1,Teamwork,4,Negotiates common team norms and rules
+4.4.6.1,Teamwork,5,Motivates individuals and builds team awareness
+4.4.6.2,Teamwork,1,Creates opportunities for team member discussions
+4.4.6.2,Teamwork,2,"Asks for opinions, suggestions and concerns from team members in order to improve performance"
+4.4.6.2,Teamwork,3,Shares successes with the team(s)
+4.4.6.2,Teamwork,4,Promotes cooperation with people both within and outside the team
+4.4.6.2,Teamwork,5,Takes appropriate action when team cooperation is threatened
+4.4.6.2,Teamwork,6,Uses tools for collaboration
+4.4.6.3,Teamwork,1,Promotes continuous learning and knowledge sharing
+4.4.6.3,Teamwork,2,Uses techniques to engage in development e.g. on-the-job training
+4.4.6.3,Teamwork,3,Provides opportunities for seminars and workshops (on- and off-the-job)
+4.4.6.3,Teamwork,4,Plans and promotes ‘lessons learned’ sessions
+4.4.6.3,Teamwork,5,Provides time and opportunity for self-development of team members
+4.4.6.4,Teamwork,1,Delegates tasks when and where appropriate
+4.4.6.4,Teamwork,2,Empowers people and teams by delegating responsibility
+4.4.6.4,Teamwork,3,Clarifies performance criteria and expectations
+4.4.6.4,Teamwork,4,Provides reporting structures at team level
+4.4.6.4,Teamwork,5,Provides individual and team feedback sessions
+4.4.6.5,Teamwork,1,"As far as possible, avoids negative effects of errors on project success"
+4.4.6.5,Teamwork,2,Realises that mistakes happen and accept that people make errors
+4.4.6.5,Teamwork,3,Shows tolerance for mistakes
+4.4.6.5,Teamwork,4,Analyses and discusses mistakes to determine improvements in processes
+4.4.6.5,Teamwork,5,Helps team members to learn from their mistakes. People 95
+4.4.7.1,Conflict and crisis,1,Analyses potentially stressful situations
+4.4.7.1,Conflict and crisis,2,Keeps conflicting characters or interests in separate tasks/teams
+4.4.7.1,Conflict and crisis,3,Delegates conflict-sensitive items to specific people; People 97
+4.4.7.1,Conflict and crisis,4,Implements preventive measures
+4.4.7.1,Conflict and crisis,5,Takes stress-reducing measures
+4.4.7.1,Conflict and crisis,6,Reflects on stressful situations in a team
+4.4.7.2,Conflict and crisis,1,Assesses conflict stage
+4.4.7.2,Conflict and crisis,2,Analyses causes of a conflict or crisis
+4.4.7.2,Conflict and crisis,3,Analyses potential impact of a conflict or crisis
+4.4.7.2,Conflict and crisis,4,Has different conflict or crisis approaches available to choose from
+4.4.7.3,Conflict and crisis,1,Addresses issues openly
+4.4.7.3,Conflict and crisis,2,Creates an atmosphere of constructive debate
+4.4.7.3,Conflict and crisis,3,Selects and uses the right method to solve the conflict or crisis
+4.4.7.3,Conflict and crisis,4,Takes disciplinary or legal measures when appropriate
+4.4.7.4,Conflict and crisis,1,Restores the team environment
+4.4.7.4,Conflict and crisis,2,Motivates the team to acknowledge and learn from their own part in the conflict
+4.4.7.4,Conflict and crisis,3,Uses conflicts in a positive way to progress
+4.4.7.4,Conflict and crisis,4,Strengthens the team cohesion and solidity with regard to potential future conflicts and crises
+4.4.8.1,Resourcefulness,1,Encourages people to share their knowledge and contribute their opinions
+4.4.8.1,Resourcefulness,2,Stimulates and supports creativity when appropriate
+4.4.8.1,Resourcefulness,3,Uses and stimulates original and imaginative ways to overcome obstacles
+4.4.8.1,Resourcefulness,4,Seeks input from others and shows willingness to consider and/or adopt their ideas
+4.4.8.1,Resourcefulness,5,Considers the perspectives of others
+4.4.8.2,Resourcefulness,1,Uses or promotes conceptual thinking when appropriate
+4.4.8.2,Resourcefulness,2,Knows that problems often have multiple causes and that solutions often have multiple effects
+4.4.8.2,Resourcefulness,3,Applies systemic thinking. People 103
+4.4.8.3,Resourcefulness,1,Applies various analytic techniques
+4.4.8.3,Resourcefulness,2,Analyses problems to detect causes and possible solutions
+4.4.8.3,Resourcefulness,3,Analyses complex sets of data and extracts relevant information
+4.4.8.3,Resourcefulness,4,"Clearly reports and presents data conclusions, summaries and trends"
+4.4.8.4,Resourcefulness,1,Uses creative techniques when appropriate
+4.4.8.4,Resourcefulness,2,Applies diverging techniques
+4.4.8.4,Resourcefulness,3,Applies converging techniques
+4.4.8.4,Resourcefulness,4,Engages multiple views and skills
+4.4.8.4,Resourcefulness,5,Identifies interdependencies
+4.4.8.5,Resourcefulness,1,Demonstrates holistic thinking and an can explain the bigger picture
+4.4.8.5,Resourcefulness,2,Uses multiple perspectives to analyse and deal with the current situation
+4.4.8.5,Resourcefulness,3,Makes connections between the project and the larger context and takes appropriate action. People 105
+4.4.9.1,Negotiation,1,"Knows and reflects own interests, needs and constraints"
+4.4.9.1,Negotiation,2,"Gathers and documents relevant hard and soft information about interests, needs and expectations of all parties involved"
+4.4.9.1,Negotiation,3,Analyses and documents available information to identify own priorities and likely priorities for other parties
+4.4.9.2,Negotiation,1,"Identifies trade-offs, options and alternative solutions based on the analysis of interests, needs and priorities of all parties"
+4.4.9.2,Negotiation,2,Proposes the right option at the right time in the right way
+4.4.9.3,Negotiation,1,Identifies possible negotiation strategies in order to achieve the desired outcome
+4.4.9.3,Negotiation,2,Identifies secondary strategies and alternative options to address ‘what if’ scenarios
+4.4.9.3,Negotiation,3,Selects a negotiation strategy and can explain why it has been chosen
+4.4.9.3,Negotiation,4,Analyses and selects negotiation techniques and tactics to support the desired negotiation strategy
+4.4.9.3,Negotiation,5,Identifies key parties to participate in the negotiation and clearly articulates their mandate
+4.4.9.4,Negotiation,1,Negotiates using techniques and tactics appropriate to the circumstances to achieve the desired outcome
+4.4.9.4,Negotiation,2,Negotiates to achieve a sustainable agreement
+4.4.9.4,Negotiation,3,Demonstrates patience and drive to realise a sustainable agreement
+4.4.9.4,Negotiation,4,Implements BATNA if a sustainable outcome is not possible
+4.4.9.4,Negotiation,5,Documents the outcomes of the negotiation
+4.4.9.5,Negotiation,1,"Seeks ways to deliver the agreed outcomes sooner, better and/or cheaper"
+4.4.9.5,Negotiation,2,Weighs alternatives to the current situation and agreements
+4.4.9.5,Negotiation,3,Considers the impact of alternatives on current relationships
+4.4.10.1,Results orientation,1,Considers the objectives and agreed outcomes of the project as leading all actions
+4.4.10.1,Results orientation,2,Formulates own goals based on the objectives and outcomes
+4.4.10.1,Results orientation,3,Derives the strategy of the project from the goals
+4.4.10.1,Results orientation,4,Judges all decisions and actions by their impact on the success of the project
+4.4.10.2,Results orientation,1,Assesses and prioritises various needs
+4.4.10.2,Results orientation,2,Explains why certain actions get more priority
+4.4.10.2,Results orientation,3,Uses the results orientation as a means to say ‘no’ (and explain why)
+4.4.10.3,Results orientation,1,Shields the team from outside interference
+4.4.10.3,Results orientation,2,"Creates healthy, safe and stable working conditions; People 113"
+4.4.10.3,Results orientation,3,Provides a clear set of work on which team members can operate
+4.4.10.3,Results orientation,4,Provides the necessary resources and infrastructure
+4.4.10.4,Results orientation,1,"Defends and promotes the objectives, approach, processes and agreed outcomes"
+4.4.10.4,Results orientation,2,Seeks openings and venues to promote the project
+4.4.10.4,Results orientation,3,Invites others to join in with marketing the project
+4.4.10.5,Results orientation,1,"Differentiates the concepts of efficiency, effectiveness and productivity"
+4.4.10.5,Results orientation,2,"Plans and sustains planned levels of efficiency, effectiveness and productivity"
+4.4.10.5,Results orientation,3,Demonstrates the ability to get things done
+4.4.10.5,Results orientation,4,Focuses on and shows continuous improvement
+4.4.10.5,Results orientation,5,"Thinks in solutions, not in problems"
+4.4.10.5,Results orientation,6,Overcomes resistance
+4.4.10.5,Results orientation,7,Recognises limitations to getting results and addresses these shortcomings. Practice 115
+4.5.1.1,Project design,1,"Identifies, classifies, evaluates and prioritises influences from each of the five perspective aspects relevant for success"
+4.5.1.1,Project design,2,Recognises and assesses both formal and informal influencing elements
+4.5.1.1,Project design,3,Evaluates and prioritises success criteria from each of the five contextual aspects
+4.5.1.1,Project design,4,Acknowledges and assesses both formal and informal success criteria
+4.5.1.1,Project design,5,Acknowledges and uses relevant success factors
+4.5.1.1,Project design,6,Performs periodic re-assessments of the relevance of success criteria
+4.5.1.1,Project design,7,Performs periodic re-assessments of the relevance of success factors
+4.5.1.2,Project design,1,Acknowledges and gathers lessons learned from previous projects
+4.5.1.2,Project design,2,Applies relevant lessons learned
+4.5.1.2,Project design,3,Acknowledges and uses research and benchmarking methods for improving the performance of the project
+4.5.1.2,Project design,4,Identifies and shares lessons learned from the project with the organisation
+4.5.1.3,Project design,1,Identifies the level of complexity of the project by applying appropriate methods
+4.5.1.3,Project design,2,Acknowledges complexity-enhancing aspects
+4.5.1.3,Project design,3,"Identifies and defines the impact on complexity of specific processes, constraints or outcomes"
+4.5.1.3,Project design,4,Identifies and assesses the impact on complexity of specific external and internal parameters
+4.5.1.3,Project design,5,Assesses and applies complexity-diminishing measures
+4.5.1.4,Project design,1,Assesses and appraises various possible approaches
+4.5.1.4,Project design,2,Selects an approach for the project that has the highest chance of leading to success
+4.5.1.4,Project design,3,Explains and defends the chosen approach and its relation to the success of Practice 121 the project
+4.5.1.4,Project design,4,Explains the main effects of the chosen approach on the organisation of the project
+4.5.1.4,Project design,5,Explains the main effects of the chosen approach on the parent organisation
+4.5.1.4,Project design,6,Periodically re-evaluates the chosen approach based on contextual and internal developments
+4.5.1.4,Project design,7,Makes necessary changes to the approach and explains why these were made
+4.5.1.5,Project design,1,Establishes the project execution architecture with outcomes
+4.5.1.5,Project design,2,Defines the business rules and control philosophy
+4.5.1.5,Project design,3,Monitors the project against the architecture components
+4.5.1.5,Project design,4,Updates the architecture based on changes
+4.5.2.1,Requirements and objectives,1,Establishes the relationship between the organisational and project goals
+4.5.2.1,Requirements and objectives,2,Establishes the relationship between the project goals and objectives
+4.5.2.1,Requirements and objectives,3,Defines a goal hierarchy for the project
+4.5.2.1,Requirements and objectives,4,Explains the relevance and content of the goal hierarchy
+4.5.2.2,Requirements and objectives,1,"Knows the difference between need, expectations and requirements"
+4.5.2.2,Requirements and objectives,2,Identifies and documents stakeholder needs and requirements
+4.5.2.2,Requirements and objectives,3,Establishes the structures for traceability of deliverables back to requirements
+4.5.2.2,Requirements and objectives,4,Analyses stakeholder needs and requirements
+4.5.2.3,Requirements and objectives,1,Prioritises stakeholder needs and requirements
+4.5.2.3,Requirements and objectives,2,Documents and agrees on stakeholder needs and requirements
+4.5.2.3,Requirements and objectives,3,Supports and oversees the translation of requirements into acceptance criteria
+4.5.3.1,Scope,1,Defines the project deliverables
+4.5.3.1,Scope,2,Knows and explains the difference between goals and deliverables
+4.5.3.1,Scope,3,Organises the goals and the associated deliverable(s)
+4.5.3.1,Scope,4,Knows and uses the goal hierarchy and its purpose
+4.5.3.2,Scope,1,Knows and explains the purpose and benefits of a scope defining structure
+4.5.3.2,Scope,2,Knows and applies the principles for creating the WBS
+4.5.3.2,Scope,3,Explains the differences between different principles of the WBS
+4.5.3.2,Scope,4,Explains the characteristics of project boundaries and can give examples
+4.5.3.2,Scope,5,Argues for why and when a full WBS may be inappropriate with an iterative (agile) approach to the project
+4.5.3.3,Scope,1,Defines work and planning packages
+4.5.3.3,Scope,2,Explains the purpose and benefits of (well) defined work packages
+4.5.3.3,Scope,3,Names and explains ways to define a work package
+4.5.3.4,Scope,1,Manages the scope configuration
+4.5.3.4,Scope,2,Defines roles and responsibilities related to scope configuration management
+4.5.3.4,Scope,3,Relates the dependency of scope configuration and the overall approach to the project (sequential or iterative)
+4.5.3.4,Scope,4,Compares progress and earned value against a baseline plan
+4.5.4.1,Time,1,Defines activities related to the realisation of project deliverables
+4.5.4.1,Time,2,Extracts activities from a WBS work package
+4.5.4.2,Time,1,Determines work effort and duration of activities
+4.5.4.2,Time,2,Identifies types of resources that may be required to perform an activity
+4.5.4.2,Time,3,Identifies and decides between various resource options
+4.5.4.3,Time,1,Knows different planning techniques
+4.5.4.3,Time,2,Chooses the appropriate planning techniques
+4.5.4.3,Time,3,Determines appropriate stages
+4.5.4.3,Time,4,Knows the effects of uncertainty on planning; and what to do to minimise the effects
+4.5.4.4,Time,1,Sequences a series of project activities
+4.5.4.4,Time,2,Determines dependencies and dependent relationships; Practice 133
+4.5.4.4,Time,3,Calculates the critical path
+4.5.4.4,Time,4,Levels resource assignment for a given plan
+4.5.4.5,Time,1,Knows when and how to use various schedule control systems
+4.5.4.5,Time,2,Applies planning adjustments in response to various types of disturbances
+4.5.4.5,Time,3,Compares progress and earned value against a baseline plan
+4.5.5.1,Organisation and information,1,Assesses and documents the information and documentation needs of the project
+4.5.5.1,Organisation and information,2,"Establishes various modes of communication, including formal and informal"
+4.5.5.1,Organisation and information,3,Determines the project characteristics influencing the organisational needs
+4.5.5.2,Organisation and information,1,Explains some fundamental ways to structure a temporary organisation
+4.5.5.2,Organisation and information,2,Designs and develops a governance framework and structure
+4.5.5.2,Organisation and information,3,Defines the responsibilities of the various key personnel on the project
+4.5.5.2,Organisation and information,4,Identifies links to and interfaces with corporate governance arrangements
+4.5.5.2,Organisation and information,5,Identifies and records the differences between the organisation’s functional authorities and the project’s authorities
+4.5.5.3,Organisation and information,1,Explains the purpose and contents of information processes
+4.5.5.3,Organisation and information,2,Communicates internal information via various methods
+4.5.5.3,Organisation and information,3,Ensures redundant information is limited and/or prevented
+4.5.5.3,Organisation and information,4,Explains the benefits of different types of meetings
+4.5.5.3,Organisation and information,5,Explains what is covered by an infrastructure for communication
+4.5.5.3,Organisation and information,6,Establishes planning and control mechanisms (e.g. documentation of key decisions)
+4.5.5.4,Organisation and information,1,Implements new organisational structures
+4.5.5.4,Organisation and information,2,"Monitors the organisation, including the roles involved"
+4.5.5.4,Organisation and information,3,"Adjusts the organisation, including the roles involved"
+4.5.6.1,Quality,1,Develops and monitors a quality plan
+4.5.6.1,Quality,2,Names different types of quality objectives
+4.5.6.1,Quality,3,Implements measures to achieve defined quality objectives
+4.5.6.1,Quality,4,Defines and implements quality measures
+4.5.6.1,Quality,5,Explains and names different types of tools/techniques for achieving quality objectives
+4.5.6.1,Quality,6,Explains and names procedures for achieving quality objectives
+4.5.6.1,Quality,7,Explains how to align the quality management activities to the overall project activities and also refers to own experiences (projects)
+4.5.6.2,Quality,1,Explains different ways of reviewing the project performance and the project processes
+4.5.6.2,Quality,2,Names key elements necessary for an effective and efficient project review
+4.5.6.2,Quality,3,Explains how to communicate project quality objectives
+4.5.6.2,Quality,4,Names different reasons for performing a project audit
+4.5.6.2,Quality,5,Performs a quality audit
+4.5.6.2,Quality,6,Analyses a quality audit and is able to define measures or change requests
+4.5.6.2,Quality,7,Presents at least one example of a corrective action. Practice 141
+4.5.6.3,Quality,1,Describes the outcome of a planned and performed verification process referring to own experiences gained on projects
+4.5.6.3,Quality,2,Explains the contents and outputs of a root cause analysis carried out on the basis of detected defects
+4.5.6.3,Quality,3,Explains the process and goals of peer reviews
+4.5.6.3,Quality,4,Performs verification and recommends corrective actions
+4.5.6.3,Quality,5,"Outlines the contents and steps in communicating preferred and recommended corrective actions and change requests, referring to own experiences gained on projects"
+4.5.6.4,Quality,1,Explains the difference between verifying and validating
+4.5.6.4,Quality,2,Documents different types of quality objectives suitable for quality validation
+4.5.6.4,Quality,3,Conducts a validation exercise of project outcomes
+4.5.6.4,Quality,4,Obtains a term of acceptance from a client
+4.5.6.5,Quality,1,"Assesses, adapts and integrates quality standards being used by organisations"
+4.5.6.5,Quality,2,Implements quality processes in the project
+4.5.6.5,Quality,3,Conducts regular assessments of the implemented processes and improves them when needed
+4.5.6.5,Quality,4,"Implements quality awareness in the project, so that everyone involved knows what quality is required"
+4.5.6.5,Quality,5,Conducts regular assessments of the quality awareness and takes corrective action when needed. Practice 143
+4.5.7.1,Finance,1,Sets up cost structures and identifies cost categories
+4.5.7.1,Finance,2,Selects appropriate cost calculation technique (e.g. direct calculation)
+4.5.7.1,Finance,3,Sets the cost targets by consulting any relevant standards or internal guidelines
+4.5.7.2,Finance,1,Establishes budget plans
+4.5.7.2,Finance,2,Develops budget scenarios based on cost-relevant items
+4.5.7.2,Finance,3,Plans budget for contingencies
+4.5.7.2,Finance,4,Assesses the budget against the time and funding and makes possible adjustments
+4.5.7.2,Finance,5,Sets the final budget
+4.5.7.3,Finance,1,Establishes funding strategies for projects
+4.5.7.3,Finance,2,Identifies sources of funds
+4.5.7.3,Finance,3,Handles the organisational approval processes
+4.5.7.3,Finance,4,"Cooperates, keeps close contact to and can negotiate with potential sponsors in order to get funds. Practice 147"
+4.5.7.4,Finance,1,Defines processes and governance for financial management
+4.5.7.4,Finance,2,Defines financial performance indicators on the project
+4.5.7.4,Finance,3,Relates the project cost structure to the organisational cost structure (e.g. aggregating work packages)
+4.5.7.4,Finance,4,Develops appropriate reports in accordance with the project’s organisation and governance
+4.5.7.5,Finance,1,Establishes and evaluates cost reports
+4.5.7.5,Finance,2,Analyses and interprets financial situations
+4.5.7.5,Finance,3,Uses financial performance indicators to monitor and control the project
+4.5.7.5,Finance,4,Produces project performance forecasts based upon the financial indicators
+4.5.7.5,Finance,5,Signals cost breaches and suggests mitigation plans in accordance with the project’s organisation and governance for any cost breaches that cannot be handled by the project budget contingencies. Practice 149
+4.5.8.1,Resources,1,Identifies project resource requirements based on resource forecasts
+4.5.8.1,Resources,2,Captures baseline of existing and proposed resources
+4.5.8.1,Resources,3,Reviews and analyses the resource capacity of the organisation and identifies trends
+4.5.8.1,Resources,4,Coordinates with constituent organisation or portfolio management processes. Practice 151
+4.5.8.2,Resources,1,Describes the resources needed for the project
+4.5.8.2,Resources,2,Draws up a resource plan (based on detailed project planning)
+4.5.8.2,Resources,3,Defines the amount and quality of the required resources
+4.5.8.3,Resources,1,Takes ‘make or buy’ decisions
+4.5.8.3,Resources,2,Creates and evaluates sourcing alternatives
+4.5.8.3,Resources,3,Defines a sourcing strategy
+4.5.8.3,Resources,4,Engages with resource providers
+4.5.8.3,Resources,5,Negotiates resource availability
+4.5.8.4,Resources,1,Links resources with project structure
+4.5.8.4,Resources,2,Creates schedules (or task lists) for resources
+4.5.8.4,Resources,3,Negotiates resource conflicts
+4.5.8.5,Resources,1,Defines a systematic approach to evaluating the use of resources
+4.5.8.5,Resources,2,Provides opportunities to enhance competences/skills
+4.5.8.5,Resources,3,Addresses a skill shortage with the relevant team member and his or her line management
+4.5.9.1,Procurement,1,Defines reasons (based on needs) for procurement or partnership
+4.5.9.1,Procurement,2,"Prepares, produces or collects the necessary information as input to the procurement subject matter experts"
+4.5.9.1,Procurement,3,Defines tender documents and selection criteria based on needs
+4.5.9.1,Procurement,4,Supports procurement preparation processes and procedures
+4.5.9.2,Procurement,1,"Launches request for quotation (tender), if necessary in cooperation with the procurement function"
+4.5.9.2,Procurement,2,Outlines and defines the various steps in a supplier selection process
+4.5.9.2,Procurement,3,Defines and explains the contents of tender documents
+4.5.9.2,Procurement,4,Defines and uses the selection criteria
+4.5.9.2,Procurement,5,"Aligns with formal procurement regulations (international, national and branch-specific)"
+4.5.9.2,Procurement,6,"Assesses the specifics of the procurement and suggests partnership models (e.g. joint ventures, long-term partnerships, etc)"
+4.5.9.3,Procurement,1,Defines a negotiation mandate and sets objectives to be negotiated
+4.5.9.3,Procurement,2,Distinguishes different contractual forms and their implications for the project
+4.5.9.3,Procurement,3,Knows contractual terms and conditions and reflects their implications for the project
+4.5.9.3,Procurement,4,"Negotiates a contract by establishing price, availability and customisation possibilities and procurement schedules"
+4.5.9.4,Procurement,1,Implements measures to manage contract performance
+4.5.9.4,Procurement,2,Identifies deviations from the contract
+4.5.9.4,Procurement,3,"Handles contractual breaches by taking corrective measures (e.g. talks, renegotiations, etc)"
+4.5.9.4,Procurement,4,"Involves – in the case of difficulties in renegotiations – legal, logistic and/or procurement functions of the organisation"
+4.5.9.4,Procurement,5,Handles contractual disputes and claims issued by the supplier
+4.5.9.4,Procurement,6,Concludes and ends the agreed business relationship when either the project is in risk or all of the obligations in the contract have been met. Practice 159
+4.5.10.1,Plan and control,1,Organises the project start-up process
+4.5.10.1,Plan and control,2,Gathers all necessary information from the stakeholders and experts
+4.5.10.1,Plan and control,3,"Analyses, values and prioritises information"
+4.5.10.1,Plan and control,4,Organises and facilitates a project start-up workshop
+4.5.10.1,Plan and control,5,Prepares the project charter or project management plan and gets agreement on it
+4.5.10.1,Plan and control,6,Prepares and communicates the plan for the project management effort
+4.5.10.2,Plan and control,1,Organises the management of the project execution process
+4.5.10.2,Plan and control,2,Defines the goals and deliverables of the following phase(s)
+4.5.10.2,Plan and control,3,Manages the phase transition
+4.5.10.2,Plan and control,4,Organises and facilitates a kick-off meeting
+4.5.10.3,Plan and control,1,Defines a performance control cycle
+4.5.10.3,Plan and control,2,Describes means and methods applicable for performance control
+4.5.10.3,Plan and control,3,Measures progress and performance
+4.5.10.4,Plan and control,1,"Prepares a reporting structure (what, when, how often, how, etc)"
+4.5.10.4,Plan and control,2,Prepares a progress report
+4.5.10.4,Plan and control,3,Prepares a forecast report
+4.5.10.4,Plan and control,4,Prepares phase transition reports
+4.5.10.5,Plan and control,1,Organises a process for managing changes
+4.5.10.5,Plan and control,2,Makes an exception or change report
+4.5.10.5,Plan and control,3,Changes the scope configuration
+4.5.10.6,Plan and control,1,Organises the project close-out process
+4.5.10.6,Plan and control,2,Organises and facilitates a close-out workshop
+4.5.10.6,Plan and control,3,Facilitates a complete project evaluation
+4.5.10.6,Plan and control,4,Prepares a project ‘lessons learned’ report
+4.5.11.1,Risk and opportunity,1,Identifies a range of potential risk management models
+4.5.11.1,Risk and opportunity,2,Develops a risk management framework consistent with organisational policy and international standards
+4.5.11.1,Risk and opportunity,3,Ensures the consistent application of the risk management framework
+4.5.11.2,Risk and opportunity,1,Names and explains various sources of risk and opportunity and the differences between them
+4.5.11.2,Risk and opportunity,2,Identifies risks and opportunities
+4.5.11.2,Risk and opportunity,3,Documents risks and opportunities in a register. Practice 169
+4.5.11.3,Risk and opportunity,1,Engages in qualitative risk and opportunity assessment
+4.5.11.3,Risk and opportunity,2,Engages in quantitative risk and opportunity assessment
+4.5.11.3,Risk and opportunity,3,"Makes and interprets a risk or opportunity decision tree, with outcomes"
+4.5.11.4,Risk and opportunity,1,Explains various means and methods for implementing a chosen overall strategy for the risk and opportunity management process
+4.5.11.4,Risk and opportunity,2,"Evaluates responses to risks and opportunities, including their strengths and weaknesses"
+4.5.11.4,Risk and opportunity,3,Evaluates alternative means and methods for implementing a risk and opportunity response plan
+4.5.11.4,Risk and opportunity,4,Influences the plan for resources and competences required to implement responses
+4.5.11.4,Risk and opportunity,5,Implements and communicates a risk and opportunity response plan
+4.5.11.5,Risk and opportunity,1,Monitors and controls the implementation and execution of a risk and opportunity response plan
+4.5.11.5,Risk and opportunity,2,Communicates the risks and opportunities and the appropriateness of the selected responses. Practice 171
+4.5.12.1,Stakeholders,1,Identifies the major stakeholder categories
+4.5.12.1,Stakeholders,2,Identifies and names various stakeholders’ interests
+4.5.12.1,Stakeholders,3,Identifies and evaluates stakeholders’ influence
+4.5.12.1,Stakeholders,4,Identifies relevant changes in or around the project
+4.5.12.1,Stakeholders,5,Analyses the consequences of changes for the project
+4.5.12.1,Stakeholders,6,Takes actions in order to manage stakeholders
+4.5.12.2,Stakeholders,1,Describes the importance of a stakeholder strategy
+4.5.12.2,Stakeholders,2,Prepares a communication plan
+4.5.12.2,Stakeholders,3,Adjusts the communication plan and/or strategy based on changed circumstances
+4.5.12.2,Stakeholders,4,Explains reasons for changing a communication plan
+4.5.12.2,Stakeholders,5,Identifies and evaluates opportunities for alliances and partnerships
+4.5.12.2,Stakeholders,6,Identifies and evaluates potential collaborators
+4.5.12.3,Stakeholders,1,Engages management and/or sponsor(s)
+4.5.12.3,Stakeholders,2,"Manages expectations of the project’s executive, higher management and/or sponsor(s)"
+4.5.12.3,Stakeholders,3,Employs the executive and/or sponsor(s) to act as ambassadors
+4.5.12.4,Stakeholders,1,Engages users and commits them to the project
+4.5.12.4,Stakeholders,2,Commits suppliers to the project
+4.5.12.4,Stakeholders,3,Cooperates with partners to deliver the optimal result for the organisation
+4.5.12.5,Stakeholders,1,Negotiates and documents the alliance agreement
+4.5.12.5,Stakeholders,2,Develops and implements a plan for cooperation
+4.5.12.5,Stakeholders,3,Develops and evaluates measures for success
+4.5.12.5,Stakeholders,4,Maintains key partnership agreements
+4.5.12.5,Stakeholders,5,Closes all formal contractual agreements. Practice 177
+4.5.13.1,Change and transformation,1,"Analyses the adaptability to the required change, based on previous successful and unsuccessful changes in the organisation"
+4.5.13.1,Change and transformation,2,"Assesses possible areas (topics, people) for resistance to the change"
+4.5.13.1,Change and transformation,3,Recognises and influences circumstances which can improve the adaptability
+4.5.13.1,Change and transformation,4,Takes action when the required or expected change or transformation is not within the capabilities of the organisation(s)
+4.5.13.2,Change and transformation,1,Identifies groups and individuals affected by change
+4.5.13.2,Change and transformation,2,Maps group interests
+4.5.13.2,Change and transformation,3,Identifies change requirements and opportunities regularly
+4.5.13.2,Change and transformation,4,Adapts to changing interests and situations
+4.5.13.3,Change and transformation,1,"Identifies societal, organisational and personal change or transformation strategies, recognising, for example, innovators, early adopters, the majority and laggards"
+4.5.13.3,Change and transformation,2,Collaborates with others to validate strategies
+4.5.13.3,Change and transformation,3,Documents strategies into a comprehensive change plan
+4.5.13.3,Change and transformation,4,Develops a step-by-step approach if this is required
+4.5.13.3,Change and transformation,5,"Regularly adapts the change or transformation plan to incorporate lessons learned and changes in the project’s environment, or in society"
+4.5.13.3,Change and transformation,6,Regularly adapts the strategy because the change has succeeded and benefits have been achieved. Practice 181
+4.5.13.4,Change and transformation,1,Designs a coherent intervention plan
+4.5.13.4,Change and transformation,2,Implements selected interventions
+4.5.13.4,Change and transformation,3,Leads or organises workshops and training
+4.5.13.4,Change and transformation,4,Addresses resistance to change
+4.5.13.4,Change and transformation,5,Organises and implements mass media interventions
+4.5.13.4,Change and transformation,6,Uses reinforcement techniques to ensure new behaviour is sustainable
