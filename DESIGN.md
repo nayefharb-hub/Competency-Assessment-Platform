@@ -26,6 +26,12 @@ decision; do not deviate without explicit approval.
 - **Data / tables:** Geist with `font-variant-numeric: tabular-nums` — aligned scores.
 - **Not Calibri:** KIB's Office font stays for exported Office documents only, not the web UI.
 - **Loading:** self-host woff2 (Fontshare General Sans, Geist) — no runtime CDN.
+- **Implementation status:** Geist ships self-hosted via `next/font` (the `geist`
+  package) and drives body, UI and data. **General Sans is not in the repo yet** —
+  Fontshare is unreachable from the build environment, so headings fall back to
+  Geist. To finish: drop `GeneralSans-Semibold.woff2` into `app/fonts/`, load it
+  with `next/font/local` exposing `--font-general-sans`; `--font-display` in
+  `globals.css` already picks it up, no other change needed.
 - **Scale:** display 28/680 · h2 20/650 · h3 16–17/650 · body 15/400 · small 13–14 ·
   label 12 uppercase, letter-spacing .06em.
 
