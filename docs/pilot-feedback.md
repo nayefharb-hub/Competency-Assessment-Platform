@@ -288,6 +288,74 @@ Suggested shape, for discussion rather than as a decision:
 
 Needs a decision on what the real need is before either is built.
 
+#### Impact of allowing an admin to delete a live assessment
+
+Walked through on request. "Live" here means `self_submitted` or `approved`, not
+a draft.
+
+**The cascade is total, and it is already reachable today.** Verified against the
+live database with a throwaway account: an approved assessment with 132 scores
+and 50 `target_snapshot` rows was destroyed in full by deleting *the user*, not
+the assessment. `assessment.assessee_id` is `on delete cascade` from `app_user`,
+and `score` / `target_snapshot` cascade from `assessment`.
+
+That means **`npm run invite remove <email>` already hard-deletes a live
+assessment** — silently, from a command whose name suggests it only manages
+sign-in. This is a pre-existing landmine independent of whether a delete button
+is ever built, and it should be fixed regardless.
+
+What is lost, in order of how much it would hurt:
+
+1. **The pilot's headline number changes, silently.** `completionStats` derives
+   `finished` from `completed_at` and the median from `completed_at -
+   started_at`. Delete a finished assessment and the count drops while `invited`
+   does **not** (it counts `assessee`-role users, who still exist), so the person
+   reads as "never finished". The median recomputes over one fewer duration —
+   deleting a fast finisher raises it, a slow one lowers it. This is the number
+   the entire prototype exists to produce, and nothing on screen would say it
+   had been altered.
+2. **There is no audit trail at all.** Afterwards nothing records that an
+   assessment existed. Worse, `unique (assessee_id, cycle)` means the next time
+   that person opens `/assess` a fresh empty draft is created, indistinguishable
+   from someone who merely started late. An approved record silently becomes an
+   empty draft.
+3. **The frozen targets go with it.** `target_snapshot` is the record of what was
+   measured against what. If a training or staffing decision was taken off a
+   results page, deleting removes the ability to reconstruct the basis for it.
+4. **The self-vs-assessor delta is destroyed.** The design doc treats that gap as
+   signal in its own right — evidence about how PM self-perception compares with
+   assessor judgement. It only exists inside the assessment.
+5. **Year-over-year trends (T10) get a hole** that reads as non-participation
+   rather than as a deletion.
+6. **No undo.** There is no soft delete and no in-app recovery. Restoring would
+   mean a Supabase point-in-time restore, which returns the *whole database* to a
+   moment — everyone's data — not one row. Whether the project's plan even has
+   PITR has not been checked.
+
+**Governance, worth naming plainly.** `admin` today is the Head of PMO, who is
+also the sole assessor and the person whose completion figures are being
+reported upward. The same account would be able to delete records that shape
+that figure. This is not a suggestion that anyone would; it is the
+separation-of-duties observation an auditor makes, on an HR-adjacent record, in
+a bank.
+
+**The counter-argument is real.** Legitimate deletions exist: a leaver, a
+duplicate, a data-protection request. "Never delete" is not a defensible answer
+either.
+
+Recommended shape if deletion is wanted:
+
+- **Fix the landmine first.** `invite remove` should refuse when the person has
+  assessment data, and require an explicit second flag to proceed. Right now the
+  destructive case is the default one.
+- **Keep the deletion, but make it leave a mark.** Either a soft delete
+  (`deleted_at`, excluded from lists and rollups) or a hard delete that first
+  writes an audit row: who deleted it, when, why, and the facts the metric needs
+  (`state`, `started_at`, `completed_at`). Then the completion number can still
+  be reconstructed and the deletion is visible rather than inferred.
+- **Reopen stays the everyday tool.** Most of what looks like "delete this" is
+  really "this was submitted too early".
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
