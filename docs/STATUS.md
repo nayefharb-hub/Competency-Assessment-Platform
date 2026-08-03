@@ -65,10 +65,11 @@ Verified 2026-08-03 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — 67/67 through a real browser against the running app, then
+- `npm run e2e` — **92/92** through a real browser against the running app, then
   checked in Postgres directly. Covers auth, role gates, target blinding,
   score persistence, submit, review, accept-all, approve + snapshot, locking,
-  cross-user access, rollup arithmetic, and the admin editor.
+  cross-user access, rollup arithmetic, the admin editor, the password gate and
+  the People screen.
 
 ## What was built
 
@@ -95,22 +96,24 @@ Verified 2026-08-03 against the live database:
 
 ## Next step
 
-**Deploy to Vercel** (still not set up), then run the pilot.
-
-Click-by-click steps are in `docs/deploy.md` — web UI only, no terminal. In
-short: connect the repo, add the four env vars from `.env.example`, deploy.
-No Supabase auth configuration is needed (password sign-in, not magic links).
+**Invite the nine PMs and run the cycle.** Deployment is done
+(`docs/deploy.md`); adding people no longer needs a terminal — sign in as an
+admin and use **People** in the nav.
 
 Then:
 
-1. Invite the ~9 PMs: `npm run invite add <email> "<Name>" assessee --title "..."`.
-2. Confirm the completion baseline desk check (open item 1 below) — the median
+1. Confirm the completion baseline desk check (open item 1 below) — the median
    time-to-complete number means little without it.
+2. Work through the remaining pilot-feedback items in the order set out in
+   `docs/eng-plan-admin-and-ux.md`: **A2** (assignment — makes the completion
+   denominator a fact rather than a guess), **B** (archive), then **C** (the
+   rest of the UX pass: mobile, theme toggle, controls filter).
 
 ## Supabase
 
 Project ref `gkqydskmnexhneqsvvvt`. Applied via the SQL Editor, in this order:
-`supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`.
+`supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`,
+then `0003_assignment_and_archive.sql` (applied 2026-08-03).
 All three returned success; `seed.sql` self-verifies and rolls back on any
 count mismatch. See `supabase/README.md`.
 
@@ -139,8 +142,9 @@ reaches every table the app needs):
 
 ```bash
 npm run verify:db            # 11 schema/seed checks, exits non-zero on mismatch
-npm run e2e                  # full loop through a browser; needs the app running
-                             # ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run e2e
+npm run e2e                  # full loop through a browser; needs the app running.
+                             # Self-contained: it creates and deletes its own QA
+                             # accounts, and needs no real credentials.
 ```
 
 `e2e` writes to whatever database it is pointed at. It refuses to run without
