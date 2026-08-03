@@ -74,7 +74,8 @@ email suffix, and the field no longer says otherwise.
 
 ### N3 — why is every control on one page?
 
-**Status:** Won't do — working as intended, question answered
+**Status:** Superseded by N4 — the "is it an admin view?" question is answered
+(no), but the visual judgement was overridden
 
 > "after i login and click start assessment why do i see all controls in one
 > page, it is because I am an admin? ... unless it is a navigation for the PM
@@ -88,13 +89,38 @@ It already shows scored state at three levels: a progress bar and `N / 132
 controls scored` at the top, `0/5 scored` per competence element, and a badge on
 every control that turns from "not scored" to a green tick with the chosen level.
 
-Left alone. Worth revisiting only if the badges still read as noise once an
-assessment is part-scored — in an empty assessment every badge says the same
-thing, so there is no contrast to notice, which is likely why they did not
-register.
+Was left alone on the argument that the badges would read differently once an
+assessment is part-scored. That argument was put to the owner and rejected —
+see N4.
+
+### N4 — scored/not-scored state is too quiet
+
+**Status:** Open — to fix
+
+> "it still feels flat make it louder"
+
+Direct override of the reasoning in N3. The proposal was to wait and judge the
+badges against a part-scored list; the answer is to make them louder now.
+
+Context to keep in mind when fixing, because it changes what "louder" should
+mean: this was judged on a list where **every** control is unscored, so the page
+is 132 identical grey pills with no contrast anywhere. Two different problems
+could be causing the flat feeling, and they pull in opposite directions:
+
+1. The scored state is not emphatic enough — fix by making a scored row
+   obviously different (weight, colour, a filled marker), not just a small pill.
+2. The unscored state is too loud — 132 repetitions of "not scored" is noise
+   that says nothing, and the eye has nothing to land on. Fix by making
+   unscored quiet or implicit, so that scored rows are the only thing marked.
+
+Option 2 is probably the stronger design: mark the exception, not the rule. But
+it should be checked against a part-scored list before committing to it, since
+that is the state a PM actually lives in.
+
+Do not fix in isolation — the owner asked for all notes to be collected first.
 
 ## Triage summary
 
-| Open | Fixed | Deferred | Won't do |
-|---:|---:|---:|---:|
-| 1 | 1 | 0 | 1 |
+| Open | Fixed | Superseded | Deferred | Won't do |
+|---:|---:|---:|---:|---:|
+| 2 | 1 | 1 | 0 | 0 |
