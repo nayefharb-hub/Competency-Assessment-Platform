@@ -55,8 +55,46 @@ Options, cheapest first:
 No action taken — this is a judgement call about a real database, so it is
 recorded rather than decided unilaterally.
 
+
+### N2 — sign-in box suggested a `@kib.com` domain
+
+**Status:** Fixed
+
+> "on login, default mentions enter your email and the next is @kib.com, i don't
+> want a default email domain to be put, any domain would work for now"
+
+The field's placeholder read `you@kib.com.kw`. It was only a placeholder — there
+is no domain check anywhere: `signIn` lowercases the address and looks it up in
+`app_user`, and `invite.mjs` requires nothing but an `@`. So any domain already
+worked, but the hint implied a rule that did not exist, which matters for a
+product meant to be sold to organisations other than KIB.
+
+Now reads "Your email address". The allowlist is the `app_user` table, not an
+email suffix, and the field no longer says otherwise.
+
+### N3 — why is every control on one page?
+
+**Status:** Won't do — working as intended, question answered
+
+> "after i login and click start assessment why do i see all controls in one
+> page, it is because I am an admin? ... unless it is a navigation for the PM
+> then that's fine but it should show whether a control has been scored or not yet"
+
+Not an admin view. `/assess/controls` is the same for every role: it is the PM's
+navigation and progress screen, which is the case the note calls fine. Scoring
+itself is one control at a time on `/assess`.
+
+It already shows scored state at three levels: a progress bar and `N / 132
+controls scored` at the top, `0/5 scored` per competence element, and a badge on
+every control that turns from "not scored" to a green tick with the chosen level.
+
+Left alone. Worth revisiting only if the badges still read as noise once an
+assessment is part-scored — in an empty assessment every badge says the same
+thing, so there is no contrast to notice, which is likely why they did not
+register.
+
 ## Triage summary
 
 | Open | Fixed | Deferred | Won't do |
 |---:|---:|---:|---:|
-| 1 | 0 | 0 | 0 |
+| 1 | 1 | 0 | 1 |

@@ -49,7 +49,10 @@ export default async function LoginPage({
               type="email"
               autoComplete="username"
               required
-              placeholder="you@kib.com.kw"
+              // No domain hint: there is no domain restriction anywhere in the
+              // code, and suggesting one implied a rule that does not exist.
+              // The allowlist is the app_user table, not an email suffix.
+              placeholder="Your email address"
             />
           </div>
           <div className="field" style={{ marginBottom: 18 }}>
