@@ -463,7 +463,10 @@ folding into the same pass.
 
 ### N8 — no way to invite anyone from inside the app
 
-**Status:** Open — to fix, and it reshapes N7
+**Status:** **Fixed** in PR A1 — `/admin/people`. Add a person with name, email,
+job title, role and a starting password, no terminal. Removal is deliberately
+not on the screen: deleting an `app_user` row cascades and destroys their
+assessment, so it stays a guarded CLI action.
 
 > "how can i invite a user for the assessment"
 
@@ -505,7 +508,9 @@ screen.
 
 ### N9 — password reset, for admins and for users
 
-**Status:** Open — two of three parts buildable now, one blocked on an SMTP decision
+**Status:** **Two of three fixed** in PR A1 — change-your-own (`/change-password`)
+and admin reset (on `/admin/people`), both with the forced-change-on-first-use
+contract. Forgot-password stays blocked on the SMTP decision.
 
 > "Also for admin, and for normal user we need a feature to reset passwords as
 > well might as well do it"
@@ -643,7 +648,10 @@ Worth pairing with N4 and N5, since all three touch the controls list.
 
 ### N11 — body text is tiring to read
 
-**Status:** Open — measured; needs a DESIGN.md decision, not just a CSS change
+**Status:** **Measure and leading fixed** (131 → 68 characters, line-height 1.6,
+reading pages in a 780px container; DESIGN.md updated, since the cause was its
+own "1080px for reading" line). Palette approved but deliberately not touched
+yet — re-judge against the fixed measure first.
 
 > "i find the text is hard to read, perhaps the white background with the
 > current font combination needs enhancements it is eye draining"

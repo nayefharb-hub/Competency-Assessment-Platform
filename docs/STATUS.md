@@ -1,7 +1,12 @@
 # Project status & handoff
 
-Last updated: 2026-08-03 (app wired to Supabase). Read this first — it says where
-the build is and what the next step is. Everything referenced here is committed.
+Last updated: 2026-08-03 (deployed to Vercel; admin People screen + password
+gate). Read this first — it says where the build is and what the next step is.
+Everything referenced here is committed.
+
+**Live.** Deployed on Vercel from `main`. Migration `0003` is applied. Pilot
+feedback from using it is logged in `docs/pilot-feedback.md` (13 notes, triaged);
+the plan for the rest is `docs/eng-plan-admin-and-ux.md`.
 
 ## Why this exists (don't lose this framing)
 
@@ -208,13 +213,19 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
 3. **Escalation reads oddly in the UI**: a CE at 3.0/3 can show "Capability
    Deficit" when one control sits 2+ levels below its own target. Correct per
    the brief; may want a visual cue explaining why.
-4. **Vercel deploy** not set up yet.
+4. ~~**Vercel deploy**~~ — done. See `docs/deploy.md`.
+8. **Migration tracking.** Nothing records which migrations have been applied to
+   which database. Survivable with one database, guesswork with two — close it
+   before standing up staging (pilot-feedback N1b).
+9. **SMTP.** Blocks emailed invite links and self-service password reset. Needs
+   an IT answer on whether a third-party sender is acceptable, not just code.
 5. **General Sans is not in the repo.** `DESIGN.md` specifies it for headings;
    Fontshare is unreachable from the build environment, so headings currently
    fall back to Geist (which IS self-hosted, per spec, for body/UI/data). One
    file drop finishes it — see the Typography section of `DESIGN.md`.
-6. **Rotate the admin's temporary password.** The account was created during the
-   wiring session and its first password was printed to a transcript.
+6. ~~**Rotate the admin's temporary password.**~~ — enforced rather than
+   remembered: every existing account now carries `must_change_password`, so the
+   transcript-exposed password stops working the moment it is used once.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other
