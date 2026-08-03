@@ -356,6 +356,52 @@ Recommended shape if deletion is wanted:
 - **Reopen stays the everyday tool.** Most of what looks like "delete this" is
   really "this was submitted too early".
 
+#### Owner response, and what survives it
+
+Points 3, 4 and 5 above were pushed back on and the pushback is right: deleting
+an assessment *should* take its scores and snapshot with it — that is the
+purpose of deleting, not a side effect. The missing audit trail is fixable. The
+governance point is a prototype-stage concern with role-based access control
+planned for the full build. Those are all recorded as answered, not as risks.
+
+Only one objection survives, and it is narrower than it was first put.
+
+**Worked example, run through the real code against the live database** (five
+seeded PMs, since removed). Times to complete: 1.2, 1.8, 2.2, 3.0, 9.5 hours.
+
+| State | Finished | Median |
+|---|---|---|
+| A — all five finished | 5 / 5 (100%) | 2.2 hours |
+| B — Ethan's **assessment** deleted, user still invited | 4 / 5 (80%) | 2.0 hours |
+| C — Ethan removed via `npm run invite remove` | 4 / 4 (100%) | 2.0 hours |
+
+One real-world event ("Ethan left, remove his record"), two routes, and the
+headline completion rate is **either 80% or 100%** depending on which was used.
+B and C differ only in whether the login was also removed — which nobody would
+expect to move a completion figure. `invited` is
+`max(count of assessee users, number of assessments)`, so deleting the user
+shrinks the denominator too.
+
+The issue is not that deletion loses data. It is that **the number reported
+upward changes and nothing records why.** "100% completion, median 2.0 hours"
+cannot later be reconciled against anything, because the deleted record left no
+trace — which is a problem when the figure is the deliverable.
+
+**Agreed direction: archive, per the owner's suggestion.** It is a better answer
+than either option first proposed, because an archived assessment keeps
+`started_at` and `completed_at`, so the metric stays reconstructible while the
+record still disappears from day-to-day use.
+
+- `deleted_at`, `deleted_by`, `deleted_reason` on `assessment`
+- archived rows excluded from the review list, results and rollups
+- the completion tile states its rule on screen, e.g. "5 finished · 1 archived,
+  excluded", so the number explains itself
+- genuine hard delete (a data-protection request) stays a deliberate script run
+- `invite remove` refuses when the person has assessment data, since today the
+  destructive path is the default one
+
+Awaiting go-ahead to build.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
