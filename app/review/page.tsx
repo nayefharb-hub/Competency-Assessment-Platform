@@ -195,14 +195,16 @@ export default async function ReviewPage({
 /* ------------------------------------------------------------- overview */
 
 async function Overview({ error }: { error?: string }) {
-  const [fw, all, stats] = await Promise.all([
+  const [fw, assessments, stats] = await Promise.all([
     getFramework(),
     listAssessments(),
     completionStats(),
   ]);
-  // The cycle is about the project managers. The Head of PMO's own sheet, if
-  // they ever opened one, is not part of the population being assessed.
-  const assessments = all.filter((a) => a.assessee_is_pm !== false);
+  // Every assessment is listed and openable — including the Head of PMO's own,
+  // which is how you walk the loop solo. Only project managers are COUNTED in
+  // the completion tiles above, so the metric stays honest; such rows say so.
+  const uncounted = assessments.filter((a) => a.assessee_is_pm === false).length;
+  const activeCodes = new Set(fw.activeControls.map((c) => c.code));
 
   return (
     <div className="section">
@@ -224,6 +226,13 @@ async function Overview({ error }: { error?: string }) {
             self-assessment.
           </p>
         )}
+        {uncounted > 0 && (
+          <p className="note" style={{ marginBottom: 10 }}>
+            {uncounted} assessment{uncounted === 1 ? " belongs" : "s belong"} to someone
+            who is not a project manager — openable here, but deliberately left out of
+            the completion figures above so they measure only the people being assessed.
+          </p>
+        )}
         <div className="tablewrap">
           <table className="grid">
             <thead>
@@ -238,11 +247,27 @@ async function Overview({ error }: { error?: string }) {
             </thead>
             <tbody>
               {assessments.map((a) => {
-                // join on id, not name — two people can share a name
-                const row = stats.rows.find((r) => r.assessment_id === a.id);
+                // Computed per row rather than read from `stats`, because stats
+                // only covers the PMs being measured — an uncounted row still
+                // needs honest numbers of its own.
+                const scored = a.scores.filter(
+                  (s) => s.self_level !== null && activeCodes.has(s.control_code),
+                ).length;
+                const hours =
+                  a.started_at && a.completed_at
+                    ? (Date.parse(a.completed_at) - Date.parse(a.started_at)) / 3_600_000
+                    : null;
+                const row = { scored, finished: a.completed_at != null, hours };
                 return (
                   <tr key={a.id}>
-                    <td>{a.assessee_name}</td>
+                    <td>
+                      {a.assessee_name}
+                      {a.assessee_is_pm === false && (
+                        <span className="tick tick-todo" style={{ marginLeft: 6 }}>
+                          not counted
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <StateChip a={a} />
                     </td>

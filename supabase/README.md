@@ -47,6 +47,26 @@ generated and printed once — hand it over out of band. Only `assessee` account
 count toward the completion metric, so give the Head of PMO `admin` (which also
 carries assessor rights) rather than `assessee`.
 
+## Walking the loop yourself
+
+An admin account carries assessor rights, so one person can walk the whole loop:
+self-assess → review → approve → results. The friction is the submit gate, which
+needs all 132 controls scored (enforced server-side, not just by a disabled
+button). To skip the clicking on your OWN assessment:
+
+    npm run demo fill  you@kib.com.kw              # score all 132, stays in DRAFT
+    npm run demo fill  you@kib.com.kw --partial 40 # or stop part-way
+    npm run demo reset you@kib.com.kw              # back to "never started"
+
+`fill` refuses to touch anything that is not in draft, so it can never overwrite
+a real submitted or approved record. It writes self-scores only and leaves the
+assessment in draft — you still click Submit, review and Approve, so what you
+are testing is the real flow.
+
+Your own assessment appears in the review overview and is openable, but is
+badged "not counted" and left out of the completion figures: those measure
+`assessee`-role people only, so testing does not distort the pilot metric.
+
 ## Verifying
 
     npm run verify:db     # 11 schema/seed checks against the live database

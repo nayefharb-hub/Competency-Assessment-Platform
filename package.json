@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "invite": "node --env-file=.env.local scripts/invite.mjs",
     "verify:db": "node --env-file=.env.local scripts/verify-db.mjs",
-    "e2e": "node --env-file=.env.local scripts/e2e.mjs --write"
+    "e2e": "node --env-file=.env.local scripts/e2e.mjs --write",
+    "demo": "node --env-file=.env.local scripts/demo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
