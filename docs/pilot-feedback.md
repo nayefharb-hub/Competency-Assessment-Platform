@@ -554,6 +554,45 @@ cheapest first:
 
 Option 1 is the real answer, and it is the same SMTP decision as above.
 
+#### Decision (owner): option 2 as the interim
+
+> "for now until i get an smtp let's do a default password for new users and
+> force them to change it upon login, the user password will be set in the admin
+> panel when i add the user, until we have an smtp server that will email a new
+> password"
+
+Adopted. The admin sets a password when adding the person; that password is
+valid for exactly one sign-in, after which the user must set their own.
+
+This does more than unblock the pilot — it **answers the integrity concern
+above** rather than accepting it. An admin-set password stops working the moment
+the real user signs in, so an assessor who used it first would lock the assessee
+out and make the fact obvious. The window in which someone else's self-scores
+could be entered closes on first use, and closes noisily.
+
+What it needs:
+
+- `must_change_password boolean not null default false` on `app_user`, set true
+  by the admin create path (and by an admin reset).
+- A `/change-password` screen using `auth.updateUser({ password })` — the current
+  session is enough, no email involved.
+- A gate in `requireUser` (or `proxy.ts`) sending anyone with the flag set to
+  that screen and refusing every other route until it is cleared. It must be a
+  server-side gate, not a UI nudge, or it is decorative.
+- Clear the flag on success.
+
+**One thing to settle when building: "default password" has two readings.** A
+single shared value for everyone (`ChangeMe123`) is weak — anyone who learns it
+can sign in as any user who has not yet logged in, and with nine people that
+window may be days. The wording here ("set in the admin panel when i add the
+user") reads as per-user, which is the right shape: the admin types or generates
+one for that person, and it is shown once. Recommend per-user; flagging it only
+because "default password" could be read the other way.
+
+When SMTP arrives this becomes the fallback rather than the mechanism: emailed
+invite and reset links take over, `must_change_password` stays useful for
+admin-initiated resets.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
