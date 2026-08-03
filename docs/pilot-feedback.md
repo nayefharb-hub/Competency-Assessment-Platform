@@ -593,11 +593,59 @@ When SMTP arrives this becomes the fallback rather than the mechanism: emailed
 invite and reset links take over, `must_change_password` stays useful for
 admin-initiated resets.
 
+### N10 — make the whole app mobile friendly
+
+**Status:** Open — audited, specific defects below
+
+> "also can you make the whole app mobile friendly"
+
+Audited every screen at 390px (iPhone-class width) against the running app.
+Starting point is better than expected: **no page overflows the viewport
+horizontally**, and the results bar chart already stacks correctly (fixed during
+the design review). The `.grid` table is wider than the screen but scrolls inside
+its own `.tablewrap`, which is the right pattern rather than a defect.
+
+So this is not a rebuild. Three concrete problems:
+
+**1. The header, and it is the worst of them — it is on every screen.** At 390px
+the brand block and the nav sit side by side, so "Competency Assessment" wraps
+across two lines, the subtitle across two more, and the nav crams into a narrow
+right-hand column. Roughly 200px of vertical space — a quarter of the viewport —
+is spent on chrome before any content appears, on every single page.
+
+Fix: below ~560px stack the header, drop the subtitle, and lay the nav out as a
+horizontal scrolling row (or a compact menu) beneath the brand. Target is
+something like 90px, not 200px.
+
+**2. `.sec-head` collides with its eyebrow.** "Assessment cycle 2026" and
+"132 ACTIVE CONTROLS PER PERSON" fight for the same line: the rule between them
+collapses to nothing and the eyebrow runs to the right edge. Affects every
+screen using the pattern.
+
+Fix: stack below ~560px, or drop the eyebrow to its own line under the heading.
+
+**3. The People table is the wrong shape for a phone.** It scrolls horizontally,
+so nothing breaks, but Finished, Hours and the Review/Results links are all off
+screen — the columns that make the row worth reading. Horizontal scrolling to
+find an action is a poor pattern on touch.
+
+Fix: below ~560px render each person as a stacked card (name and state on top,
+the numbers as labelled pairs, actions as full-width links) rather than a table
+row. The `.tablewrap` fallback stays for tablet widths.
+
+**What already works and should not be touched:** the scoring screen. Large tap
+targets, one control per screen, the selected level clearly marked, evidence
+field and primary action reachable without a stretch. That page is arguably
+better on a phone than on a desktop, which matters — a PM filling in 132
+controls in odd moments is exactly the behaviour the pilot is trying to produce.
+
+Worth pairing with N4 and N5, since all three touch the controls list.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 7 | 1 | 1 | 1 | 0 |
+| 8 | 1 | 1 | 1 | 0 |
 
 Open items, in the order they should probably be built:
 
@@ -606,8 +654,9 @@ Open items, in the order they should probably be built:
    the entry path for every assessee and the completion metric's denominator.
    The "change my own password" half of N9 is independent and can ship first.
 2. **N6** — archive, cleaner to design once N7 exists
-3. **N5** — filter the controls list
-4. **N4** — scored-state emphasis, decided together with N5
+3. **N10** — mobile: header, section headings, People table
+4. **N5** — filter the controls list
+5. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision
