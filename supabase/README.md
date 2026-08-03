@@ -31,6 +31,48 @@ To reseed: `delete from public.framework where name='IPMA ICB4';` then re-run
 Migrations still need to be applied first (SQL Editor, or `psql` with the
 connection string from Settings → Database).
 
+## Inviting people
+
+There is no public signup. `public.app_user` IS the allowlist — a valid Supabase
+Auth session with no `app_user` row is refused at sign-in — and this script
+writes both halves of an account:
+
+    npm run invite list
+    npm run invite add someone@kib.com.kw "Full Name" assessee --title "Project Manager"
+    npm run invite add head@kib.com.kw    "Full Name" admin    --title "Head of PMO"
+    npm run invite remove someone@kib.com.kw
+
+Roles are `assessee` | `assessor` | `admin`. Without `--password` a random one is
+generated and printed once — hand it over out of band. Only `assessee` accounts
+count toward the completion metric, so give the Head of PMO `admin` (which also
+carries assessor rights) rather than `assessee`.
+
+## Walking the loop yourself
+
+An admin account carries assessor rights, so one person can walk the whole loop:
+self-assess → review → approve → results. The friction is the submit gate, which
+needs all 132 controls scored (enforced server-side, not just by a disabled
+button). To skip the clicking on your OWN assessment:
+
+    npm run demo fill  you@kib.com.kw              # score all 132, stays in DRAFT
+    npm run demo fill  you@kib.com.kw --partial 40 # or stop part-way
+    npm run demo reset you@kib.com.kw              # back to "never started"
+
+`fill` refuses to touch anything that is not in draft, so it can never overwrite
+a real submitted or approved record. It writes self-scores only and leaves the
+assessment in draft — you still click Submit, review and Approve, so what you
+are testing is the real flow.
+
+Your own assessment appears in the review overview and is openable, but is
+badged "not counted" and left out of the completion figures: those measure
+`assessee`-role people only, so testing does not distort the pilot metric.
+
+## Verifying
+
+    npm run verify:db     # 11 schema/seed checks against the live database
+    npm run e2e           # full assessment loop through a browser, then checked
+                          # in Postgres. Writes; see docs/STATUS.md before running.
+
 ## Regenerating seed.sql
 
 `supabase/seed.sql` is generated from the verified T0 extraction — do not edit it

@@ -1,9 +1,13 @@
-import { framework } from "@/lib/framework";
-import { demoAssessment } from "@/lib/demo";
+import Link from "next/link";
+import { canAssess, requireUser } from "@/lib/auth";
+import { getFramework } from "@/lib/framework";
+import {
+  findAssessment, listAssessments, loadAssessment, loadForAssessee,
+} from "@/lib/db/assessment";
 import { fmtLevel, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
-import type { CeResult, Health } from "@/lib/types";
+import type { Assessment, CeResult, Health } from "@/lib/types";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 const MAX = 5;
 const pct = (v: number) => `${(v / MAX) * 100}%`;
@@ -43,26 +47,62 @@ function Bar({ r }: { r: CeResult }) {
   );
 }
 
-export default function ResultsPage() {
-  const a = demoAssessment;
-  const results = rollupAll(framework, a);
+/**
+ * Results.
+ *
+ * A PM sees their own results, and only once the assessor has approved — before
+ * that the authoritative scores do not exist yet. The assessor can open anyone's
+ * with ?a=. Targets shown here are the ones frozen at approval (rollup-spec §6),
+ * so a later change of benchmark profile cannot move a historic gap.
+ */
+export default async function ResultsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ a?: string; approved?: string }>;
+}) {
+  const { a: requested, approved } = await searchParams;
+  const user = await requireUser();
+  const fw = await getFramework();
+
+  let assessment: Assessment | null;
+  if (requested && canAssess(user)) {
+    assessment = await loadAssessment(requested);
+  } else {
+    // read-only: never create a row just because someone looked at results
+    const row = await findAssessment(user.id);
+    assessment = row ? await loadForAssessee(user, row.id) : null;
+  }
+
+  if (!assessment || assessment.state !== "approved") {
+    return <NotYet assessment={assessment} canPick={canAssess(user)} />;
+  }
+
+  const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
   const sorted = sortByGap(results);
-  const initials = a.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  const initials = assessment.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
   const gaps = results.filter((r) => r.health === "minor" || r.health === "deficit").length;
+  const revised = assessment.scores.filter((s) => s.assessor_touched).length;
 
   return (
     <div className="section">
+      {approved && (
+        <div className="banner banner-ok" role="status">
+          Approved. Targets are frozen at these values for this cycle.
+        </div>
+      )}
       <div className="card pad">
         <div className="who">
           <div className="av" aria-hidden="true">{initials}</div>
-          <div style={{ flex: 1 }}>
+          {/* class, not an inline style — inline wins over the mobile rule */}
+          <div className="whobody">
             <h3>
-              {a.assessee_name} — {a.assessee_role}
+              {assessment.assessee_name} — {assessment.assessee_role}
             </h3>
             <div className="sub">
-              Assessment cycle {a.cycle} · Benchmark: {a.profile} · Assessor: Head of PMO ·
-              Status: {a.state === "approved" ? "Approved" : a.state}
+              Assessment cycle {assessment.cycle} · Benchmark: {assessment.profile} · Approved
+              {assessment.approved_at ? ` ${assessment.approved_at.slice(0, 10)}` : ""} ·{" "}
+              {revised} control{revised === 1 ? "" : "s"} revised by the assessor
             </div>
           </div>
           <span className="pill pill-minor">
@@ -143,6 +183,53 @@ export default function ResultsPage() {
           weakest control is shown alongside so a single serious gap is not absorbed by the
           average. This report supports a decision — it does not approve, reject or gate one.
         </p>
+      </div>
+    </div>
+  );
+}
+
+async function NotYet({
+  assessment,
+  canPick,
+}: {
+  assessment: Assessment | null;
+  canPick: boolean;
+}) {
+  const others = canPick ? (await listAssessments()).filter((a) => a.state === "approved") : [];
+  return (
+    <div className="section">
+      <div className="card pad">
+        <h2 style={{ fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
+          Results are not available yet
+        </h2>
+        <p className="note">
+          {!assessment || assessment.state === "draft" ? (
+            <>
+              Your self-assessment is still in progress.{" "}
+              <Link href="/assess/controls">Pick up where you left off</Link>. Results appear
+              once the Head of PMO has reviewed and approved your scores.
+            </>
+          ) : (
+            <>
+              Submitted{assessment?.submitted_at ? ` on ${assessment.submitted_at.slice(0, 10)}` : ""} and
+              waiting for the Head of PMO to review. Your results appear here as soon as the
+              review is approved.
+            </>
+          )}
+        </p>
+
+        {canPick && others.length > 0 && (
+          <>
+            <div className="cap" style={{ margin: "18px 0 6px" }}>APPROVED ASSESSMENTS</div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {others.map((a) => (
+                <li key={a.id} style={{ fontSize: 13.5 }}>
+                  <Link href={`/results?a=${a.id}`}>{a.assessee_name}</Link> · cycle {a.cycle}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </div>
   );

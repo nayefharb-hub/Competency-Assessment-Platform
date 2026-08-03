@@ -1,7 +1,7 @@
 # Project status & handoff
 
-Last updated: 2026-08-03. Read this first — it says where the build is and what
-the next step is. Everything referenced here is committed.
+Last updated: 2026-08-03 (app wired to Supabase). Read this first — it says where
+the build is and what the next step is. Everything referenced here is committed.
 
 ## Why this exists (don't lose this framing)
 
@@ -40,26 +40,67 @@ and keep the platform reachable — don't remove them as "unused generality."
 | Eng plan (`/plan-eng-review`) | **CLEARED** — `docs/eng-plan-competency-assessment-platform.md` |
 | Design system (`/design-consultation`) | **LOCKED** — `DESIGN.md` |
 | T0 — extract & verify workbook | **DONE** — `data/seed/`, `docs/rollup-spec.md` |
-| T1 — app scaffold, four screens | **DONE** — running on seed data |
-| T2 — database | **applied, seeded, and VERIFIED in Supabase**; app NOT yet wired to it |
+| T1 — app scaffold, four screens | **DONE** |
+| T2 — database + server data layer | **DONE** — schema applied, seeded, verified |
+| T3 — seed ICB4 | **DONE** — 11/11 checks against the live database |
+| T4 — assessment loop (PM) | **DONE** — scores persist; draft → self_submitted |
+| T5 — assessor review-and-revise | **DONE** — override, accept-all, approve + snapshot |
+| T6 — rollup engine | **DONE** — reads real scores; snapshot targets after approval |
+| T7 — results + assessor overview | **DONE** |
+| T8 — admin editor | **DONE** — tunable layer only, ICB4 source read-only |
+| T9 — completion instrumentation | **DONE** — finished flag + median time-to-complete |
+| T10 — trends across cycles | not started (P3, schema-ready) |
 
-Database verified 2026-08-03 by running the query below in the SQL Editor — all
-11 checks matched: 133 controls (132 active, 4.3.2.6 inactive), 28 elements,
-3 areas, 586 measures, 6 scale levels, 4 benchmark profiles, 116 benchmark
-targets, RLS on all 13 tables with 0 policies.
+**The app now runs on Postgres, not the JSON seed.** `lib/framework.ts` is still
+the single seam; it queries Supabase instead of `data/seed/icb4-framework.json`.
+The seed JSON stays in the repo as the source `supabase/seed.sql` was generated
+from — it is no longer read at runtime.
+
+Verified 2026-08-03 against the live database:
+- `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
+  elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
+  and the per-area splits 24/49/60).
+- `npm run e2e` — 67/67 through a real browser against the running app, then
+  checked in Postgres directly. Covers auth, role gates, target blinding,
+  score persistence, submit, review, accept-all, approve + snapshot, locking,
+  cross-user access, rollup arithmetic, and the admin editor.
+
+## What was built
+
+- **`lib/supabase/server.ts`** — service-role client behind `import "server-only"`,
+  so a client component importing it is a build error. The browser only ever
+  holds the anon key, which reads nothing (RLS on, zero policies).
+- **`lib/framework.ts`** — the seam, now querying Postgres. Two entry points, and
+  the difference is a security boundary: `getFramework()` (assessor/admin) and
+  `getAssesseeFramework()`, which strips target, priority, reason and kib_note.
+  Redaction is in the data layer, not in JSX, so no page or action can leak past
+  it. (`kib_note` carries target provenance — "Senior baseline / junior target" —
+  which is why the PM does not see it. Per the eng plan's state machine.)
+- **Auth** — invite-only. `app_user` IS the allowlist: a valid Supabase session
+  with no `app_user` row gets nothing. `scripts/invite.mjs` creates both halves
+  of an account. Password login; SSO still deferred.
+- **Persistence** — self-scores, assessor overrides, accept-all, approval with
+  the target snapshot (`docs/rollup-spec.md` §6). Every transition is guarded in
+  the WHERE clause AND checked for a matched row, because a PostgREST update
+  that matches nothing is not an error and would otherwise report success.
+- **Completion instrumentation** — `started_at` on first save, `completed_at` on
+  submit; the assessor's first screen leads with finished-count and median
+  time-to-complete. Only `assessee`-role people count, so the Head of PMO
+  opening the form cannot move the number.
 
 ## Next step
 
-**Wire the app to Supabase.** The database is live and seeded; the four screens
-still read `data/seed/icb4-framework.json` through `lib/framework.ts`.
+**Deploy to Vercel** (still not set up), then run the pilot.
 
-`lib/framework.ts` is the single seam — swapping it to query Supabase is the
-whole job, plus:
-1. A server-only Supabase client (service key, `server-only` import guard).
-2. Auth: invite-only login, session → `app_user` role.
-3. Persist self-scores, the assessor's review-and-revise, and approval
-   (snapshot targets on approve, per `docs/rollup-spec.md` §6).
-4. Completion instrumentation (T9 in the plan — it is P1, it's the whole thesis).
+Click-by-click steps are in `docs/deploy.md` — web UI only, no terminal. In
+short: connect the repo, add the four env vars from `.env.example`, deploy.
+No Supabase auth configuration is needed (password sign-in, not magic links).
+
+Then:
+
+1. Invite the ~9 PMs: `npm run invite add <email> "<Name>" assessee --title "..."`.
+2. Confirm the completion baseline desk check (open item 1 below) — the median
+   time-to-complete number means little without it.
 
 ## Supabase
 
@@ -87,6 +128,22 @@ If the current session cannot reach Supabase, verify the database by running SQL
 in the Supabase SQL Editor instead — that path always works.
 
 ## Verify the database quickly
+
+From the repo (uses the app's own credentials, so it also proves the service key
+reaches every table the app needs):
+
+```bash
+npm run verify:db            # 11 schema/seed checks, exits non-zero on mismatch
+npm run e2e                  # full loop through a browser; needs the app running
+                             # ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run e2e
+```
+
+`e2e` writes to whatever database it is pointed at. It refuses to run without
+`--write`, touches only two `@example.test` accounts it creates, and deletes them
+plus their assessments afterwards. It also restores control 4.3.1.3 to its seeded
+values after exercising the admin editor.
+
+Or in the Supabase SQL Editor:
 
 ```sql
 select 'controls' as item, count(*)::text as value from public.control
@@ -125,22 +182,41 @@ Full rationale is in the design doc and `CLAUDE.md`; the short version:
   cannot hide columns by row-state. RLS is deny-by-default defence in depth.
 - **Auth is an invite-only allowlist** for the pilot; SSO/AD deferred.
 - **The tool supports a decision, never gates one.** No pass/fail verdicts.
+- **The PM does not see `kib_note` either.** It carries target provenance
+  ("Senior baseline / junior target"), so showing it would defeat the
+  anti-anchoring rule. It belongs to the admin layer, alongside priority and
+  reason. Redacted in `getAssesseeFramework()`, not in the JSX.
+- **Targets snapshot at approval, never before.** Editing a target in the admin
+  screen changes future rollups only; approved assessments keep their frozen
+  values.
 
 ## Use gstack for the next phase
 
-The SessionStart hook installs gstack. Once the app is wired to the database,
-run these before shipping: `/review` on the diff, `/qa` against the running app,
-`/design-review` against `DESIGN.md`, then `/ship`. Use `/investigate` for bugs
-rather than ad-hoc debugging. See the routing table in `CLAUDE.md`.
+The SessionStart hook installs gstack. Use `/investigate` for bugs rather than
+ad-hoc debugging, `/review` before landing, `/qa` against the running app,
+`/design-review` against `DESIGN.md`, then `/ship`. See the routing table in
+`CLAUDE.md`.
 
 ## Open items
 
 1. **Completion baseline** — has this team had completion/lateness problems
    before? Needed to judge whether the online form actually helps (design doc's
-   assignment). Five-minute desk check, no PM time.
+   assignment). Five-minute desk check, no PM time. The app now measures the
+   "after"; this is the "before" it gets compared against.
 2. **What decision the rollup drives** (training budget? staffing?) — confirm
    before polishing the dashboard.
 3. **Escalation reads oddly in the UI**: a CE at 3.0/3 can show "Capability
    Deficit" when one control sits 2+ levels below its own target. Correct per
    the brief; may want a visual cue explaining why.
 4. **Vercel deploy** not set up yet.
+5. **General Sans is not in the repo.** `DESIGN.md` specifies it for headings;
+   Fontshare is unreachable from the build environment, so headings currently
+   fall back to Geist (which IS self-hosted, per spec, for body/UI/data). One
+   file drop finishes it — see the Typography section of `DESIGN.md`.
+6. **Rotate the admin's temporary password.** The account was created during the
+   wiring session and its first password was printed to a transcript.
+7. **CE targets do not re-point by benchmark profile.** Per-control targets do
+   (`targetsForProfile`), but CE targets are APM's published values for the
+   Intermediate profile, taken from the workbook's Results sheet. Anything other
+   than Intermediate needs published CE targets we do not have. Default is
+   Intermediate, so this does not bite yet.

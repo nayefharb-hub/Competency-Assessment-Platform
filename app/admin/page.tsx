@@ -1,25 +1,34 @@
 import Link from "next/link";
-import { activeControls, ceOf, controlByCode, measuresFor, scaleLevels } from "@/lib/framework";
+import { requireRole } from "@/lib/auth";
+import { getFramework } from "@/lib/framework";
+import { saveControlAction } from "@/app/actions";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 /**
- * Framework admin — edit the tunable layer only.
+ * Framework admin — edits the tunable layer only, straight into Postgres.
  *
- * The ICB4 indicator text, description and measures are shown read-only for
- * context (they are never edited; that preserves year-over-year comparison).
- * KIB clarifications are added in their own field alongside.
+ * The ICB4 indicator, description and measures are rendered read-only and the
+ * save action refuses to accept them at all. That is not squeamishness: the
+ * source text has to stay fixed for year-over-year comparison to mean
+ * anything, so KIB's wording goes in kib_note, alongside.
+ *
+ * This is admin editing of THIS framework — deliberately not a framework
+ * builder. See CLAUDE.md: no multi-framework authoring until a pilot earns it.
  */
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ c?: string }>;
+  searchParams: Promise<{ c?: string; saved?: string; error?: string }>;
 }) {
-  const { c } = await searchParams;
-  const code = c && controlByCode(c) ? c : activeControls[0].code;
-  const control = controlByCode(code)!;
-  const ce = ceOf(control.ce_code);
-  const measures = measuresFor(code);
+  const { c, saved, error } = await searchParams;
+  await requireRole("admin");
+  const fw = await getFramework();
+
+  const code = c && fw.controlByCode(c) ? c : fw.activeControls[0].code;
+  const control = fw.controlByCode(code)!;
+  const ce = fw.ceOf(control.ce_code);
+  const measures = fw.measuresFor(code);
 
   return (
     <div className="section">
@@ -29,9 +38,17 @@ export default async function AdminPage({
         <span className="eyebrow">source text locked · tune the layer around it</span>
       </div>
 
+      {error && <div className="banner banner-error" role="alert">{error}</div>}
+      {saved && (
+        <div className="banner banner-ok" role="status">
+          Saved to the framework. Assessments already approved keep the targets frozen at
+          approval — this change affects future rollups only.
+        </div>
+      )}
+
       <div className="card pad">
         <div className="assess-nav">
-          <Link className="btn btn-secondary btn-sm" href="/assess/controls">
+          <Link className="btn btn-secondary btn-sm" href="/admin/controls">
             ← Pick another control
           </Link>
           <span className="note">
@@ -70,57 +87,73 @@ export default async function AdminPage({
           )}
         </div>
 
-        <div className="cols" style={{ marginTop: 16 }}>
-          <div className="field">
-            <label htmlFor="target">Target level</label>
-            <select className="input" id="target" defaultValue={control.target_level ?? 3}>
-              {scaleLevels.map((s) => (
-                <option key={s.level} value={s.level}>
-                  {s.level} · {s.label}
-                </option>
-              ))}
-            </select>
-            <div className="note" style={{ marginTop: 6 }}>
-              Source: {control.target_source ?? "—"}
-              {control.apm_competence && ` · APM: ${control.apm_competence}`}
+        <form action={saveControlAction}>
+          <input type="hidden" name="control" value={control.code} />
+
+          <div className="cols" style={{ marginTop: 16 }}>
+            <div className="field">
+              <label htmlFor="target">Target level</label>
+              <select className="input" id="target" name="target" defaultValue={control.target_level ?? 3}>
+                {fw.scaleLevels.map((s) => (
+                  <option key={s.level} value={s.level}>
+                    {s.level} · {s.label}
+                  </option>
+                ))}
+              </select>
+              <div className="note" style={{ marginTop: 6 }}>
+                Source: {control.target_source ?? "—"}
+                {control.apm_competence && ` · APM: ${control.apm_competence}`}
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="priority">Priority</label>
+              <select className="input" id="priority" name="priority" defaultValue={control.priority ?? "High"}>
+                <option>High</option>
+                <option>Medium</option>
+                <option>Low</option>
+              </select>
             </div>
           </div>
-          <div className="field">
-            <label htmlFor="priority">Priority</label>
-            <select className="input" id="priority" defaultValue={control.priority ?? "High"}>
-              <option>High</option>
-              <option>Medium</option>
-              <option>Low</option>
-            </select>
-          </div>
-        </div>
 
-        <div className="cols" style={{ marginTop: 14 }}>
-          <div className="field">
-            <label htmlFor="active">Active</label>
-            <select className="input" id="active" defaultValue={control.active ? "yes" : "no"}>
-              <option value="yes">Active — counts in rollups</option>
-              <option value="no">Inactive — excluded from every rollup</option>
-            </select>
+          <div className="cols" style={{ marginTop: 14 }}>
+            <div className="field">
+              <label htmlFor="active">Active</label>
+              <select className="input" id="active" name="active" defaultValue={control.active ? "yes" : "no"}>
+                <option value="yes">Active — counts in rollups</option>
+                <option value="no">Inactive — excluded from every rollup</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="reason">Reason (required when not Active/High)</label>
+              <input
+                className="input"
+                id="reason"
+                name="reason"
+                defaultValue={control.reason ?? ""}
+                placeholder="Why this is scoped down…"
+              />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="reason">Reason (required when not Active/High)</label>
-            <input className="input" id="reason" defaultValue={control.reason ?? ""} placeholder="Why this is scoped down…" />
+
+          <div className="field" style={{ marginTop: 14 }}>
+            <label htmlFor="kib">
+              KIB context &amp; clarification — added alongside, never replaces the ICB4 text above
+            </label>
+            <input
+              className="input"
+              id="kib"
+              name="kib_note"
+              defaultValue={control.kib_note ?? ""}
+              placeholder="Add KIB context for this control…"
+            />
           </div>
-        </div>
 
-        <div className="field" style={{ marginTop: 14 }}>
-          <label htmlFor="kib">
-            KIB context &amp; clarification — added alongside, never replaces the ICB4 text above
-          </label>
-          <input className="input" id="kib" defaultValue={control.kib_note ?? ""} placeholder="Add KIB context for this control…" />
-        </div>
-
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="btn btn-primary" type="button">
-            Save changes
-          </button>
-        </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button className="btn btn-primary" type="submit">
+              Save changes
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

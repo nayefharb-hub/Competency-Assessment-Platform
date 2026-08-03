@@ -28,6 +28,8 @@ export interface Area {
 }
 
 export interface CompetenceElement {
+  /** database row id; absent when the framework came from the JSON seed */
+  id?: string;
   /** e.g. "4.3.1" */
   code: string;
   name: string;
@@ -39,6 +41,8 @@ export interface CompetenceElement {
 export type Priority = "High" | "Medium" | "Low";
 
 export interface Control {
+  /** database row id; absent when the framework came from the JSON seed */
+  id?: string;
   /** e.g. "4.3.1.1" */
   code: string;
   ce_code: string;
@@ -95,6 +99,18 @@ export interface Framework {
   ce_targets: CeTarget[];
 }
 
+/* ---------- people ---------- */
+
+export type UserRole = "assessee" | "assessor" | "admin";
+
+export interface AppUser {
+  id: string;
+  email: string;
+  full_name: string;
+  job_title: string | null;
+  role: UserRole;
+}
+
 /* ---------- assessment ---------- */
 
 export type AssessmentState = "draft" | "self_submitted" | "approved";
@@ -112,13 +128,45 @@ export interface Score {
 
 export interface Assessment {
   id: string;
+  assessee_id?: string;
   assessee_name: string;
   assessee_role: string;
+  /** false for the Head of PMO's own sheet — kept out of the completion metric */
+  assessee_is_pm?: boolean;
   cycle: string;
   /** benchmark profile applied, e.g. "Intermediate" */
   profile: string;
+  profile_id?: string;
   state: AssessmentState;
   scores: Score[];
+  /* completion instrumentation (T9) — the prototype's central metric */
+  started_at?: string | null;
+  submitted_at?: string | null;
+  approved_at?: string | null;
+  completed_at?: string | null;
+  /** per-control targets frozen at approval; empty until approved */
+  snapshot_targets?: Record<string, Level | null>;
+}
+
+/** Completion instrumentation — the prototype's whole thesis (T9). */
+export interface CompletionStats {
+  cycle: string;
+  invited: number;
+  started: number;
+  /** self-assessment submitted — the "finished" flag */
+  finished: number;
+  approved: number;
+  /** median hours from started_at to completed_at, over finished assessments */
+  median_hours: number | null;
+  rows: {
+    assessment_id: string;
+    assessee_name: string;
+    state: AssessmentState;
+    scored: number;
+    active_controls: number;
+    finished: boolean;
+    hours: number | null;
+  }[];
 }
 
 /* ---------- rollup output ---------- */

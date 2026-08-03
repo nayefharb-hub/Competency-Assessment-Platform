@@ -25,7 +25,16 @@
 
   --shadow: 0 1px 2px rgba(16, 32, 46, 0.04), 0 4px 16px rgba(16, 32, 46, 0.05);
 
-  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Body / UI / data face — DESIGN.md. Self-hosted via next/font (the `geist`
+     package), so there is no runtime CDN request. */
+  --font-ui: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Display / headings face — DESIGN.md specifies General Sans SemiBold. The
+     woff2 is not in the repo yet (Fontshare is not reachable from CI), so
+     headings currently fall back to the UI face. To finish it: drop
+     GeneralSans-Semibold.woff2 into app/fonts/, load it with next/font/local
+     as --font-display, and this variable picks it up with no other change. */
+  --font-display: var(--font-general-sans), var(--font-ui);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -66,8 +75,9 @@ body {
 
 a { color: var(--accent); }
 
-h1, h2, h3 { margin: 0; text-wrap: balance; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 
+/* Data and tables use tabular figures so scores line up column-wise. */
 .tnum { font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-muted); }
 
@@ -149,6 +159,11 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .pill-minor .dot { background: var(--minor); }
 .pill-deficit { background: var(--deficit-bg); color: var(--deficit); }
 .pill-deficit .dot { background: var(--deficit); }
+/* Workflow state is NOT a health tier. The three status colours are reserved
+   for Role Ready / Minor Gap / Capability Deficit (DESIGN.md), so "in progress"
+   gets a neutral pill rather than borrowing deficit red. */
+.pill-neutral { background: var(--surface-2); color: var(--ink-muted); border: 1px solid var(--border); }
+.pill-neutral .dot { background: var(--ink-muted); }
 
 .lock {
   display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px;
@@ -218,6 +233,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
   width: 38px; height: 38px; border-radius: 50%; background: var(--navy);
   color: #fff; display: grid; place-items: center; font-weight: 650; font-size: 14px;
 }
+.who .whobody { flex: 1; min-width: 0; }
 .who h3 { font-size: 16px; font-weight: 650; }
 .who .sub { font-size: 12.5px; color: var(--ink-muted); }
 
@@ -261,6 +277,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .rcode { font-weight: 650; color: var(--accent); font-size: 13px; }
 .accepted { font-size: 11.5px; color: var(--ready); font-weight: 600; }
 .edited { font-size: 11.5px; color: var(--accent); font-weight: 600; }
+.prefilled { font-size: 11.5px; color: var(--ink-muted); }
 
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .tablewrap { overflow-x: auto; }
@@ -270,6 +287,87 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
   .barrow, .scaleline { grid-template-columns: 130px 1fr 110px; }
 }
 
+/* Below ~560px three columns leave the bar about 50px wide, which makes the
+   signature actual-vs-target mark unreadable. Stack instead: the bar keeps the
+   full width, which is the whole point of it. */
+@media (max-width: 560px) {
+  .barrow { grid-template-columns: 1fr; gap: 8px; padding: 14px 0; }
+  .barrow .val { text-align: left; }
+  .scaleline { grid-template-columns: 1fr; }
+  .scaleline > div:first-child, .scaleline > div:last-child { display: none; }
+  .who h3 { font-size: 15px; }
+  .revise .input { min-width: 0; width: 100%; }
+  /* Stop the name column being squeezed to one word per line by the avatar
+     and the gap pill sharing its row. */
+  .who { align-items: flex-start; }
+  .who .av { order: 1; }
+  .who .whobody { order: 2; flex: 1 1 100%; }
+  .who .pill { order: 3; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- session bar ---------- */
+.whoami {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  margin-top: 10px; font-size: 12.5px; color: var(--ink-muted);
+}
+.whoami b { color: var(--ink); font-weight: 600; }
+
+/* ---------- banners (status colours always carry a label, never colour alone) */
+.banner {
+  border: 1px solid var(--border); border-left-width: 3px;
+  border-radius: var(--radius-in); padding: 10px 14px; margin-bottom: 14px;
+  font-size: 13.5px;
+}
+.banner-ok    { border-left-color: var(--ready);   background: var(--ready-bg);   color: var(--ready); }
+.banner-warn  { border-left-color: var(--minor);   background: var(--minor-bg);   color: var(--minor); }
+.banner-error { border-left-color: var(--deficit); background: var(--deficit-bg); color: var(--deficit); }
+.banner a { color: inherit; text-decoration: underline; }
+
+/* ---------- progress ---------- */
+.progress-head {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.progress {
+  height: 8px; background: var(--track); border-radius: var(--radius-pill); overflow: hidden;
+}
+.progress i {
+  display: block; height: 100%; background: var(--accent);
+  border-radius: var(--radius-pill); transition: width 150ms ease;
+}
+.tick {
+  font-size: 11.5px; padding: 1px 7px; border-radius: var(--radius-pill);
+  white-space: nowrap; vertical-align: 1px;
+}
+.tick-done { background: var(--ready-bg); color: var(--ready); font-weight: 600; }
+.tick-todo { background: var(--surface-2); color: var(--ink-muted); border: 1px solid var(--border); }
+.tick-off  { background: var(--minor-bg); color: var(--minor); font-weight: 600; margin-left: 6px; }
+
+/* ---------- assessor review ---------- */
+.reviewbar {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.revise { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.revise .input { width: auto; min-width: 190px; }
+.revise .cap { font-weight: 600; }
+.actionbar {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- data table ---------- */
+.grid { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.grid th {
+  text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-muted); font-weight: 600; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.grid td { padding: 10px; border-bottom: 1px solid var(--border); }
+.grid tr:last-child td { border-bottom: 0; }
+.grid .num { text-align: right; font-variant-numeric: tabular-nums; }

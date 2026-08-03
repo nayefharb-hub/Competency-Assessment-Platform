@@ -39,6 +39,20 @@ export function healthOf(
   return "deficit";
 }
 
+/**
+ * Per-control targets to judge against. Once an assessment is approved these
+ * come from target_snapshot, so a later change to the benchmark profile cannot
+ * retrospectively move a historic gap (rollup-spec §6). Before approval they
+ * are the framework's live values.
+ */
+function controlTarget(
+  c: Control,
+  snapshot: Record<string, Level | null> | undefined,
+): Level | null {
+  const frozen = snapshot?.[c.code];
+  return frozen === undefined ? c.target_level : frozen;
+}
+
 export function rollupCe(
   fw: Framework,
   assessment: Assessment,
@@ -48,6 +62,10 @@ export function rollupCe(
   const ceTarget = fw.ce_targets.find((t) => t.ce_code === ceCode);
   const controls = activeControlsOf(fw, ceCode);
   const scores = scoreMap(assessment);
+  const snapshot =
+    assessment.snapshot_targets && Object.keys(assessment.snapshot_targets).length > 0
+      ? assessment.snapshot_targets
+      : undefined;
 
   const scored: { code: string; level: Level }[] = [];
   let severe = false;
@@ -57,7 +75,8 @@ export function rollupCe(
     if (lv === null || lv === undefined) continue;
     scored.push({ code: c.code, level: lv });
     // single-control escalation: 2+ levels below its OWN target
-    if (c.target_level !== null && c.target_level - lv >= 2) severe = true;
+    const target = controlTarget(c, snapshot);
+    if (target !== null && target - lv >= 2) severe = true;
   }
 
   const actual =

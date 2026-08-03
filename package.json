@@ -7,18 +7,26 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "invite": "node --env-file=.env.local scripts/invite.mjs",
+    "verify:db": "node --env-file=.env.local scripts/verify-db.mjs",
+    "e2e": "node --env-file=.env.local scripts/e2e.mjs --write",
+    "demo": "node --env-file=.env.local scripts/demo.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.0",
+    "geist": "^1.7.2",
     "next": "^16.2.12",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "playwright": "^1.62.1",
     "typescript": "^5"
   },
   "overrides": {
