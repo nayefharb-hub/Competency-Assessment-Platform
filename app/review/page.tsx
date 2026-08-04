@@ -33,7 +33,11 @@ export default async function ReviewPage({
   const pending = fw.activeControls.filter(
     (c) => scores.get(c.code)?.assessor_level === null || scores.get(c.code) === undefined,
   ).length;
-  const open = assessment.state === "self_submitted";
+  // Archived records stay readable — that is the point of archiving rather than
+  // deleting — but nothing on them may be changed, and the screen has to say so
+  // or an assessor will wonder why the buttons vanished.
+  const isArchived = assessment.deleted_at != null;
+  const open = assessment.state === "self_submitted" && !isArchived;
 
   const byCe = fw.data.competence_elements
     .map((ce) => ({ ce, controls: fw.activeControls.filter((c) => c.ce_code === ce.code) }))
@@ -50,6 +54,17 @@ export default async function ReviewPage({
       </div>
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
+      {isArchived && (
+        <div className="banner banner-warn" role="status">
+          This assessment is <b>archived</b>
+          {assessment.deleted_at ? ` (${assessment.deleted_at.slice(0, 10)})` : ""}
+          {assessment.deleted_reason ? ` — “${assessment.deleted_reason}”` : ""}. It is
+          excluded from the overview and from every completion figure, and nothing on it
+          can be changed. Its scores and timings are kept, so the numbers reported for
+          this cycle can still be reconciled. Restore it from{" "}
+          <Link href="/admin/people">People</Link>.
+        </div>
+      )}
       {revised && (
         <div className="banner banner-ok" role="status">
           Saved {revised} revision{revised === "1" ? "" : "s"}.
@@ -322,6 +337,20 @@ function Completion({ stats }: { stats: CompletionStats }) {
           </div>
           <div className="note" style={{ marginTop: 8 }}>
             Out of {stats.assigned} assigned this cycle
+            {stats.archived > 0 && (
+              <>
+                {" · "}
+                <b>
+                  {stats.archived} archived, excluded
+                </b>
+                {stats.archived_finished > 0 && (
+                  <>
+                    {" "}({stats.archived_finished} of them finished, so the median
+                    moved)
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
         <div className="tile">

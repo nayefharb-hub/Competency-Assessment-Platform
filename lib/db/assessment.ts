@@ -32,10 +32,13 @@ interface AssessmentRow {
   approved_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  deleted_reason: string | null;
 }
 
 const ASSESSMENT_COLUMNS =
-  "id, framework_id, profile_id, assessee_id, assessor_id, cycle, state, submitted_at, approved_at, started_at, completed_at";
+  "id, framework_id, profile_id, assessee_id, assessor_id, cycle, state, submitted_at, approved_at, started_at, completed_at, deleted_at, deleted_by, deleted_reason";
 
 async function rowById(id: string): Promise<AssessmentRow> {
   return unwrap(
@@ -44,7 +47,16 @@ async function rowById(id: string): Promise<AssessmentRow> {
   ) as AssessmentRow;
 }
 
-/** Read an assessment without creating one. Null when the person hasn't started. */
+/**
+ * The person's LIVE assessment for the cycle, or null.
+ *
+ * Archived rows are excluded here rather than filtered by each caller: an
+ * archived assessment is one that no longer counts, and a read path that
+ * forgets to say so is exactly how an archived record leaks back into a rollup.
+ * A person may accumulate several archived rows per cycle (0004 allows it), so
+ * this must filter before maybeSingle() or it would start throwing on the
+ * second archive.
+ */
 export async function findAssessment(
   assesseeId: string,
   cycle = currentCycle(),
@@ -54,9 +66,32 @@ export async function findAssessment(
     .select(ASSESSMENT_COLUMNS)
     .eq("assessee_id", assesseeId)
     .eq("cycle", cycle)
+    .is("deleted_at", null)
     .maybeSingle();
   if (found.error) throw new Error(`Supabase assessment lookup failed: ${found.error.message}`);
   return (found.data as AssessmentRow) ?? null;
+}
+
+/**
+ * The most recently archived assessment for the cycle. Used only to tell an
+ * assessee the truth — "yours was withdrawn" reads very differently from "you
+ * were never assigned one", and after an archive the second is what they would
+ * otherwise be shown.
+ */
+export async function findArchivedAssessment(
+  assesseeId: string,
+  cycle = currentCycle(),
+): Promise<AssessmentRow | null> {
+  const found = await db()
+    .from("assessment")
+    .select(ASSESSMENT_COLUMNS)
+    .eq("assessee_id", assesseeId)
+    .eq("cycle", cycle)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })
+    .limit(1);
+  if (found.error) throw new Error(`Supabase archive lookup failed: ${found.error.message}`);
+  return ((found.data ?? [])[0] as AssessmentRow) ?? null;
 }
 
 /**
@@ -86,10 +121,12 @@ export async function assignAssessment(
   if (!profile) throw new Error("No benchmark profile found — is the database seeded?");
   const frameworkId = await frameworkIdOf();
 
+  // Live rows only. Somebody whose cycle was archived can be assigned again —
+  // that is what the partial unique index in 0004 is for.
   const existing = unwrap(
     "assignment lookup",
     await sb.from("assessment").select("assessee_id")
-      .eq("cycle", cycle).in("assessee_id", assesseeIds),
+      .eq("cycle", cycle).is("deleted_at", null).in("assessee_id", assesseeIds),
   ) as { assessee_id: string }[];
   const already = new Set(existing.map((e) => e.assessee_id));
   const fresh = assesseeIds.filter((id) => !already.has(id));
@@ -136,6 +173,90 @@ export async function unassignAssessment(
   if ((gone.data ?? []).length === 0) {
     throw new Error("That assessment is no longer a draft — reload to see its current state.");
   }
+}
+
+/* --------------------------------------------------------------- archive */
+
+/**
+ * Archive (N6) — the answer to "can an admin delete an assessment?".
+ *
+ * A hard delete takes `started_at` and `completed_at` with it, and those two
+ * columns ARE the completion metric. The worked example in docs/pilot-feedback.md
+ * showed one real-world event ("Ethan left, remove his record") reporting either
+ * 80% or 100% completion depending on which route was used, with nothing on
+ * record to reconcile it afterwards. That is disqualifying when the figure is
+ * the deliverable.
+ *
+ * Archiving keeps the timestamps and the reason, so the number stays
+ * reconstructible while the record leaves day-to-day use. A genuine hard delete
+ * — a data-protection request — remains a deliberate script run.
+ *
+ * The reason is required, not decorative: an archive with no reason is
+ * indistinguishable from a mistake six months later.
+ */
+export async function archiveAssessment(
+  admin: AppUser,
+  assessmentId: string,
+  reason: string,
+): Promise<void> {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    throw new Error("Say why this is being archived — the reason is the audit trail.");
+  }
+
+  const gone = await db()
+    .from("assessment")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: admin.id,
+      deleted_reason: trimmed,
+    })
+    .eq("id", assessmentId)
+    // guard in the WHERE clause: archiving an archived row would overwrite the
+    // original reason and the original timestamp with a second, later one
+    .is("deleted_at", null)
+    .select("id");
+  if (gone.error) throw new Error(`Archiving failed: ${gone.error.message}`);
+  if ((gone.data ?? []).length === 0) {
+    throw new Error("That assessment is already archived — reload to see its current state.");
+  }
+}
+
+/**
+ * Undo an archive. Archiving is meant to be the safe option, and an option you
+ * cannot reverse is not the safe one — a mis-archived record would otherwise be
+ * recoverable only through a database restore.
+ *
+ * Refuses when the person already holds a live assessment for that cycle:
+ * restoring would produce two, which the partial unique index forbids anyway.
+ * Better a sentence than a constraint-violation stack trace.
+ */
+export async function restoreAssessment(assessmentId: string): Promise<void> {
+  const row = await rowById(assessmentId);
+  if (!row.deleted_at) throw new Error("That assessment is not archived.");
+
+  const live = await findAssessment(row.assessee_id, row.cycle);
+  if (live) {
+    throw new Error(
+      "That person already has a live assessment for this cycle — archive it first if you want this one back.",
+    );
+  }
+
+  const back = await db()
+    .from("assessment")
+    .update({ deleted_at: null, deleted_by: null, deleted_reason: null })
+    .eq("id", assessmentId)
+    .not("deleted_at", "is", null)
+    .select("id");
+  if (back.error) throw new Error(`Restoring failed: ${back.error.message}`);
+  if ((back.data ?? []).length === 0) {
+    throw new Error("That assessment is no longer archived — reload to see its current state.");
+  }
+}
+
+/** Archived assessments for a cycle, newest first — the history view. */
+export async function listArchived(cycle = currentCycle()): Promise<Assessment[]> {
+  return listAssessments(cycle, { archived: true });
 }
 
 async function frameworkIdOf(): Promise<string> {
@@ -208,6 +329,11 @@ async function assembleAssessment(
     approved_at: row.approved_at,
     completed_at: row.completed_at,
     snapshot_targets: snapshot,
+    // Carried on the single-record path too, not just the list path — the
+    // review screen is the one place an archived record is still opened, so
+    // this is exactly where it must be able to say so.
+    deleted_at: row.deleted_at,
+    deleted_reason: row.deleted_reason,
   };
 }
 
@@ -230,11 +356,19 @@ export async function loadForAssessee(user: AppUser, id: string): Promise<Assess
  * queries per person, so listing nine of them one at a time is 36 round trips
  * for a screen that only needs names and states.
  */
-export async function listAssessments(cycle = currentCycle()): Promise<Assessment[]> {
+export async function listAssessments(
+  cycle = currentCycle(),
+  opts: { archived?: boolean } = {},
+): Promise<Assessment[]> {
   const sb = db();
+  const query = sb.from("assessment").select(ASSESSMENT_COLUMNS).eq("cycle", cycle);
+  // Live by default. Every screen and every rollup reads through here, so this
+  // one line is what keeps an archived record out of all of them.
   const rows = unwrap(
     "assessment list",
-    await sb.from("assessment").select(ASSESSMENT_COLUMNS).eq("cycle", cycle).order("created_at"),
+    await (opts.archived
+      ? query.not("deleted_at", "is", null).order("deleted_at", { ascending: false })
+      : query.is("deleted_at", null).order("created_at")),
   ) as AssessmentRow[];
   if (rows.length === 0) return [];
 
@@ -285,6 +419,8 @@ export async function listAssessments(cycle = currentCycle()): Promise<Assessmen
       submitted_at: row.submitted_at,
       approved_at: row.approved_at,
       completed_at: row.completed_at,
+      deleted_at: row.deleted_at,
+      deleted_reason: row.deleted_reason,
     } satisfies Assessment;
   });
 }
@@ -293,6 +429,13 @@ export async function listAssessments(cycle = currentCycle()): Promise<Assessmen
 
 async function assertState(id: string, allowed: AssessmentState[]): Promise<AssessmentRow> {
   const row = await rowById(id);
+  // Checked before the state, and in the one place every mutation passes
+  // through: an archived assessment is out of the cycle, so scoring, submitting
+  // or approving it would put data into a record the metrics deliberately
+  // ignore.
+  if (row.deleted_at) {
+    throw new Error("This assessment has been archived — it can no longer be changed.");
+  }
   if (!allowed.includes(row.state)) {
     throw new Error(
       `This assessment is ${row.state.replace("_", " ")} — it cannot be changed here.`,
@@ -552,7 +695,10 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
   // compensated for assessments appearing unbidden; neither is needed now, and
   // both are deleted rather than left as belt-and-braces that would quietly
   // disagree with this one.
-  const assessments = await listAssessments(cycle);
+  const [assessments, archived] = await Promise.all([
+    listAssessments(cycle),
+    listAssessments(cycle, { archived: true }),
+  ]);
 
   const durations: number[] = [];
   const rows: CompletionStats["rows"] = assessments.map((a) => {
@@ -585,6 +731,12 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
     finished: assessments.filter((a) => a.completed_at != null).length,
     approved: assessments.filter((a) => a.state === "approved").length,
     median_hours: median(durations),
+    // Reported, not merely excluded. An archive changes both halves of the
+    // completion fraction, and a number that moved for a reason nobody can see
+    // is the failure mode this whole feature exists to avoid (N6) — so the
+    // screen states its own rule: "4 of 5 · 1 archived, excluded".
+    archived: archived.length,
+    archived_finished: archived.filter((a) => a.completed_at != null).length,
     rows,
   };
 }

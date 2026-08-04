@@ -134,10 +134,17 @@ async function session(email, password) {
 }
 const idOf = async (email) =>
   (await db.from("app_user").select("id").eq("email", email).single()).data.id;
-/** maybeSingle, not single: "no assessment" is now an ordinary state — nobody
- *  has one until an admin assigns it — and the tests assert on exactly that. */
+/**
+ * The person's LIVE assessment, or null.
+ *
+ * maybeSingle, not single: "no assessment" is an ordinary state — nobody has one
+ * until an admin assigns it. Filtered to live rows because archiving lets one
+ * person accumulate several rows per cycle, and an unfiltered maybeSingle would
+ * start throwing on the second archive.
+ */
 const assessmentOf = async (email) =>
-  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email)).maybeSingle()).data;
+  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email))
+    .is("deleted_at", null).maybeSingle()).data;
 
 const { data: activeControls } = await db
   .from("control").select("id, code, target_level").eq("active", true).order("sort_order").limit(5000);
@@ -683,6 +690,149 @@ console.log("\n[12] People screen (A1)");
   await resetLogin.ctx.close();
 
   await purge(NEWMAIL);
+}
+
+/* ----------------------------------------------------- 13. archive (N6) */
+console.log("\n[13] Archive instead of destroy (PR B)");
+{
+  // PM's assessment is approved by now: scored, finished, timed. Exactly the
+  // record a hard delete would silently take out of the headline figure.
+  const before = await assessmentOf(PM.email);
+  const stats = async () => {
+    await boss.page.goto("/review");
+    const txt = await boss.page.locator(".card.pad").first().innerText();
+    return txt;
+  };
+  const beforeText = await stats();
+  check("the approved assessment is counted before archiving",
+    beforeText.includes("Median time to complete"));
+  check("it is listed in the review overview",
+    (await boss.page.content()).includes(PM.name));
+
+  await boss.page.goto("/admin/people");
+  const row = boss.page.locator("tr", { hasText: PM.name });
+  check("a started assessment offers Archive, not Withdraw",
+    (await row.locator('button:has-text("Archive")').count()) === 1
+      && (await row.locator('button:has-text("Withdraw")').count()) === 0);
+
+  // the reason is the audit trail, so it is required
+  await row.locator('input[name="reason"]').fill("");
+  await row.locator('input[name="reason"]').evaluate((el) => el.removeAttribute("required"));
+  await row.locator('button:has-text("Archive")').click();
+  await boss.page.waitForURL(/[?&](error|archived)=/);
+  check("archiving without a reason is refused",
+    (await boss.page.content()).includes("the reason is the audit trail"), boss.page.url());
+  check("nothing was archived by the refused attempt",
+    (await assessmentOf(PM.email))?.deleted_at == null);
+
+  await boss.page.goto("/admin/people");
+  await boss.page.locator("tr", { hasText: PM.name })
+    .locator('input[name="reason"]').fill("QA archive test");
+  await boss.page.locator("tr", { hasText: PM.name })
+    .locator('button:has-text("Archive")').click();
+  await boss.page.waitForURL(/[?&](error|archived)=/);
+
+  const gone = (await db.from("assessment").select("*").eq("id", before.id).single()).data;
+  check("deleted_at stamped", gone.deleted_at !== null);
+  check("deleted_by records who archived it", gone.deleted_by === (await idOf(BOSS.email)));
+  check("the reason is stored", gone.deleted_reason === "QA archive test");
+  check("the scores survive the archive",
+    ((await db.from("score").select("*", { count: "exact", head: true })
+      .eq("assessment_id", before.id)).count ?? 0) > 0);
+  check("the frozen targets survive too",
+    ((await db.from("target_snapshot").select("*", { count: "exact", head: true })
+      .eq("assessment_id", before.id)).count ?? 0) === 133);
+  check("started_at and completed_at survive — the metric stays reconstructible",
+    gone.started_at !== null && gone.completed_at !== null);
+
+  await boss.page.goto("/review");
+  const after = await boss.page.content();
+  check("archived rows leave the review overview", !after.includes(PM.name));
+  check("the completion panel states the exclusion rather than moving silently",
+    after.includes("archived, excluded"), "no exclusion note on /review");
+
+  // the assessee is told the truth, not "you were never assigned one"
+  await pm.page.goto("/assess/controls");
+  const seen = await pm.page.content();
+  check("the assessee is told it was withdrawn, not that they were never assigned",
+    seen.includes("was withdrawn") && !seen.includes("No assessment has been assigned"));
+  check("the reason is shown to them", seen.includes("QA archive test"));
+  await pm.page.goto("/results");
+  check("archived results are not shown",
+    !(await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
+
+  // an archived record is frozen — still inspectable, never editable
+  await boss.page.goto(`/review?a=${before.id}`);
+  check("an admin can still open an archived record, and it says it is archived",
+    (await boss.page.content()).includes("archived"));
+  check("an archived record offers no save or approve",
+    (await boss.page.locator('button:has-text("Save revisions")').count()) === 0
+      && (await boss.page.locator('button:has-text("Approve assessment")').count()) === 0);
+  await pm.page.goto("/assess?c=4.3.1.1");
+  check("the assessee gets no scoring form on an archived assessment",
+    (await pm.page.locator('input[name="level"]').count()) === 0);
+
+  // Re-assignment must actually WORK, not merely be offered. 0001 declared
+  // `unique (assessee_id, cycle)`, which an archived row still occupies — so
+  // before migration 0004 the checkbox appears and the insert is refused. A
+  // test that only counted the checkbox passed while the feature was broken.
+  await boss.page.goto("/admin/people");
+  const pmId = await idOf(PM.email);
+  check("an archived person is offered for re-assignment",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 1);
+
+  const boxes2 = boss.page.locator('input[name="assignee"]');
+  for (let i = 0; i < (await boxes2.count()); i++) await boxes2.nth(i).setChecked(false);
+  await boss.page.check(`input[name="assignee"][value="${pmId}"]`);
+  await boss.page.click('button:has-text("Assign selected")');
+  await boss.page.waitForURL(/[?&](error|assigned)=/);
+  const reassigned = await assessmentOf(PM.email);
+  const reassignWorked = reassigned !== null && reassigned.id !== before.id;
+  check("re-assigning after an archive succeeds (needs migration 0004)",
+    reassignWorked, decodeURIComponent(boss.page.url()));
+
+  // Everything below depends on a replacement existing. Guarded rather than
+  // left to throw: a suite that dies here skips its own cleanup and leaves QA
+  // accounts on the live allowlist.
+  if (reassignWorked) {
+    check("the replacement is a fresh draft, not the archived record",
+      reassigned.state === "draft" && reassigned.deleted_at === null);
+    check("the archived record is still there beside its replacement",
+      ((await db.from("assessment").select("*", { count: "exact", head: true })
+        .eq("assessee_id", pmId).not("deleted_at", "is", null)).count ?? 0) === 1);
+
+    // restoring while a live one exists would produce two; say so in a sentence
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Restore")').click();
+    await boss.page.waitForURL(/[?&](error|restored)=/);
+    check("restore is refused while a live assessment exists",
+      (await boss.page.content()).includes("already has a live assessment"), boss.page.url());
+
+    // clear the replacement so the original can come back
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Withdraw")').click();
+    await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  } else {
+    console.log("  … 3 checks skipped: they need migration 0004 (see the failure above)");
+  }
+
+  // restore puts it back exactly as it was
+  const stillArchived = (await db.from("assessment").select("id")
+    .eq("id", before.id).not("deleted_at", "is", null).maybeSingle()).data;
+  if (stillArchived) {
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Restore")').click();
+    await boss.page.waitForURL(/[?&](error|restored)=/);
+  }
+  const backAgain = await assessmentOf(PM.email);
+  check("restore clears the archive", backAgain?.deleted_at === null);
+  check("restore keeps the state it was archived in", backAgain?.state === "approved");
+  await boss.page.goto("/review");
+  check("a restored assessment is counted again",
+    (await boss.page.content()).includes(PM.name));
 }
 
 /* ---------------------------------------------------------------- cleanup */

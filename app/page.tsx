@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { canAdmin, canAssess, requireUser } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
-import { currentCycle, findAssessment, loadForAssessee } from "@/lib/db/assessment";
+import {
+  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+} from "@/lib/db/assessment";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,7 @@ export default async function Home({
   // plain read and "no row" is a real, expected state rather than a first visit.
   const row = await findAssessment(user.id);
   const mine = row ? await loadForAssessee(user, row.id) : null;
+  const archived = row ? null : await findArchivedAssessment(user.id);
 
   const scored = mine?.scores.filter((s) => s.self_level !== null).length ?? 0;
   const total = fw.activeControls.length;
@@ -40,8 +43,17 @@ export default async function Home({
         </p>
         {!mine && (
           <p className="note" style={{ fontSize: 14, marginTop: 10 }}>
-            No assessment has been assigned to you for the {cycle} cycle
-            {canAdmin(user) ? " — assign one from People." : "."}
+            {archived ? (
+              <>
+                Your {cycle} assessment was withdrawn by the Head of PMO.{" "}
+                <Link href="/assess/controls">See what that means</Link>.
+              </>
+            ) : (
+              <>
+                No assessment has been assigned to you for the {cycle} cycle
+                {canAdmin(user) ? " — assign one from People." : "."}
+              </>
+            )}
           </p>
         )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>

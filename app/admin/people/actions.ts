@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { addPerson, resetPassword } from "@/lib/db/people";
-import { assignAssessment, unassignAssessment } from "@/lib/db/assessment";
+import {
+  archiveAssessment, assignAssessment, restoreAssessment, unassignAssessment,
+} from "@/lib/db/assessment";
 import type { UserRole } from "@/lib/types";
 
 const ROLES: UserRole[] = ["assessee", "assessor", "admin"];
@@ -73,6 +75,42 @@ export async function unassignAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/people");
   revalidatePath("/review");
   back({ withdrawn: "1" });
+}
+
+/**
+ * Archive an assessment (N6) — the answer to "can an admin delete one?".
+ *
+ * Deliberately not a delete: the timestamps that make up the completion metric
+ * survive, so a figure reported upward stays reconstructible afterwards.
+ */
+export async function archiveAction(formData: FormData): Promise<void> {
+  const admin = await requireRole("admin");
+  const id = String(formData.get("assessment_id") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  try {
+    await archiveAssessment(admin, id, reason);
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Archiving failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ archived: "1" });
+}
+
+/** Undo an archive. The safe option has to be reversible to deserve the name. */
+export async function restoreAction(formData: FormData): Promise<void> {
+  await requireRole("admin");
+  const id = String(formData.get("assessment_id") ?? "");
+  try {
+    await restoreAssessment(id);
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Restoring failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ restored: "1" });
 }
 
 export async function resetPasswordAction(formData: FormData): Promise<void> {

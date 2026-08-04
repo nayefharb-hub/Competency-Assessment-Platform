@@ -18,10 +18,19 @@ import type { AppUser, UserRole } from "../types";
 
 export interface PersonRow extends AppUser {
   created_at: string;
-  /** assessment state for the current cycle, if they have one */
+  /** LIVE assessment for the current cycle, if they have one */
   assessment_id: string | null;
   assessment_state: string | null;
   scored: number;
+  /**
+   * Most recent ARCHIVED assessment for the cycle. Carried separately rather
+   * than folded into the fields above: this screen is the only place an
+   * archived record is still visible, so it is also the only place it can be
+   * restored from.
+   */
+  archived_id: string | null;
+  archived_reason: string | null;
+  archived_at: string | null;
 }
 
 const COLUMNS = "id, email, full_name, job_title, role, must_change_password, created_at";
@@ -35,22 +44,36 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
   ) as (AppUser & { created_at: string })[];
   if (people.length === 0) return [];
 
-  const assessments = (
-    await sb
-      .from("assessment")
+  const [assessments, archivedRows] = await Promise.all([
+    sb.from("assessment")
       .select("id, assessee_id, state")
       .eq("cycle", cycle)
       .is("deleted_at", null)
       .in("assessee_id", people.map((p) => p.id))
-  ).data as { id: string; assessee_id: string; state: string }[] | null;
+      .then((r) => (r.data ?? []) as { id: string; assessee_id: string; state: string }[]),
+    sb.from("assessment")
+      .select("id, assessee_id, deleted_at, deleted_reason")
+      .eq("cycle", cycle)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false })
+      .in("assessee_id", people.map((p) => p.id))
+      .then((r) => (r.data ?? []) as {
+        id: string; assessee_id: string; deleted_at: string; deleted_reason: string | null;
+      }[]),
+  ]);
 
-  const byPerson = new Map((assessments ?? []).map((a) => [a.assessee_id, a]));
+  const byPerson = new Map(assessments.map((a) => [a.assessee_id, a]));
+  // Ordered newest-first, so the first one seen per person is the latest.
+  const archivedByPerson = new Map<string, (typeof archivedRows)[number]>();
+  for (const a of archivedRows) {
+    if (!archivedByPerson.has(a.assessee_id)) archivedByPerson.set(a.assessee_id, a);
+  }
 
   const scores = (
     await sb
       .from("score")
       .select("assessment_id, self_level")
-      .in("assessment_id", (assessments ?? []).map((a) => a.id))
+      .in("assessment_id", assessments.map((a) => a.id))
       .not("self_level", "is", null)
       .limit(20000)
   ).data as { assessment_id: string }[] | null;
@@ -62,11 +85,15 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
 
   return people.map((p) => {
     const a = byPerson.get(p.id);
+    const gone = archivedByPerson.get(p.id);
     return {
       ...p,
       assessment_id: a?.id ?? null,
       assessment_state: a?.state ?? null,
       scored: a ? scoredCount.get(a.id) ?? 0 : 0,
+      archived_id: gone?.id ?? null,
+      archived_reason: gone?.deleted_reason ?? null,
+      archived_at: gone?.deleted_at ?? null,
     };
   });
 }
