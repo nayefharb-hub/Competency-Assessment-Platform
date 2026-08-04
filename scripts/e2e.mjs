@@ -128,7 +128,11 @@ async function session(email, password) {
   await page.goto("/login");
   await page.fill("#email", email);
   await page.fill("#password", password);
-  await page.click('button[type="submit"]');
+  // Scoped to the login form on purpose: the layout carries a theme toggle
+  // whose buttons are also submits, and page.click() is not strict — it would
+  // silently take the first match, which is a theme button on every signed-in
+  // page. That mistake cost six passing tests when the toggle landed.
+  await page.click('form button[type="submit"]:has-text("Sign in")');
   await page.waitForLoadState("networkidle");
   return { ctx, page };
 }
@@ -292,7 +296,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
   await pm.page.goto("/assess?c=4.3.1.1");
   await pm.page.check('input[name="level"][value="3"]');
   await pm.page.fill("#evidence", "QA evidence line");
-  await pm.page.click('button[type="submit"]');
+  await pm.page.click('.assess-actions button[type="submit"]');
   await pm.page.waitForLoadState("networkidle");
 
   const a = await assessmentOf(PM.email);
@@ -310,6 +314,53 @@ console.log("\n[4] Self-scoring persists to Postgres");
 
   await pm.page.goto("/assess?c=4.3.1.1");
   check("saved score is re-selected on reload", await pm.page.isChecked('input[name="level"][value="3"]'));
+
+  /* N5 + N4 — tested HERE, not later: exactly one control is scored at this
+     point, which is the only moment in the run where both filters have
+     something in them. By the time the fixture is submitted everything is
+     scored, and "not scored" would be trivially empty. */
+  {
+    const rows = () => pm.page.locator(".crow").count();
+    await pm.page.goto("/assess/controls");
+    check("unfiltered, every active control is listed", (await rows()) === 132, `${await rows()}`);
+
+    await pm.page.goto("/assess/controls?show=todo");
+    const todo = await rows();
+    await pm.page.goto("/assess/controls?show=done");
+    const done = await rows();
+    check("the two filters partition the list exactly", todo + done === 132, `${todo} + ${done}`);
+    check("one control is scored, so each filter holds something",
+      done === 1 && todo === 131, `done=${done} todo=${todo}`);
+
+    // A filter is a way of LOOKING at 132 controls, not a way of having fewer.
+    // Progress is the number this screen exists to report; showing "1/1" under
+    // a filter would be a lie about how much is left.
+    const progress = await pm.page.locator(".progress-head").innerText();
+    check("progress still reports the whole assessment under a filter",
+      progress.includes("/ 132 controls scored"), JSON.stringify(progress));
+
+    await pm.page.goto("/assess/controls?show=nonsense");
+    check("an unknown filter falls back to all rather than showing nothing",
+      (await rows()) === 132);
+
+    // N4: the row's state must not rest on colour alone.
+    await pm.page.goto("/assess/controls");
+    const marks = await pm.page.evaluate(() => {
+      const todoRow = document.querySelector(".crow-todo");
+      const doneRow = document.querySelector(".crow-done");
+      return {
+        todoText: todoRow?.querySelector(".tick")?.textContent?.trim(),
+        doneText: doneRow?.querySelector(".tick")?.textContent?.trim(),
+        todoEdge: todoRow ? getComputedStyle(todoRow).borderLeftColor : null,
+        doneEdge: doneRow ? getComputedStyle(doneRow).borderLeftColor : null,
+      };
+    });
+    check("an unscored row says so in words, not only in colour",
+      marks.todoText === "not scored", `${marks.todoText}`);
+    check("a scored row names the level it holds", /^\u2713 /.test(marks.doneText ?? ""), `${marks.doneText}`);
+    check("the two row states differ by more than a badge",
+      marks.todoEdge !== marks.doneEdge, `${marks.todoEdge} vs ${marks.doneEdge}`);
+  }
 
   /* N14: the answer and Save must be on screen without scrolling, at every
      width and on the longest control in ICB4. This is the guarantee the layout
@@ -624,14 +675,14 @@ console.log("\n[11] Password gate (A1)");
   await gated.page.evaluate(() => {
     document.querySelectorAll("input").forEach((i) => i.removeAttribute("minLength"));
   });
-  await gated.page.click('button[type="submit"]');
+  await gated.page.click('form:has(#password) button[type="submit"]');
   await gated.page.waitForLoadState("networkidle");
   check("a short password is refused", (await gated.page.content()).includes("at least 10"));
 
   await gated.page.goto("/change-password");
   await gated.page.fill("#password", "LongEnough1!aa");
   await gated.page.fill("#confirm", "DifferentOne1!a");
-  await gated.page.click('button[type="submit"]');
+  await gated.page.click('form:has(#password) button[type="submit"]');
   await gated.page.waitForLoadState("networkidle");
   check("mismatched passwords are refused", (await gated.page.content()).includes("do not match"));
 
@@ -640,7 +691,7 @@ console.log("\n[11] Password gate (A1)");
   await gated.page.goto("/change-password");
   await gated.page.fill("#password", NEWPASS);
   await gated.page.fill("#confirm", NEWPASS);
-  await gated.page.click('button[type="submit"]');
+  await gated.page.click('form:has(#password) button[type="submit"]');
   await gated.page.waitForLoadState("networkidle");
 
   const { data: after } = await db.from("app_user")
@@ -860,6 +911,90 @@ console.log("\n[13] Archive instead of destroy (PR B)");
   await boss.page.goto("/review");
   check("a restored assessment is counted again",
     (await boss.page.content()).includes(PM.name));
+}
+
+/* --------------------------------------------- 14. the UX pass (PR C) */
+console.log("\n[14] Mobile chrome and theme (N10, N12)");
+{
+  /* --- N10: how much of a phone screen is spent before any content --- */
+  await pm.page.setViewportSize({ width: 390, height: 844 });
+  await pm.page.goto("/assess/controls");
+  const chrome = await pm.page.evaluate(() => ({
+    top: Math.round(document.querySelector("main").getBoundingClientRect().top),
+    overflows: document.documentElement.scrollWidth > window.innerWidth,
+  }));
+  check("header chrome is under a fifth of a phone screen",
+    chrome.top < 844 * 0.2, `content starts at ${chrome.top}px of 844`);
+  check("nothing overflows the page sideways at 390px", !chrome.overflows);
+
+  /* --- N10: the People table reads as cards, not a sideways scroll --- */
+  await boss.page.setViewportSize({ width: 390, height: 844 });
+  await boss.page.goto("/admin/people");
+  const table = await boss.page.evaluate(() => {
+    const wrap = document.querySelector(".tablewrap");
+    const td = document.querySelector(".grid.stacked tbody td");
+    return {
+      scrolls: wrap ? wrap.scrollWidth > wrap.clientWidth + 1 : null,
+      // the ::before label is what replaces the hidden column header
+      label: td ? getComputedStyle(td, "::before").content : null,
+      headHidden: getComputedStyle(document.querySelector(".grid.stacked thead")).display,
+    };
+  });
+  check("the People table stops scrolling sideways on a phone", table.scrolls === false);
+  check("its column headers move into each cell", table.headHidden === "none"
+    && table.label && table.label !== "none", `label=${table.label}`);
+  await boss.page.setViewportSize({ width: 1280, height: 900 });
+
+  /* --- N12: theme, against an OS that is actually set to dark --- */
+  {
+    // Emulating the OS setting is the only way to test the thing that matters:
+    // "Light" has to WIN against a dark machine, which is exactly what a naive
+    // implementation gets wrong — with only a prefers-color-scheme block and no
+    // [data-theme="light"] rules, choosing Light does nothing at all.
+    const ctx = await browser.newContext({ baseURL: BASE, colorScheme: "dark" });
+    const page = await ctx.newPage();
+    await page.goto("/login");
+    await page.fill("#email", PM.email);
+    await page.fill("#password", PM.password);
+    await page.click('form button[type="submit"]:has-text("Sign in")');
+    await page.waitForLoadState("networkidle");
+
+    const state = () => page.evaluate(() => ({
+      attr: document.documentElement.getAttribute("data-theme"),
+      bg: getComputedStyle(document.body).backgroundColor,
+    }));
+
+    const auto = await state();
+    check("Auto follows a dark OS", auto.attr === "system"
+      && auto.bg === "rgb(14, 22, 33)", `${auto.attr} / ${auto.bg}`);
+
+    // waitForFunction, not networkidle: a server action's re-render lands
+    // AFTER the network goes quiet, so networkidle reads the old DOM. Same
+    // trap as the withdraw button in section [2].
+    await page.click('.themetoggle button[value="light"]');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+    const light = await state();
+    check("Light overrides a dark OS rather than doing nothing",
+      light.attr === "light" && light.bg === "rgb(244, 246, 249)", `${light.attr} / ${light.bg}`);
+    check("the pressed state says which theme is on",
+      (await page.getAttribute('.themetoggle button[value="light"]', "aria-pressed")) === "true");
+
+    await page.goto("/assess/controls");
+    check("the choice survives navigation",
+      (await page.getAttribute("html", "data-theme")) === "light");
+
+    await page.click('.themetoggle button[value="system"]');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "system");
+    const back = await state();
+    // The trap this catches: rendering `undefined` for system means React has
+    // to REMOVE data-theme from <html>, which it does not reliably do after a
+    // server action — the page stayed light until a hard reload.
+    check("Auto hands control back to the OS immediately, without a reload",
+      back.attr === "system" && back.bg === auto.bg, `${back.attr} / ${back.bg}`);
+
+    await ctx.close();
+  }
+
 }
 
 /* ---------------------------------------------------------------- cleanup */

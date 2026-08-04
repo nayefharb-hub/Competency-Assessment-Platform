@@ -17,9 +17,11 @@ export const dynamic = "force-dynamic";
 export default async function ControlsIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; submitted?: string; error?: string }>;
+  searchParams: Promise<{
+    saved?: string; submitted?: string; error?: string; show?: string;
+  }>;
 }) {
-  const { saved, submitted, error } = await searchParams;
+  const { saved, submitted, error, show } = await searchParams;
   const user = await requireUser();
   const [fw, row] = await Promise.all([getAssesseeFramework(), findAssessment(user.id)]);
   if (!row) {
@@ -38,10 +40,21 @@ export default async function ControlsIndex({
   const draft = assessment.state === "draft";
   const firstUnscored = fw.activeControls.find((c) => !scored.has(c.code));
 
+  /* Filter (N5) — a query parameter, not the app's first client component.
+     The counts above and inside every heading keep reporting the WHOLE
+     assessment: a filter is a way of looking at 132 controls, not a way of
+     having fewer, and "8/8 scored" under a "not scored" filter would be a lie
+     about progress on the one screen whose job is to report it. */
+  const filter: "all" | "todo" | "done" =
+    show === "todo" || show === "done" ? show : "all";
+  const matches = (code: string) =>
+    filter === "all" || (filter === "done" ? scored.has(code) : !scored.has(code));
+
   const byCe = fw.data.competence_elements.map((ce) => ({
     ce,
     controls: fw.activeControls.filter((c) => c.ce_code === ce.code),
   }));
+  const shown = fw.activeControls.filter((c) => matches(c.code)).length;
 
   return (
     <div className="section">
@@ -110,12 +123,46 @@ export default async function ControlsIndex({
         </p>
       </div>
 
-      {(["Perspective", "People", "Practice"] as const).map((area) => (
+      <div className="filterbar">
+        <span className="cap">Show</span>
+        {([
+          ["all", "All", total],
+          ["todo", "Not scored", total - done],
+          ["done", "Scored", done],
+        ] as const).map(([value, label, count]) => (
+          <Link
+            key={value}
+            href={value === "all" ? "/assess/controls" : `/assess/controls?show=${value}`}
+            className="filterchip"
+            aria-current={filter === value ? "true" : undefined}
+          >
+            {label} <span className="tnum">{count}</span>
+          </Link>
+        ))}
+      </div>
+
+      {filter !== "all" && shown === 0 && (
+        <div className="card pad">
+          <p className="note" style={{ margin: 0 }}>
+            {filter === "todo"
+              ? "Nothing left — every active control has a score."
+              : "Nothing scored yet."}{" "}
+            <Link href="/assess/controls">Show all {total}</Link>.
+          </p>
+        </div>
+      )}
+
+      {(["Perspective", "People", "Practice"] as const)
+        .filter((area) =>
+          byCe.some((g) => g.ce.area === area && g.controls.some((c) => matches(c.code))),
+        )
+        .map((area) => (
         <div key={area} style={{ marginBottom: 22 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>{area}</div>
           <div className="card pad">
             {byCe
               .filter((g) => g.ce.area === area)
+              .filter((g) => g.controls.some((c) => matches(c.code)))
               .map((g) => (
                 <div key={g.ce.code} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>
@@ -125,13 +172,16 @@ export default async function ControlsIndex({
                     </span>
                   </div>
                   <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                    {g.controls.map((c) => {
+                    {g.controls.filter((c) => matches(c.code)).map((c) => {
                       const level = scored.get(c.code);
                       return (
-                        <li key={c.code} style={{ padding: "3px 0" }}>
-                          <Link href={`/assess?c=${c.code}`} style={{ fontSize: 13.5 }}>
-                            <span className="tnum" style={{ fontWeight: 600 }}>{c.code}</span>{" "}
-                            <span style={{ color: "var(--ink)" }}>{c.indicator}</span>
+                        <li
+                          key={c.code}
+                          className={`crow ${level === undefined ? "crow-todo" : "crow-done"}`}
+                        >
+                          <Link href={`/assess?c=${c.code}`}>
+                            <span className="tnum ccode">{c.code}</span>{" "}
+                            <span className="cind">{c.indicator}</span>
                           </Link>{" "}
                           {level === undefined ? (
                             <span className="tick tick-todo">not scored</span>

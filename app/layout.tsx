@@ -3,6 +3,8 @@ import Link from "next/link";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { currentUser } from "@/lib/auth";
+import { currentTheme } from "./theme";
+import ThemeToggle from "./theme-toggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,13 +19,23 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const user = await currentUser();
+  const [user, theme] = await Promise.all([currentUser(), currentTheme()]);
   const isAssessor = user?.role === "assessor" || user?.role === "admin";
 
   return (
     // Geist is self-hosted through next/font — no runtime CDN, per DESIGN.md.
     // General Sans (the display face) is still outstanding; see DESIGN.md.
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    // data-theme is ALWAYS present, including "system". Rendering undefined
+    // for system would mean switching back to Auto has to *remove* an attribute
+    // from <html>, and React does not reliably do that across a server-action
+    // refresh — measured: the page stayed on the old theme until a full reload.
+    // "system" matches neither themed selector, so prefers-color-scheme governs,
+    // which is the same outcome without asking React to remove anything.
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      data-theme={theme}
+    >
       <body>
         <div className="shell">
           <header className="topbar">
@@ -51,7 +63,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <b>{user.full_name}</b>
                 <span className="muted"> · {ROLE_LABEL[user.role] ?? user.role}</span>
               </span>
-              <a href="/logout">Sign out</a>
+              <span className="whoami-right">
+                <ThemeToggle current={theme} />
+                <a href="/logout">Sign out</a>
+              </span>
             </div>
           )}
 

@@ -244,7 +244,7 @@ async function Overview({ error }: { error?: string }) {
           </p>
         )}
         <div className="tablewrap">
-          <table className="grid">
+          <table className="grid stacked">
             <thead>
               <tr>
                 <th>Name</th>
@@ -267,22 +267,22 @@ async function Overview({ error }: { error?: string }) {
                 const row = { scored, finished: a.completed_at != null, hours };
                 return (
                   <tr key={a.id}>
-                    <td>{a.assessee_name}</td>
-                    <td>
+                    <td data-label="Name">{a.assessee_name}</td>
+                    <td data-label="State">
                       <StateChip a={a} />
                     </td>
-                    <td className="num tnum">
+                    <td className="num tnum" data-label="Scored">
                       {row?.scored ?? 0}/{fw.activeControls.length}
                     </td>
-                    <td>{row?.finished ? "Yes" : "—"}</td>
-                    <td className="num tnum">
+                    <td data-label="Finished">{row?.finished ? "Yes" : "—"}</td>
+                    <td className="num tnum" data-label="Hours">
                       {row?.hours == null
                         ? "—"
                         : row.hours < 0.05
                           ? "<0.1"
                           : row.hours.toFixed(1)}
                     </td>
-                    <td>
+                    <td data-label="">
                       <Link href={`/review?a=${a.id}`}>
                         {a.state === "self_submitted" ? "Review" : "Open"}
                       </Link>

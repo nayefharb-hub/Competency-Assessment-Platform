@@ -197,7 +197,7 @@ export default async function PeoplePage({
       <div className="card pad">
         <div className="cap" style={{ marginBottom: 10 }}>ON THE ALLOWLIST</div>
         <div className="tablewrap">
-          <table className="grid">
+          <table className="grid stacked">
             <thead>
               <tr>
                 <th>Name</th>
@@ -210,16 +210,16 @@ export default async function PeoplePage({
             <tbody>
               {people.map((p) => (
                 <tr key={p.id}>
-                  <td>
+                  <td data-label="Name">
                     {p.full_name}
                     {p.job_title && <div className="note">{p.job_title}</div>}
                     {p.must_change_password && (
                       <span className="tick tick-todo">must set password</span>
                     )}
                   </td>
-                  <td className="note">{p.email}</td>
-                  <td>{ROLE_LABEL[p.role] ?? p.role}</td>
-                  <td>
+                  <td className="note" data-label="Email">{p.email}</td>
+                  <td data-label="Role">{ROLE_LABEL[p.role] ?? p.role}</td>
+                  <td data-label={`Cycle ${cycle}`}>
                     {p.assessment_state ? (
                       <>
                         {p.assessment_state.replace("_", " ")}
@@ -275,7 +275,7 @@ export default async function PeoplePage({
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Password">
                     {p.id === admin.id ? (
                       <Link href="/change-password">Change your own</Link>
                     ) : (
