@@ -1,11 +1,12 @@
 # Project status & handoff
 
-Last updated: 2026-08-04 (A2 — assignment). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
-**Live.** Deployed on Vercel from `main`. Migration `0003` is applied. Pilot
-feedback from using it is logged in `docs/pilot-feedback.md` (13 notes, triaged);
-the plan for the rest is `docs/eng-plan-admin-and-ux.md`.
+**Live.** Deployed on Vercel from `main`. Migration `0003` is applied; **`0004`
+is not yet — see item 6.** Pilot feedback from using it is logged in
+`docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
+`docs/eng-plan-admin-and-ux.md`.
 
 ---
 
@@ -36,7 +37,7 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # expect 112/112 — writes, then cleans up after itself
+npm run e2e                # 139 checks; see item 6 about migration 0004
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -45,7 +46,7 @@ If `verify:db` fails, stop: it is credentials or network, not code.
 
 | Want | Read |
 |---|---|
-| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N13) |
+| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N15) |
 | What to build next and in what order | `docs/eng-plan-admin-and-ux.md` |
 | Visual rules — locked, do not deviate | `DESIGN.md` |
 | Rollup arithmetic contract | `docs/rollup-spec.md` |
@@ -59,9 +60,24 @@ renamed `assigned`, because that is what it counts. Withdrawing an assignment is
 allowed only while nothing has been scored. No migration was needed: `0003`
 already added `assigned_at` / `assigned_by`.
 
-**Next is PR B — archive (N6)**, then PR C (N10 mobile, N12 theme toggle, N5
-controls filter, N4 scored-state emphasis — decide N5 before N4). The
-`deleted_at` / `deleted_by` / `deleted_reason` columns already exist from `0003`.
+**PR B — archive (N6) is DONE, but migration `0004` is NOT APPLIED.** Paste
+`supabase/migrations/0004_archive_frees_the_cycle.sql` into the Supabase SQL
+editor, as `0003` was. It replaces `unique (assessee_id, cycle)` with a partial
+unique index over live rows: an archived row otherwise keeps the slot, so
+archiving somebody's cycle would permanently prevent re-assigning it to them.
+Verified against the live database rather than assumed — re-assigning after an
+archive is refused today with `duplicate key value violates unique constraint`.
+
+**Until `0004` runs, `npm run e2e` is 138/139**, and the one failing check is
+named `re-assigning after an archive succeeds (needs migration 0004)`. That is
+deliberate: the earlier version of that test only counted a checkbox and passed
+while the feature was broken. Everything else is green and cleanup still runs.
+
+**Next is PR C** (N14 assess-screen fit, N10 mobile, N12 theme toggle, N5
+controls filter, N4 scored-state emphasis — decide N5 before N4). **N14 is
+blocked on a DESIGN.md amendment the owner has to approve** — see the N14 note in
+`docs/pilot-feedback.md`, which carries the measurements and the proposed
+wording.
 
 **7. Two things blocked on the owner, not on code.**
 - **SMTP** — gates emailed invite links and self-service password reset. Needs
@@ -134,11 +150,12 @@ Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **112/112** through a real browser against the running app,
+- `npm run e2e` — **138/139** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
-  gate and the People screen.
+  gate, the People screen, session-cookie flags, and archive/restore. The single
+  failure is the migration-`0004` check described above.
 
 ## What was built
 

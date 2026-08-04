@@ -251,7 +251,7 @@ need answered a different way.
 
 ### N6 — can an admin delete an assessment?
 
-**Status:** Open — question answered, design decision outstanding
+**Status:** FIXED (2026-08-04, PR B) — **needs migration `0004` applied**
 
 > "can and admin delete a certain assessment?"
 
@@ -874,33 +874,46 @@ Withdrawing an assignment is allowed only while nothing has been scored, and the
 e2e suite proves the server refuses a withdraw posted from a tab that went stale
 after the person started. 112/112 against the live database.
 
+Shipped in PR B: **N6**. Archive, not delete. Scores, frozen targets and the
+completion timestamps all survive, so a figure already reported upward stays
+reconcilable; the review panel states "N archived, excluded" rather than letting
+the headline number move with nothing on screen to explain it. Archiving is
+reversible, the reason is required, and an archived record stays openable but
+never editable.
+
+**Migration `0004` must be applied before N6 is actually finished.** `0001`
+declared `unique (assessee_id, cycle)`; an archived row still occupies that
+slot, so archiving somebody's cycle would permanently prevent re-assigning it to
+them. Verified against the live database, not assumed: re-assigning after an
+archive is refused with `duplicate key value violates unique constraint`. `0004`
+replaces the constraint with a partial unique index over live rows. Until it is
+run, `npm run e2e` is **138/139** and the failing test names the migration.
+
 Still open, in build order — the reasoning for each is in its note above:
 
-1. **N6** archive — columns already exist; cleaner to design now N7 is in.
-2. **N14** the assess screen's height and width — needs the DESIGN.md amendment
+1. **N14** the assess screen's height and width — needs the DESIGN.md amendment
    in the note above before it can be built. Belongs with N10, since the sticky
    action bar and the mobile work are the same layout pass.
-3. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
+2. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
    scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
    quietening rather than amplifying.
-4. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
+3. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
    migration-tracking gap that should close before a second database exists.
-5. **N11 palette**, **N15 session bounds** and **SMTP** — all waiting on the
+4. **N11 palette**, **N15 session bounds** and **SMTP** — all waiting on the
    owner, not on code.
 
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 8 | 2 | 1 | 2 | 0 |
+| 7 | 3 | 1 | 2 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N6** — archive
-2. **N14** — assess screen height/width (needs the DESIGN.md amendment)
-3. **N10** — mobile: header, section headings, People table
-4. **N5** — filter the controls list
-5. **N4** — scored-state emphasis, decided together with N5
+1. **N14** — assess screen height/width (needs the DESIGN.md amendment)
+2. **N10** — mobile: header, section headings, People table
+3. **N5** — filter the controls list
+4. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision
