@@ -2,7 +2,9 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { listPeople } from "@/lib/db/people";
 import { currentCycle } from "@/lib/db/assessment";
-import { addPersonAction, resetPasswordAction } from "./actions";
+import {
+  addPersonAction, assignAction, resetPasswordAction, unassignAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +24,19 @@ const ROLE_LABEL: Record<string, string> = {
 export default async function PeoplePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; added?: string; reset?: string }>;
+  searchParams: Promise<{
+    error?: string; added?: string; reset?: string;
+    assigned?: string; withdrawn?: string;
+  }>;
 }) {
-  const { error, added, reset } = await searchParams;
+  const { error, added, reset, assigned, withdrawn } = await searchParams;
   const admin = await requireRole("admin");
   const cycle = currentCycle();
   const people = await listPeople(cycle);
 
   const pms = people.filter((p) => p.role === "assessee").length;
+  const unassigned = people.filter((p) => p.assessment_id === null);
+  const assignedCount = people.length - unassigned.length;
 
   return (
     <div className="section">
@@ -53,6 +60,71 @@ export default async function PeoplePage({
           Password reset. They must replace it on their next sign-in.
         </div>
       )}
+      {assigned && (
+        <div className="banner banner-ok" role="status">
+          {assigned === "0"
+            ? "Everyone you picked already had this cycle — nothing changed."
+            : `Assigned the ${cycle} cycle to ${assigned} ${assigned === "1" ? "person" : "people"}. They can start now.`}
+        </div>
+      )}
+      {withdrawn && (
+        <div className="banner banner-ok" role="status">
+          Assignment withdrawn. Nothing was scored, so nothing was lost.
+        </div>
+      )}
+
+      <div className="card pad" style={{ marginBottom: 20 }}>
+        <div className="cap" style={{ marginBottom: 10 }}>
+          ASSIGN THE {cycle} CYCLE
+        </div>
+        <p className="note lede" style={{ marginBottom: 14 }}>
+          Nobody has an assessment until you assign one. That is what makes the
+          completion figure mean something: {assignedCount} assigned is{" "}
+          {assignedCount} people asked, not {people.length} people who happen to
+          hold a login.
+        </p>
+
+        {unassigned.length === 0 ? (
+          <p className="note">
+            Everyone on the allowlist has the {cycle} cycle.{" "}
+            <Link href="/review">See how they are getting on</Link>.
+          </p>
+        ) : (
+          <form action={assignAction}>
+            <ul className="picklist">
+              {unassigned.map((p) => (
+                <li key={p.id}>
+                  <label className="opt">
+                    <input
+                      type="checkbox"
+                      name="assignee"
+                      value={p.id}
+                      defaultChecked={p.role === "assessee"}
+                    />
+                    <span>
+                      <b>{p.full_name}</b>
+                      <span className="gloss">
+                        {ROLE_LABEL[p.role] ?? p.role}
+                        {p.job_title ? ` · ${p.job_title}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button className="btn btn-accent" type="submit">
+                Assign selected
+              </button>
+            </div>
+            <p className="note" style={{ marginTop: 10 }}>
+              Project managers are ticked by default. Assessors and admins are
+              listed too — assigning yourself is how you walk the loop end to end,
+              and it counts like anyone else.
+            </p>
+          </form>
+        )}
+      </div>
 
       <div className="card pad" style={{ marginBottom: 20 }}>
         <div className="cap" style={{ marginBottom: 10 }}>ADD SOMEONE</div>
@@ -138,9 +210,17 @@ export default async function PeoplePage({
                       <>
                         {p.assessment_state.replace("_", " ")}
                         <div className="note tnum">{p.scored} scored</div>
+                        {p.assessment_state === "draft" && p.scored === 0 && (
+                          <form action={unassignAction}>
+                            <input type="hidden" name="assessment_id" value={p.assessment_id ?? ""} />
+                            <button className="btn btn-secondary btn-sm" type="submit">
+                              Withdraw
+                            </button>
+                          </form>
+                        )}
                       </>
                     ) : (
-                      <span className="muted">not started</span>
+                      <span className="muted">not assigned</span>
                     )}
                   </td>
                   <td>

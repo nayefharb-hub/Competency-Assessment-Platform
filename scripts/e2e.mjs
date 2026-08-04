@@ -57,23 +57,40 @@ const check = (name, ok, detail = "") => {
 /** Remove a QA account and everything it produced. `keepAccount` is for the
  *  mid-run reset; the end-of-run call takes the account away too, so the
  *  allowlist and the completion denominator go back to how they were. */
+/**
+ * Delete the sign-in half of an account by EMAIL.
+ *
+ * A run that dies mid-flight leaves an `auth.users` row with no `app_user` row —
+ * invisible to every app_user query, and enough to make the next "add person"
+ * fail with "email already registered". Cleaning up by id only cannot reach it.
+ */
+async function deleteAuthUser(email) {
+  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const found = (data?.users ?? []).find((u) => u.email === email);
+  if (found) await db.auth.admin.deleteUser(found.id);
+}
+
 async function purge(email, { keepAccount = false } = {}) {
   const { data: user } = await db.from("app_user").select("id").eq("email", email).maybeSingle();
-  if (!user) return;
-  const { data: rows } = await db.from("assessment").select("id").eq("assessee_id", user.id);
-  for (const a of rows ?? []) {
-    await db.from("target_snapshot").delete().eq("assessment_id", a.id);
-    await db.from("score").delete().eq("assessment_id", a.id);
-    await db.from("assessment").delete().eq("id", a.id);
+  if (user) {
+    const { data: rows } = await db.from("assessment").select("id").eq("assessee_id", user.id);
+    for (const a of rows ?? []) {
+      await db.from("target_snapshot").delete().eq("assessment_id", a.id);
+      await db.from("score").delete().eq("assessment_id", a.id);
+      await db.from("assessment").delete().eq("id", a.id);
+    }
   }
   if (keepAccount) return;
-  await db.from("app_user").delete().eq("id", user.id);
-  await db.auth.admin.deleteUser(user.id);
+  if (user) await db.from("app_user").delete().eq("id", user.id);
+  await deleteAuthUser(email);
 }
 
 async function ensure(person) {
   await purge(person.email, { keepAccount: true });
   const { data: existing } = await db.from("app_user").select("id").eq("email", person.email).maybeSingle();
+  // No allowlist row, but there may still be an orphaned sign-in account from an
+  // interrupted run; createUser would refuse the email.
+  if (!existing) await deleteAuthUser(person.email);
   if (existing) {
     await db.auth.admin.updateUserById(existing.id, { password: person.password, email_confirm: true });
     // Fixtures start unflagged; the password-gate tests set the flag themselves.
@@ -117,8 +134,10 @@ async function session(email, password) {
 }
 const idOf = async (email) =>
   (await db.from("app_user").select("id").eq("email", email).single()).data.id;
+/** maybeSingle, not single: "no assessment" is now an ordinary state — nobody
+ *  has one until an admin assigns it — and the tests assert on exactly that. */
 const assessmentOf = async (email) =>
-  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email)).single()).data;
+  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email)).maybeSingle()).data;
 
 const { data: activeControls } = await db
   .from("control").select("id, code, target_level").eq("active", true).order("sort_order").limit(5000);
@@ -144,8 +163,94 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 
-/* -------------------------------------- 2. role gates and target blinding */
-console.log("\n[2] Role gates and target blinding");
+/* ------------------------------------------------------- 2. assignment */
+console.log("\n[2] Assignment — an assessment exists only when an admin assigns it (A2)");
+{
+  check("signing in does not create an assessment", (await assessmentOf(PM.email)) === null);
+
+  await pm.page.goto("/assess/controls");
+  check("the PM is told nothing has been assigned",
+    (await pm.page.content()).includes("No assessment has been assigned"));
+  await pm.page.goto("/assess?c=4.3.1.1");
+  check("there is nothing to score before assignment",
+    (await pm.page.locator('input[name="level"]').count()) === 0);
+  check("and looking at those pages still created nothing",
+    (await assessmentOf(PM.email)) === null);
+
+  const pmId = await idOf(PM.email);
+  const otherId = await idOf(OTHER.email);
+  const bossId = await idOf(BOSS.email);
+
+  await boss.page.goto("/admin/people");
+  check("the assign list offers the unassigned PM",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 1);
+  // Untick everyone first: this suite must never assign a cycle to a real
+  // colleague who happens to be on the allowlist (the N13 lesson).
+  const boxes = boss.page.locator('input[name="assignee"]');
+  for (let i = 0; i < (await boxes.count()); i++) await boxes.nth(i).setChecked(false);
+  await boss.page.check(`input[name="assignee"][value="${pmId}"]`);
+  await boss.page.check(`input[name="assignee"][value="${otherId}"]`);
+  await boss.page.click('button:has-text("Assign selected")');
+  await boss.page.waitForLoadState("networkidle");
+
+  const a = await assessmentOf(PM.email);
+  check("assigning creates the assessment", a !== null);
+  check("state starts at draft", a?.state === "draft", a?.state);
+  check("assigned_at stamped", a?.assigned_at !== null);
+  check("assigned_by records who asked", a?.assigned_by === bossId, a?.assigned_by);
+  check("assignment does NOT stamp started_at — nobody has started yet",
+    a?.started_at === null, a?.started_at);
+  check("no scores are pre-created",
+    ((await db.from("score").select("*", { count: "exact", head: true })
+      .eq("assessment_id", a.id)).count ?? 0) === 0);
+
+  // Idempotence rests on the unique constraint, so assert the constraint itself
+  // rather than the code that leans on it.
+  const dup = await db.from("assessment").insert({
+    framework_id: a.framework_id, profile_id: a.profile_id,
+    assessee_id: pmId, cycle: a.cycle, state: "draft",
+  });
+  check("the database refuses a second assessment for the same person and cycle",
+    dup.error !== null, dup.error?.message);
+
+  await boss.page.goto("/admin/people");
+  check("an assigned person drops off the assign list",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 0);
+
+  await pm.page.goto("/assess/controls");
+  check("the PM can now start", (await pm.page.content()).includes("controls scored"));
+
+  /* withdraw: allowed while untouched, refused the moment anything is scored */
+  const otherA = await assessmentOf(OTHER.email);
+  const otherRow = boss.page.locator("tr", { hasText: OTHER.name });
+  check("an unstarted assignment offers Withdraw",
+    (await otherRow.locator('button:has-text("Withdraw")').count()) === 1);
+
+  // Score it behind the page's back — exactly the stale tab the guard exists
+  // for. The button is still in this DOM; the server has to say no.
+  await db.from("score").insert({
+    assessment_id: otherA.id, control_id: activeControls[0].id, self_level: 3,
+  });
+  await otherRow.locator('button:has-text("Withdraw")').click();
+  // waitForURL, not networkidle: the redirect from a server action lands after
+  // the network has already gone quiet, so networkidle reads the stale page.
+  await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  check("withdrawing a started assessment is refused by the server",
+    (await boss.page.content()).includes("would destroy them"), boss.page.url());
+  check("the started assessment survived the refused withdraw",
+    (await assessmentOf(OTHER.email)) !== null);
+
+  await db.from("score").delete().eq("assessment_id", otherA.id);
+  await boss.page.goto("/admin/people");
+  await boss.page.locator("tr", { hasText: OTHER.name })
+    .locator('button:has-text("Withdraw")').click();
+  await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  check("withdrawing an unstarted assignment removes it",
+    (await assessmentOf(OTHER.email)) === null);
+}
+
+/* -------------------------------------- 3. role gates and target blinding */
+console.log("\n[3] Role gates and target blinding");
 {
   await pm.page.goto("/review");
   check("PM cannot open the assessor review", pm.page.url().includes("denied=1"), pm.page.url());
@@ -160,8 +265,8 @@ console.log("\n[2] Role gates and target blinding");
   check("scale labels come from the database", html.includes("Practised") && html.includes("Proficient"));
 }
 
-/* -------------------------------------------- 3. self-scoring persistence */
-console.log("\n[3] Self-scoring persists to Postgres");
+/* -------------------------------------------- 4. self-scoring persistence */
+console.log("\n[4] Self-scoring persists to Postgres");
 {
   await pm.page.goto("/assess?c=4.3.1.1");
   await pm.page.check('input[name="level"][value="3"]');
@@ -202,8 +307,8 @@ console.log("\n[3] Self-scoring persists to Postgres");
     (await assessmentOf(PM.email)).state === "draft");
 }
 
-/* -------------------------------------------------------------- 4. submit */
-console.log("\n[4] Submit: draft -> self_submitted");
+/* -------------------------------------------------------------- 5. submit */
+console.log("\n[5] Submit: draft -> self_submitted");
 {
   const a = await assessmentOf(PM.email);
   // deterministic spread, so the rollup has real variation to report
@@ -242,8 +347,8 @@ console.log("\n[4] Submit: draft -> self_submitted");
     (await pm.page.content()).includes("Results are not available yet"));
 }
 
-/* ------------------------------------------ 5. assessor review-and-revise */
-console.log("\n[5] Assessor review-and-revise");
+/* ------------------------------------------ 6. assessor review-and-revise */
+console.log("\n[6] Assessor review-and-revise");
 const assessmentId = (await assessmentOf(PM.email)).id;
 {
   await boss.page.goto("/review");
@@ -285,8 +390,8 @@ const assessmentId = (await assessmentOf(PM.email)).id;
     filled.every((r) => r.assessor_level === r.self_level), JSON.stringify(filled));
 }
 
-/* --------------------------------------------- 6. approval and snapshot */
-console.log("\n[6] Approval snapshots targets and locks the record");
+/* --------------------------------------------- 7. approval and snapshot */
+console.log("\n[7] Approval snapshots targets and locks the record");
 {
   // same shape as the submit gate: clear a score, force the button, post anyway
   const orphan = activeControls.find((c) => c.code === "4.3.1.4").id;
@@ -345,8 +450,8 @@ console.log("\n[6] Approval snapshots targets and locks the record");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
 }
 
-/* --------------------------------------- 7. locked record, cross-user read */
-console.log("\n[7] Locked record and cross-user access");
+/* --------------------------------------- 8. locked record, cross-user read */
+console.log("\n[8] Locked record and cross-user access");
 {
   await boss.page.goto(`/review?a=${assessmentId}`);
   check("approved sheet says it is locked", (await boss.page.content()).includes("locked"));
@@ -362,8 +467,8 @@ console.log("\n[7] Locked record and cross-user access");
   await other.ctx.close();
 }
 
-/* -------------------------------------------------- 8. rollup arithmetic */
-console.log("\n[8] Rollup arithmetic recomputed from the database");
+/* -------------------------------------------------- 9. rollup arithmetic */
+console.log("\n[9] Rollup arithmetic recomputed from the database");
 {
   const { data: rows } = await db.from("score")
     .select("assessor_level, control:control_id(code, active, competence_element:ce_id(code, target_level))")
@@ -392,8 +497,8 @@ console.log("\n[8] Rollup arithmetic recomputed from the database");
     matched === byCe.size, `${matched}/${byCe.size}`);
 }
 
-/* ------------------------------------------------------ 9. framework admin */
-console.log("\n[9] Framework admin writes the tunable layer only");
+/* ------------------------------------------------------ 10. framework admin */
+console.log("\n[10] Framework admin writes the tunable layer only");
 {
   const stamp = `QA note ${Date.now()}`;
   // remember the seeded values so cleanup restores them exactly
@@ -434,8 +539,8 @@ console.log("\n[9] Framework admin writes the tunable layer only");
 }
 
 
-/* ------------------------------- 10. password gate and the People screen */
-console.log("\n[10] Password gate (A1)");
+/* ------------------------------- 11. password gate and the People screen */
+console.log("\n[11] Password gate (A1)");
 {
   // F1 regression: if must_change_password is missing from the column list in
   // lib/auth.ts it reads back undefined, therefore falsy, therefore the gate
@@ -505,7 +610,7 @@ console.log("\n[10] Password gate (A1)");
   OTHER.password = NEWPASS;
 }
 
-console.log("\n[11] People screen (A1)");
+console.log("\n[12] People screen (A1)");
 {
   await pm.page.goto("/admin/people");
   check("a PM cannot reach the People screen", pm.page.url().includes("denied=1"), pm.page.url());
@@ -515,7 +620,7 @@ console.log("\n[11] People screen (A1)");
   check("the allowlist is listed", (await boss.page.content()).includes(PM.email));
 
   const NEWMAIL = "qa.added@example.test";
-  await db.from("app_user").delete().eq("email", NEWMAIL);
+  await purge(NEWMAIL);
   await boss.page.fill("#full_name", "QA Added Person");
   await boss.page.fill("#email", NEWMAIL);
   await boss.page.fill("#job_title", "Project Manager");
@@ -529,6 +634,8 @@ console.log("\n[11] People screen (A1)");
   check("the person is on the allowlist", made !== null);
   check("created flagged to set their own password", made?.must_change_password === true);
   check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
+  check("a new person appears in the assign list, without an assessment",
+    (await boss.page.locator(`input[name="assignee"][value="${made?.id}"]`).count()) === 1);
 
   // the account really works, and lands on the gate
   const fresh = await session(NEWMAIL, "AddedByAdmin1!");
@@ -572,6 +679,10 @@ await purge(BOSS.email);
 const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
 check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
   (leftovers ?? []).map((u) => u.email).join(","));
+const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
+check("no QA sign-in accounts left behind either", strays.length === 0,
+  strays.map((u) => u.email).join(","));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

@@ -236,6 +236,13 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
   .opt:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 }
 
+/* Assignment pick-list. Reuses .opt so a checkbox row reads exactly like the
+   radio rows on the self-assessment — same target size, same checked state. */
+.picklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+@media (min-width: 700px) {
+  .picklist { grid-template-columns: 1fr 1fr; }
+}
+
 .ro {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--radius-in); padding: 14px 16px;

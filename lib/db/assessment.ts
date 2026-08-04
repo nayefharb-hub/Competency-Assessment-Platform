@@ -60,41 +60,82 @@ export async function findAssessment(
 }
 
 /**
- * The assessee's assessment for a cycle, created on first visit to the
- * self-assessment. Deliberately NOT called from read-only screens: a stray row
- * for the Head of PMO would land in the completion numbers.
+ * Assign a cycle to people. This is the ONLY way an assessment comes into
+ * existence — visiting /assess no longer creates one.
+ *
+ * That matters for more than tidiness. The completion figure is the number the
+ * pilot exists to produce, and its denominator has to be "how many people were
+ * asked", which nothing recorded while assessments appeared because somebody
+ * browsed to a page. It had to be inferred from who happened to hold a login.
+ * Now it is a fact: count the assignments.
+ *
+ * Idempotent against `unique (assessee_id, cycle)` — assigning the same person
+ * twice is a no-op, so the admin can add one late arrival without unpicking
+ * who already has one.
  */
-export async function getOrCreateAssessment(
-  assesseeId: string,
+export async function assignAssessment(
+  admin: AppUser,
+  assesseeIds: string[],
   cycle = currentCycle(),
-): Promise<AssessmentRow> {
-  const existing = await findAssessment(assesseeId, cycle);
-  if (existing) return existing;
+): Promise<{ assigned: number; alreadyHad: number }> {
+  if (assesseeIds.length === 0) return { assigned: 0, alreadyHad: 0 };
 
+  const sb = db();
   const fw = await getFramework();
   const profile = fw.profiles.find((p) => p.name === DEFAULT_PROFILE) ?? fw.profiles[0];
   if (!profile) throw new Error("No benchmark profile found — is the database seeded?");
   const frameworkId = await frameworkIdOf();
 
-  const created = await db()
-    .from("assessment")
-    .insert({
+  const existing = unwrap(
+    "assignment lookup",
+    await sb.from("assessment").select("assessee_id")
+      .eq("cycle", cycle).in("assessee_id", assesseeIds),
+  ) as { assessee_id: string }[];
+  const already = new Set(existing.map((e) => e.assessee_id));
+  const fresh = assesseeIds.filter((id) => !already.has(id));
+  if (fresh.length === 0) return { assigned: 0, alreadyHad: already.size };
+
+  const now = new Date().toISOString();
+  const created = await sb.from("assessment").insert(
+    fresh.map((assessee_id) => ({
       framework_id: frameworkId,
       profile_id: profile.id,
-      assessee_id: assesseeId,
+      assessee_id,
       cycle,
-      state: "draft",
-    })
-    .select(ASSESSMENT_COLUMNS)
-    .maybeSingle();
-  if (!created.error) return created.data as AssessmentRow;
+      state: "draft" as const,
+      assigned_at: now,
+      assigned_by: admin.id,
+    })),
+  );
+  if (created.error) throw new Error(`Assigning failed: ${created.error.message}`);
 
-  // A concurrent first visit loses the unique(assessee_id, cycle) race — the
-  // winner's row is now there to read. Re-read ONCE: retrying blindly would
-  // spin forever on any other insert failure.
-  const raced = await findAssessment(assesseeId, cycle);
-  if (raced) return raced;
-  throw new Error(`Could not create an assessment: ${created.error.message}`);
+  return { assigned: fresh.length, alreadyHad: already.size };
+}
+
+/** Withdraw an assignment that has not been started. Deliberately narrow: once
+ *  somebody has scored anything, taking it away is an archive decision (N6),
+ *  not an undo. */
+export async function unassignAssessment(
+  assessmentId: string,
+): Promise<void> {
+  const sb = db();
+  const { count } = await sb
+    .from("score")
+    .select("*", { count: "exact", head: true })
+    .eq("assessment_id", assessmentId)
+    .not("self_level", "is", null);
+  if ((count ?? 0) > 0) {
+    throw new Error(
+      `That assessment already has ${count} score${count === 1 ? "" : "s"} — withdrawing it would destroy them.`,
+    );
+  }
+  const gone = await sb
+    .from("assessment").delete()
+    .eq("id", assessmentId).eq("state", "draft").select("id");
+  if (gone.error) throw new Error(`Withdrawing failed: ${gone.error.message}`);
+  if ((gone.data ?? []).length === 0) {
+    throw new Error("That assessment is no longer a draft — reload to see its current state.");
+  }
 }
 
 async function frameworkIdOf(): Promise<string> {
@@ -229,7 +270,6 @@ export async function listAssessments(cycle = currentCycle()): Promise<Assessmen
       assessee_id: row.assessee_id,
       assessee_name: person?.full_name ?? "Unknown",
       assessee_role: person?.job_title ?? "Project Manager",
-      assessee_is_pm: person?.role === "assessee",
       cycle: row.cycle,
       profile: profileById.get(row.profile_id) ?? DEFAULT_PROFILE,
       profile_id: row.profile_id,
@@ -505,15 +545,14 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
   const fw = await getFramework();
   const activeCodes = new Set(fw.activeControls.map((c) => c.code));
 
-  const [all, invitedCount] = await Promise.all([
-    listAssessments(cycle),
-    db().from("app_user").select("id", { count: "exact", head: true }).eq("role", "assessee")
-      .then((r) => r.count ?? 0),
-  ]);
-
-  // Only project managers are being measured. The Head of PMO opening the
-  // self-assessment screen must not move the completion rate.
-  const assessments = all.filter((a) => a.assessee_is_pm !== false);
+  // The denominator is the number of people ASKED — one row per assignment,
+  // nothing inferred. Before assignment existed this had to be guessed with
+  // `Math.max(count of assessee logins, count of assessments)`, and filtered
+  // with `assessee_is_pm` to keep stray auto-created rows out. Both of those
+  // compensated for assessments appearing unbidden; neither is needed now, and
+  // both are deleted rather than left as belt-and-braces that would quietly
+  // disagree with this one.
+  const assessments = await listAssessments(cycle);
 
   const durations: number[] = [];
   const rows: CompletionStats["rows"] = assessments.map((a) => {
@@ -539,8 +578,9 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
 
   return {
     cycle,
-    // an invited PM who has not opened the tool still counts against completion
-    invited: Math.max(invitedCount, assessments.length),
+    // assigned, not invited: someone with a login who was never asked to do
+    // this cycle is not a missing completion
+    assigned: assessments.length,
     started: assessments.filter((a) => a.started_at != null).length,
     finished: assessments.filter((a) => a.completed_at != null).length,
     approved: assessments.filter((a) => a.state === "approved").length,

@@ -72,8 +72,8 @@ async function fill() {
   const a = await assessmentOf();
   if (!a) {
     die(
-      `${email} has no assessment yet. Open /assess in the app once (that creates ` +
-      `it), then re-run this.`,
+      `${email} has no assessment for this cycle. An admin assigns one from ` +
+      `/admin/people — visiting /assess no longer creates it. Assign, then re-run this.`,
     );
   }
   if (a.state !== "draft") {

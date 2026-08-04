@@ -137,8 +137,6 @@ export interface Assessment {
   assessee_id?: string;
   assessee_name: string;
   assessee_role: string;
-  /** false for the Head of PMO's own sheet — kept out of the completion metric */
-  assessee_is_pm?: boolean;
   cycle: string;
   /** benchmark profile applied, e.g. "Intermediate" */
   profile: string;
@@ -157,7 +155,12 @@ export interface Assessment {
 /** Completion instrumentation — the prototype's whole thesis (T9). */
 export interface CompletionStats {
   cycle: string;
-  invited: number;
+  /**
+   * People an admin actually assigned this cycle — one row per assignment, not
+   * per login. Called `invited` until assignment existed, when it had to be
+   * guessed from who held an account (N7).
+   */
+  assigned: number;
   started: number;
   /** self-assessment submitted — the "finished" flag */
   finished: number;

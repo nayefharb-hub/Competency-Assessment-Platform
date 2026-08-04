@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
-import { getOrCreateAssessment, loadForAssessee } from "@/lib/db/assessment";
+import { currentCycle, findAssessment, loadForAssessee } from "@/lib/db/assessment";
 import { saveSelfScoreAction } from "@/app/actions";
+import NotAssigned from "./not-assigned";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,8 @@ export default async function AssessPage({
 }) {
   const { c, error } = await searchParams;
   const user = await requireUser();
-  const [fw, row] = await Promise.all([getAssesseeFramework(), getOrCreateAssessment(user.id)]);
+  const [fw, row] = await Promise.all([getAssesseeFramework(), findAssessment(user.id)]);
+  if (!row) return <NotAssigned cycle={currentCycle()} />;
   const assessment = await loadForAssessee(user, row.id);
 
   const code = c && fw.controlByCode(c)?.active ? c : fw.activeControls[0].code;
