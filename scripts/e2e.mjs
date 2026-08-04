@@ -971,19 +971,28 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     // waitForFunction, not networkidle: a server action's re-render lands
     // AFTER the network goes quiet, so networkidle reads the old DOM. Same
     // trap as the withdraw button in section [2].
-    await page.click('.themetoggle button[value="light"]');
+    // Count every request the click makes: the point of the client component is
+    // that changing theme talks to no server at all. As a server action this
+    // was a full re-render — measured at 3-4s in production, because the theme
+    // lives on <html> and revalidatePath had to rebuild the whole tree.
+    let requests = 0;
+    const count = () => { requests++; };
+    page.on("request", count);
+    await page.click('.themetoggle button:has-text("Light")');
     await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+    page.off("request", count);
+    check("changing theme makes no network request at all", requests === 0, `${requests} requests`);
     const light = await state();
     check("Light overrides a dark OS rather than doing nothing",
       light.attr === "light" && light.bg === "rgb(244, 246, 249)", `${light.attr} / ${light.bg}`);
     check("the pressed state says which theme is on",
-      (await page.getAttribute('.themetoggle button[value="light"]', "aria-pressed")) === "true");
+      (await page.getAttribute('.themetoggle button:has-text("Light")', "aria-pressed")) === "true");
 
     await page.goto("/assess/controls");
     check("the choice survives navigation",
       (await page.getAttribute("html", "data-theme")) === "light");
 
-    await page.click('.themetoggle button[value="system"]');
+    await page.click('.themetoggle button:has-text("Auto")');
     await page.waitForFunction(() => document.documentElement.dataset.theme === "system");
     const back = await state();
     // The trap this catches: rendering `undefined` for system means React has
@@ -991,6 +1000,14 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     // server action — the page stayed light until a hard reload.
     check("Auto hands control back to the OS immediately, without a reload",
       back.attr === "system" && back.bg === auto.bg, `${back.attr} / ${back.bg}`);
+
+    // The cookie is the only reason the SERVER knows the choice — it is what
+    // stops the next first paint flashing the wrong theme.
+    await page.click('.themetoggle button:has-text("Dark")');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+    await page.reload();
+    check("the choice survives a full reload, so first paint is not a flash",
+      (await page.getAttribute("html", "data-theme")) === "dark");
 
     await ctx.close();
   }

@@ -1,5 +1,7 @@
-import { setThemeAction } from "./theme-actions";
-import type { Theme } from "./theme";
+"use client";
+
+import { useState } from "react";
+import { THEME_COOKIE, THEME_MAX_AGE, type Theme } from "./theme";
 
 const OPTIONS: { value: Theme; label: string; title: string }[] = [
   { value: "light", label: "Light", title: "Always use the light theme" },
@@ -8,27 +10,46 @@ const OPTIONS: { value: Theme; label: string; title: string }[] = [
 ];
 
 /**
- * Light / Dark / Auto (N12). A form of submit buttons, not a client component:
- * three server actions are cheaper than shipping React state to the browser,
- * and keeping the app server-only is what lets the session cookie stay
- * httpOnly. It costs a round trip per switch, which for a preference somebody
- * sets once is the right trade.
+ * Light / Dark / Auto (N12).
+ *
+ * The app's only client component, and it earns that on the numbers. It was a
+ * server action first, which meant every click wrote a cookie and then called
+ * revalidatePath("/", "layout") — the theme lives on <html>, so the whole tree
+ * had to re-render for the change to show. The cookie write is free; the
+ * re-render costs a full page load, and the owner measured 3-4 seconds for what
+ * is visually an attribute flip.
+ *
+ * A theme is a browser concern. Setting the attribute is instant and involves
+ * no server at all; the cookie is written the same way, and exists only so the
+ * SERVER can render the right theme on the next first paint and avoid a flash.
+ *
+ * This does not weaken the session cookie's httpOnly flag — that holds because
+ * nothing in the browser reads the SESSION, which is still true.
  */
 export default function ThemeToggle({ current }: { current: Theme }) {
+  const [theme, setTheme] = useState<Theme>(current);
+
+  function choose(next: Theme) {
+    document.documentElement.dataset.theme = next;
+    document.cookie =
+      `${THEME_COOKIE}=${next}; path=/; max-age=${THEME_MAX_AGE}; samesite=lax` +
+      (location.protocol === "https:" ? "; secure" : "");
+    setTheme(next);
+  }
+
   return (
-    <form action={setThemeAction} className="themetoggle" aria-label="Theme">
+    <div className="themetoggle" role="group" aria-label="Theme">
       {OPTIONS.map((o) => (
         <button
           key={o.value}
-          type="submit"
-          name="theme"
-          value={o.value}
+          type="button"
           title={o.title}
-          aria-pressed={current === o.value}
+          aria-pressed={theme === o.value}
+          onClick={() => choose(o.value)}
         >
           {o.label}
         </button>
       ))}
-    </form>
+    </div>
   );
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { currentUser } from "@/lib/auth";
-import { currentTheme } from "./theme";
+import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
 import "./globals.css";
 

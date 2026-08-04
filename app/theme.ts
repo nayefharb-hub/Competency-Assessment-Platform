@@ -1,24 +1,14 @@
 /**
- * Theme choice (N12) — the shared bits.
+ * Theme constants — shared by the server (which reads the cookie to render the
+ * right theme on first paint) and the browser (which writes it).
  *
- * Separate from theme-actions.ts because a `"use server"` module may export
- * ONLY async functions; a type or a constant alongside the action makes the
- * whole file fail to compile.
- *
- * A cookie rather than a column on app_user, deliberately. It has to work on
- * /login, where there is no user to hang a preference on, and "which screen am
- * I looking at this on" is a property of the device rather than the person.
- * It also keeps the app free of client components, which is what lets the
- * session cookie stay httpOnly (see lib/supabase/cookies.ts).
+ * Deliberately free of `server-only` and of `next/headers`: a client component
+ * imports this, and either would make it un-importable there.
  */
-import "server-only";
-import { cookies } from "next/headers";
-
 export type Theme = "system" | "light" | "dark";
 export const THEME_COOKIE = "cap-theme";
+export const THEME_MAX_AGE = 400 * 24 * 60 * 60;
 
-/** The stored choice, or "system" when nothing has been chosen. */
-export async function currentTheme(): Promise<Theme> {
-  const value = (await cookies()).get(THEME_COOKIE)?.value;
+export function asTheme(value: string | undefined): Theme {
   return value === "light" || value === "dark" ? value : "system";
 }
