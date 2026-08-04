@@ -311,6 +311,33 @@ console.log("\n[4] Self-scoring persists to Postgres");
   await pm.page.goto("/assess?c=4.3.1.1");
   check("saved score is re-selected on reload", await pm.page.isChecked('input[name="level"][value="3"]'));
 
+  /* N14: the answer and Save must be on screen without scrolling, at every
+     width and on the longest control in ICB4. This is the guarantee the layout
+     exists for — and it is invisible to every other test here, all of which
+     drive the page through the DOM and never care where anything sits. */
+  for (const [w, h] of [[390, 844], [1440, 900], [2048, 1152]]) {
+    await pm.page.setViewportSize({ width: w, height: h });
+    for (const code of ["4.3.1.1", "4.5.1.1"]) {
+      await pm.page.goto(`/assess?c=${code}`);
+      const onScreen = await pm.page.evaluate(() => {
+        const r = document.querySelector('button[type="submit"]').getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight;
+      });
+      check(`Save is on screen without scrolling at ${w}x${h} (${code})`, onScreen);
+    }
+  }
+  await pm.page.setViewportSize({ width: 1280, height: 900 });
+
+  // The layout must not have bought that by widening sentences — the whole
+  // point of the amendment is that --measure still caps the prose.
+  await pm.page.goto("/assess?c=4.3.1.1");
+  const prose = await pm.page.evaluate(() => {
+    const p = document.querySelector(".lede");
+    return { width: p.getBoundingClientRect().width, cap: parseFloat(getComputedStyle(p).maxWidth) };
+  });
+  check("prose is still capped at the reading measure, not the column width",
+    prose.width <= prose.cap + 1, `${Math.round(prose.width)}px vs cap ${Math.round(prose.cap)}px`);
+
   await pm.page.goto("/assess/controls");
   check("submit is blocked while controls are unscored",
     await pm.page.isDisabled('button:has-text("Submit for review")'));
