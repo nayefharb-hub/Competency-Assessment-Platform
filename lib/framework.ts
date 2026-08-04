@@ -91,6 +91,19 @@ interface ScaleLevelRow {
 }
 interface TargetRow { profile_id: string; apm_competence: string; level: number | null }
 
+/**
+ * The single nested response, as PostgREST returns it: the same rows as before,
+ * arranged by the foreign keys rather than fetched one table at a time.
+ */
+interface NestedFramework {
+  id: string; name: string; version: string; scale_id: string;
+  scale: { name: string; axis: string; scale_level: ScaleLevelRow[] | null };
+  competence_area: AreaRow[] | null;
+  competence_element: CeRow[] | null;
+  control: (ControlRow & { measure: MeasureRow[] | null })[] | null;
+  benchmark_profile: (BenchmarkProfile & { benchmark_target: TargetRow[] | null })[] | null;
+}
+
 const asLevel = (n: number | null | undefined): Level | null =>
   n === null || n === undefined ? null : (n as Level);
 
@@ -101,11 +114,12 @@ const asLevel = (n: number | null | undefined): Level | null =>
  *
  * It was briefly TWO — the rows also went through Next's `unstable_cache` — on
  * the reasoning that a module-level cache dies with its instance and a
- * low-traffic app would pay the nine-query load constantly. The Vercel logs say
+ * low-traffic app would pay the framework load constantly. The Vercel logs say
  * that reasoning was wrong on the fact it rested on: instances are reused
- * heavily, serving 7 to 68 requests each. So the memo amortises well on its own,
- * and `unstable_cache` was adding a NETWORK fetch of roughly a megabyte to the
- * hot path in exchange for saving a load that rarely happened.
+ * heavily, serving 23 to 31 requests each, and the framework loaded exactly once
+ * per instance. So the memo amortises well on its own, and `unstable_cache` was
+ * adding a NETWORK fetch of roughly a megabyte to the hot path in exchange for
+ * saving a load that rarely happened.
  *
  * That is invisible locally, which is why it survived two rounds of
  * investigation: on disk the same cache reads in 2ms.
@@ -131,7 +145,7 @@ export async function getFramework(): Promise<FrameworkApi> {
   // A hit on the in-memory memo is free and is NOT logged; only the expensive
   // path is, so a quiet log means the memo is doing its job.
   if (cache && Date.now() - cache.at < TTL_MS) return cache.api;
-  return phase("framework: data cache + assemble 133 controls, 586 measures", getFrameworkUncached);
+  return phase("framework: 1 query + assemble 133 controls, 586 measures", getFrameworkUncached);
 }
 
 async function getFrameworkUncached(): Promise<FrameworkApi> {
@@ -148,57 +162,79 @@ async function getFrameworkUncached(): Promise<FrameworkApi> {
   return inFlight;
 }
 
-/** Every row the framework is built from. */
+/**
+ * Every row the framework is built from — in ONE request.
+ *
+ * This was nine queries in three dependent waves, and the waves were the point:
+ * measures needed control ids, targets needed profile ids. Measured against the
+ * live database, that cost 600-730ms on every new serverless instance.
+ *
+ * The reason is not query time. Supabase charges a fixed ~31ms of gateway and
+ * PostgREST overhead per REST call BEFORE the query is considered — returning a
+ * single row costs the same as returning all 133 controls (183kB), which is how
+ * we know it is per-request cost and not data volume. Nine calls therefore cost
+ * nine floors, and firing six of them at once at a two-core instance makes each
+ * one worse: individually they inflated from ~60ms to 180-360ms.
+ *
+ * PostgREST resolves the whole graph in one request through the foreign keys
+ * that already exist, so the waves disappear along with eight of the floors.
+ * Measured: 88ms server-side for the same 276kB.
+ *
+ * The rows are flattened back to the exact shapes loadFramework() already
+ * expects, so the assembly below — and the API the screens use — is untouched.
+ * This is a transport change and nothing else, which is what the seam is for.
+ */
 async function fetchFrameworkRows() {
-  {
-    const sb = db();
-
-    const fw = unwrap(
+  const nested = unwrap(
     "framework",
-    await sb
+    await db()
       .from("framework")
-      .select("id, name, version, scale_id")
+      .select(
+        [
+          "id, name, version, scale_id",
+          "scale:scale_id(name, axis, scale_level(level, label, knowledge, application, kib_gloss))",
+          "competence_area(id, code, name, sort_order)",
+          "competence_element(id, area_id, code, name, target_level, sort_order)",
+          "control(id, ce_id, code, indicator, description, active, priority, reason," +
+            " kib_note, apm_competence, target_level, target_source, sort_order," +
+            " measure(control_id, seq, text))",
+          "benchmark_profile(id, name, sort_order," +
+            " benchmark_target(profile_id, apm_competence, level))",
+        ].join(","),
+      )
       .eq("name", FRAMEWORK_NAME)
       .eq("version", FRAMEWORK_VERSION)
       .maybeSingle(),
-    ) as { id: string; name: string; version: string; scale_id: string };
+  ) as NestedFramework;
 
-    const [scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows] = await Promise.all([
-    sb.from("scale").select("name, axis").eq("id", fw.scale_id).maybeSingle()
-      .then((r) => unwrap("scale", r) as { name: string; axis: string }),
-    sb.from("scale_level").select("level, label, knowledge, application, kib_gloss")
-      .eq("scale_id", fw.scale_id).order("level")
-      .then((r) => unwrap("scale_level", r) as ScaleLevelRow[]),
-    sb.from("competence_area").select("id, code, name, sort_order")
-      .eq("framework_id", fw.id).order("sort_order")
-      .then((r) => unwrap("competence_area", r) as AreaRow[]),
-    sb.from("competence_element").select("id, area_id, code, name, target_level, sort_order")
-      .eq("framework_id", fw.id).order("sort_order")
-      .then((r) => unwrap("competence_element", r) as CeRow[]),
-    sb.from("control")
-      .select("id, ce_id, code, indicator, description, active, priority, reason, kib_note, apm_competence, target_level, target_source, sort_order")
-      .eq("framework_id", fw.id).order("sort_order").limit(5000)
-      .then((r) => unwrap("control", r) as ControlRow[]),
-    sb.from("benchmark_profile").select("id, name, sort_order")
-      .eq("framework_id", fw.id).order("sort_order")
-      .then((r) => unwrap("benchmark_profile", r) as BenchmarkProfile[]),
-  ]);
+  // Ordering moves from the database to here. PostgREST can order embedded
+  // resources, but the syntax is per-path and gets brittle three levels deep;
+  // sorting arrays we are already walking is free by comparison. The orders
+  // themselves are unchanged: sort_order everywhere, seq for measures, level
+  // for the scale.
+  const by = <T,>(rows: T[], key: (r: T) => number) => [...rows].sort((a, b) => key(a) - key(b));
 
-    const controlIds = controlRows.map((c) => c.id);
-    const [measureRows, targetRows] = await Promise.all([
-    sb.from("measure").select("control_id, seq, text")
-      .in("control_id", controlIds).order("seq").limit(5000)
-      .then((r) => unwrap("measure", r) as MeasureRow[]),
-    sb.from("benchmark_target").select("profile_id, apm_competence, level")
-      .in("profile_id", profileRows.map((p) => p.id)).limit(5000)
-      .then((r) => unwrap("benchmark_target", r) as TargetRow[]),
-    ]);
+  const controlRows: ControlRow[] = by(
+    (nested.control ?? []).map(({ measure: _measure, ...c }) => c),
+    (c) => c.sort_order,
+  );
 
-    return {
-      fw, scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows,
-      measureRows, targetRows,
-    };
-  }
+  return {
+    fw: {
+      id: nested.id, name: nested.name, version: nested.version, scale_id: nested.scale_id,
+    },
+    scaleRow: { name: nested.scale.name, axis: nested.scale.axis },
+    levelRows: by(nested.scale.scale_level ?? [], (l) => l.level),
+    areaRows: by(nested.competence_area ?? [], (a) => a.sort_order),
+    ceRows: by(nested.competence_element ?? [], (c) => c.sort_order),
+    controlRows,
+    profileRows: by(nested.benchmark_profile ?? [], (p) => p.sort_order),
+    measureRows: by(
+      (nested.control ?? []).flatMap((c) => c.measure ?? []),
+      (m) => m.seq,
+    ),
+    targetRows: (nested.benchmark_profile ?? []).flatMap((p) => p.benchmark_target ?? []),
+  };
 }
 
 async function loadFramework(): Promise<FrameworkApi> {

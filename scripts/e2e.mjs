@@ -730,7 +730,10 @@ console.log("\n[12] People screen (A1)");
 
   const { data: made } = await db.from("app_user")
     .select("id, role, must_change_password").eq("email", NEWMAIL).maybeSingle();
-  check("the person is on the allowlist", made !== null);
+  // The URL carries the action's error when this fails. Without it the failure
+  // reads as "the person is on the allowlist: false", which says nothing about
+  // WHY and sent one investigation down a wrong path.
+  check("the person is on the allowlist", made !== null, boss.page.url());
   check("created flagged to set their own password", made?.must_change_password === true);
   check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
   check("a new person appears in the assign list, without an assessment",

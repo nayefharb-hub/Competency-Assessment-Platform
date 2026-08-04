@@ -39,7 +39,7 @@ export async function saveSelfScoreAction(formData: FormData): Promise<void> {
   if (level === null) fail(`/assess?c=${code}`, "Pick a level before moving on.");
 
   try {
-    await saveSelfScore(user, assessment.id, code, level, evidence);
+    await saveSelfScore(user, assessment, code, level, evidence);
   } catch (e) {
     fail(`/assess?c=${code}`, e instanceof Error ? e.message : "Saving failed.");
   }

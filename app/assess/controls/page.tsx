@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
-  currentCycle, findArchivedAssessment, findAssessment, scoresFor,
+  currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
 import { submitAssessmentAction } from "@/app/actions";
 import NotAssigned from "../not-assigned";
@@ -23,16 +23,17 @@ export default async function ControlsIndex({
 }) {
   const { saved, submitted, error, show } = await searchParams;
   const user = await requireUser();
-  const [fw, row] = await Promise.all([getAssesseeFramework(), findAssessment(user.id)]);
-  if (!row) {
+  // The row and its scores in one request. This screen shows progress and a
+  // list; it renders nothing from the person, the profile or the target
+  // snapshot, which loadForAssessee was fetching alongside a second copy of the
+  // row it had already been handed.
+  const [fw, mine] = await Promise.all([getAssesseeFramework(), findAssessmentWithScores(user)]);
+  if (!mine) {
     // Distinguish "never assigned" from "yours was archived" — see NotAssigned.
     const archived = await findArchivedAssessment(user.id);
     return <NotAssigned cycle={currentCycle()} archived={archived} />;
   }
-  // Only the scores. This screen shows progress and a list; it renders nothing
-  // from the person, the profile or the target snapshot, which loadForAssessee
-  // was fetching alongside a second copy of the row it had already been handed.
-  const scores = await scoresFor(user, row);
+  const { row, scores } = mine;
 
   const scored = new Map(
     scores.filter((s) => s.self_level !== null).map((s) => [s.control_code, s.self_level!]),
