@@ -1,9 +1,20 @@
 /**
- * Proxy (formerly middleware). Refreshes the Supabase session cookie on every request and turns away anyone
- * without one. This is the coarse gate only — it proves a valid session exists,
- * nothing more. The real allowlist check (does this account have an app_user
- * row?) and every role check happen server-side in lib/auth.ts, because only
- * the service-role client can read app_user.
+ * Proxy (formerly middleware). Refreshes the Supabase session cookie and turns
+ * away anyone without one.
+ *
+ * This is the COARSE gate only — it proves a session cookie exists, nothing
+ * more. The real allowlist check (does this account have an app_user row?) and
+ * every role check happen server-side in lib/auth.ts, which calls
+ * `auth.getUser()` and therefore validates the token against Supabase on every
+ * single page. Nothing is trusted on the strength of this file.
+ *
+ * PERFORMANCE (why it no longer validates here itself): this runs on EVERY
+ * request, and `getUser()` is a network round trip to Supabase Auth. The page
+ * that follows immediately makes the same call again, so the app was paying for
+ * two identical validations per navigation — part of the ~18 Supabase round
+ * trips measured for one cold render. Checking that a session cookie is present
+ * is enough for a redirect-if-signed-out gate; a forged or expired cookie gets
+ * no further than lib/auth.ts, which is where it was always going to be caught.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -32,12 +43,14 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const { data } = await supabase.auth.getUser();
+  // getSession reads and refreshes from the cookie WITHOUT a network call to
+  // validate it. That is the whole point here — see the note above.
+  const { data } = await supabase.auth.getSession();
   const path = request.nextUrl.pathname;
 
   // Deliberately no redirect FROM /login when signed in: an authenticated
   // account that is not on the allowlist needs to be able to reach /login.
-  if (!data.user && !PUBLIC_PATHS.includes(path)) {
+  if (!data.session && !PUBLIC_PATHS.includes(path)) {
     const target = new URL("/login", request.url);
     if (path !== "/") target.searchParams.set("next", path + request.nextUrl.search);
     return NextResponse.redirect(target);

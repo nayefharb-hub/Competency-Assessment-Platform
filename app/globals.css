@@ -18,6 +18,9 @@
   --deficit: #b91c1c;
   --deficit-bg: #fbe7e7;
   --track: #e5eaf1;
+  /* What a chosen option looks like. A token rather than a pair of dark-mode
+     overrides, because navy on a dark surface is nearly the surface itself. */
+  --selected: #1f4e78;
 
   /* Reading measure — DESIGN.md Layout. NOT the container width: 1080px is how
      wide the page may get, this is how wide a sentence may get. Conflating them
@@ -46,6 +49,15 @@
   --font-display: var(--font-general-sans), var(--font-ui);
 }
 
+/* ---------- theme ----------
+   Three states, per DESIGN.md: follow the system, or override it in either
+   direction. The palettes are written out twice rather than shared, because a
+   custom property cannot be aliased into two selectors without an indirection
+   that hides which colour is actually in play. Keep the two dark blocks in
+   step; there is no third copy.
+
+   `[data-theme]` must come AFTER the media query, and light must be spelled
+   out too — otherwise "Light" would be powerless on a machine set to dark. */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1621;
@@ -66,7 +78,56 @@
     --deficit: #f87171;
     --deficit-bg: #361a1a;
     --track: #243549;
+    /* selection reads as navy on light, azure on dark — navy is nearly the
+       dark surface itself, so it would vanish */
+    --selected: #5b93f5;
   }
+}
+
+:root[data-theme="dark"] {
+    --bg: #0e1621;
+    --surface: #14202e;
+    --surface-2: #182636;
+    --border: #26374c;
+    --ink: #e8eef5;
+    --ink-muted: #9dacbf;
+    --navy: #12283f;
+    --navy-deep: #0c1d2e;
+    --on-navy: #dde9f5;
+    --accent: #5b93f5;
+    --accent-weak: #182c46;
+    --ready: #4ade80;
+    --ready-bg: #12301f;
+    --minor: #fbbf24;
+    --minor-bg: #33260c;
+    --deficit: #f87171;
+    --deficit-bg: #361a1a;
+    --track: #243549;
+    /* selection reads as navy on light, azure on dark — navy is nearly the
+       dark surface itself, so it would vanish */
+    --selected: #5b93f5;
+}
+
+:root[data-theme="light"] {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #f9fafc;
+    --border: #e3e8ef;
+    --ink: #16202e;
+    --ink-muted: #5b6675;
+    --navy: #1f4e78;
+    --navy-deep: #163a5a;
+    --on-navy: #eaf1f8;
+    --accent: #2e6be6;
+    --accent-weak: #e8f0fe;
+    --ready: #15803d;
+    --ready-bg: #e7f6ec;
+    --minor: #b45309;
+    --minor-bg: #fbeed6;
+    --deficit: #b91c1c;
+    --deficit-bg: #fbe7e7;
+    --track: #e5eaf1;
+    --selected: #1f4e78;
 }
 
 * { box-sizing: border-box; }
@@ -192,10 +253,9 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
   font-size: 12px; color: var(--ink-muted); margin-bottom: 8px;
 }
 .crumb .area {
-  color: var(--navy); font-weight: 650; letter-spacing: 0.04em;
+  color: var(--selected); font-weight: 650; letter-spacing: 0.04em;
   text-transform: uppercase; font-size: 11.5px;
 }
-@media (prefers-color-scheme: dark) { .crumb .area { color: var(--accent); } }
 .crumb .sep { opacity: 0.5; }
 
 .assess-nav {
@@ -263,6 +323,39 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 /* 8px rather than 12px vertical: six rows at 64px each spent 441px of a 900px
    screen. At 8px a row is still 56px — comfortably above the 44px minimum
    target — and the list gives back ~48px (N14). Stays on the 4px base unit. */
+/* ---------- controls index: filter + row state (N5, N4) ----------
+   N4 was deliberately decided AFTER N5, and the filter changed the answer:
+   with "Not scored" one click away, shouting at every unscored row would be
+   noise. So the row carries its state quietly — a left edge and a slightly
+   receded look once done — and the badge stays as the accessible label. Colour
+   is never the only signal. */
+.filterbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.filterchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; text-decoration: none;
+  color: var(--ink-muted); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-pill);
+  padding: 4px 12px; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.filterchip:hover { background: var(--surface-2); color: var(--ink); }
+.filterchip .tnum { opacity: 0.65; font-weight: 500; }
+.filterchip[aria-current="true"] {
+  background: var(--selected); border-color: var(--selected); color: #fff;
+}
+.filterchip[aria-current="true"] .tnum { opacity: 0.8; }
+
+.crow {
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid transparent;
+  font-size: 13.5px;
+}
+.crow-todo { border-left-color: var(--accent); }
+.crow-done .ccode, .crow-done .cind { opacity: 0.72; }
+.crow .ccode { font-weight: 600; }
+.crow .cind { color: var(--ink); }
+
 .optlist { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .opt {
   display: flex; gap: 12px; align-items: flex-start; padding: 8px 14px;
@@ -275,11 +368,8 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 .opt b { font-size: 14px; font-weight: 600; display: block; }
 .opt span.gloss { display: block; font-size: 12.5px; color: var(--ink-muted); margin-top: 2px; }
 .opt:has(input:checked) {
-  border-color: var(--navy); background: var(--accent-weak);
-  box-shadow: inset 0 0 0 1px var(--navy);
-}
-@media (prefers-color-scheme: dark) {
-  .opt:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  border-color: var(--selected); background: var(--accent-weak);
+  box-shadow: inset 0 0 0 1px var(--selected);
 }
 
 /* Assignment pick-list. Reuses .opt so a checkbox row reads exactly like the
@@ -353,6 +443,39 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 @media (max-width: 760px) {
   .cols, .tiles { grid-template-columns: 1fr; }
   .barrow, .scaleline { grid-template-columns: 130px 1fr 110px; }
+
+  /* ---- header chrome (N10) ----
+     Measured at 390x844: the top bar was 125px and the nav wrapped onto its own
+     row, so content began 204px down — 24% of the screen spent before anything
+     the person came for. The nav now sits on the brand's row and scrolls
+     sideways instead of wrapping, and the subtitle goes: it is orientation for
+     a first-time desktop visitor, not something worth a quarter of a phone. */
+  .shell { padding: 16px 16px 72px; }
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .brand { gap: 9px; flex: none; }
+  .brand p { display: none; }
+  .brand h1 { font-size: 15px; }
+  .logo { width: 28px; height: 28px; font-size: 13px; border-radius: 7px; }
+  .nav {
+    flex: 1 1 auto; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; gap: 2px;
+    justify-content: flex-end;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { padding: 6px 9px; font-size: 13px; white-space: nowrap; }
+
+  /* The eyebrow measured as *cramped*, not colliding — it ended exactly at the
+     content edge with the rule squeezed to a few pixels. Wrapping it onto its
+     own line costs one line and stops the rule pretending to be a divider. */
+  .sec-head { flex-wrap: wrap; gap: 4px 12px; }
+  .sec-head .rule { display: none; }
+  .sec-head .eyebrow { flex: 1 1 100%; }
+}
+
+/* Below 430px even the wordmark is worth trading for nav room. */
+@media (max-width: 430px) {
+  .brand h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
 /* Below ~560px three columns leave the bar about 50px wide, which makes the
@@ -371,6 +494,34 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
   .who .av { order: 1; }
   .who .whobody { order: 2; flex: 1 1 100%; }
   .who .pill { order: 3; }
+
+  /* ---- tables become cards (N10) ----
+     Measured at 390x844: the People table is 699px wide inside a 300px
+     wrapper. It does not break the page — .tablewrap contains the overflow —
+     but reading one person means scrolling sideways past four columns, and the
+     cells here hold forms, not figures. One card per row instead, with each
+     cell labelled by the header it lost.
+
+     Every cell in a `.grid.stacked` needs data-label, or it loses its heading
+     with no visible sign; the labels are in the JSX beside the <th> they
+     mirror. */
+  .grid.stacked, .grid.stacked tbody, .grid.stacked tr, .grid.stacked td {
+    display: block; width: 100%;
+  }
+  .grid.stacked thead { display: none; }
+  .grid.stacked tr {
+    border: 1px solid var(--border); border-radius: var(--radius-in);
+    background: var(--surface-2); padding: 12px; margin-bottom: 10px;
+  }
+  .grid.stacked td { border: 0; padding: 5px 0; }
+  .grid.stacked td::before {
+    content: attr(data-label); display: block;
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink-muted); font-weight: 600; margin-bottom: 3px;
+  }
+  .grid.stacked td[data-label=""]::before { display: none; }
+  .grid.stacked .num { text-align: left; }
+  .grid.stacked .revise { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -383,6 +534,28 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
   margin-top: 10px; font-size: 12.5px; color: var(--ink-muted);
 }
 .whoami b { color: var(--ink); font-weight: 600; }
+.whoami-right { display: flex; align-items: center; gap: 12px; }
+
+/* Light / Dark / Auto (N12) — a segmented control of submit buttons. */
+.themetoggle {
+  display: inline-flex; border: 1px solid var(--border);
+  border-radius: var(--radius-pill); overflow: hidden; background: var(--surface);
+}
+.themetoggle button {
+  appearance: none; font: inherit; font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.02em; padding: 4px 10px; cursor: pointer;
+  border: 0; border-right: 1px solid var(--border);
+  background: transparent; color: var(--ink-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.themetoggle button:last-child { border-right: 0; }
+.themetoggle button:hover { background: var(--surface-2); color: var(--ink); }
+/* aria-pressed IS the state — styling it means the visual and the accessible
+   name can never disagree about which theme is on. */
+.themetoggle button[aria-pressed="true"] {
+  background: var(--selected); color: #fff;
+}
+.themetoggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- banners (status colours always carry a label, never colour alone) */
 .banner {

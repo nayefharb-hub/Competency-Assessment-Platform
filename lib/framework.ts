@@ -19,6 +19,7 @@
  * server action or serialized prop.
  */
 import "server-only";
+import { unstable_cache, updateTag } from "next/cache";
 import { db, unwrap } from "./supabase/server";
 import type {
   Area, AreaName, Benchmark, CeTarget, CompetenceElement, Control, Framework,
@@ -96,19 +97,36 @@ const asLevel = (n: number | null | undefined): Level | null =>
 /* ------------------------------------------------------------------ load */
 
 /**
- * Cached because every page needs the whole framework and it changes only when
- * an admin edits it — writes call invalidateFramework(). The TTL is a backstop
- * for the multi-instance case (one serverless instance editing, another
- * serving); at ~9 users a minute of staleness on a kib_note is not a problem,
- * and scores are never cached here.
+ * TWO caches, doing two different jobs.
+ *
+ * The ROWS come from Next's data cache (`unstable_cache`, tagged). That is the
+ * one that matters in production: a module-level cache lives and dies with one
+ * serverless instance, so on Vercel a low-traffic app pays the full nine-query
+ * framework load on almost every navigation. Measured against the running app:
+ * one cold render made ~18 Supabase round trips, nine of them this. At
+ * Vercel↔Supabase latency that is most of a second before anything else starts.
+ *
+ * The assembled API is then memoised per instance, because turning 133 controls
+ * and 586 measures into the domain shape is pure CPU and worth not repeating.
+ *
+ * Writes call invalidateFramework(), which clears both. The TTL on the module
+ * memo is the backstop for the multi-instance case; the tag handles the data
+ * cache properly. Scores are never cached here.
  */
 const TTL_MS = 60_000;
+const FRAMEWORK_TAG = "framework";
 let cache: { at: number; api: FrameworkApi } | null = null;
 let inFlight: Promise<FrameworkApi> | null = null;
 
 export function invalidateFramework(): void {
   cache = null;
   inFlight = null;
+  // The row cache is shared across instances, so clearing the local memo alone
+  // would leave every OTHER instance serving the pre-edit framework.
+  // updateTag rather than revalidateTag: this is only ever called from the
+  // admin's save action, and read-your-own-writes is exactly what that needs —
+  // the admin must see their own edit on the very next render, not eventually.
+  updateTag(FRAMEWORK_TAG);
 }
 
 export async function getFramework(): Promise<FrameworkApi> {
@@ -126,10 +144,16 @@ export async function getFramework(): Promise<FrameworkApi> {
   return inFlight;
 }
 
-async function loadFramework(): Promise<FrameworkApi> {
-  const sb = db();
+/**
+ * Every row the framework is built from, as plain JSON so it can live in the
+ * data cache. Nothing here is per-user: it is identical for everyone, and only
+ * an admin edit changes it.
+ */
+const fetchFrameworkRows = unstable_cache(
+  async () => {
+    const sb = db();
 
-  const fw = unwrap(
+    const fw = unwrap(
     "framework",
     await sb
       .from("framework")
@@ -137,9 +161,9 @@ async function loadFramework(): Promise<FrameworkApi> {
       .eq("name", FRAMEWORK_NAME)
       .eq("version", FRAMEWORK_VERSION)
       .maybeSingle(),
-  ) as { id: string; name: string; version: string; scale_id: string };
+    ) as { id: string; name: string; version: string; scale_id: string };
 
-  const [scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows] = await Promise.all([
+    const [scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows] = await Promise.all([
     sb.from("scale").select("name, axis").eq("id", fw.scale_id).maybeSingle()
       .then((r) => unwrap("scale", r) as { name: string; axis: string }),
     sb.from("scale_level").select("level, label, knowledge, application, kib_gloss")
@@ -160,15 +184,30 @@ async function loadFramework(): Promise<FrameworkApi> {
       .then((r) => unwrap("benchmark_profile", r) as BenchmarkProfile[]),
   ]);
 
-  const controlIds = controlRows.map((c) => c.id);
-  const [measureRows, targetRows] = await Promise.all([
+    const controlIds = controlRows.map((c) => c.id);
+    const [measureRows, targetRows] = await Promise.all([
     sb.from("measure").select("control_id, seq, text")
       .in("control_id", controlIds).order("seq").limit(5000)
       .then((r) => unwrap("measure", r) as MeasureRow[]),
     sb.from("benchmark_target").select("profile_id, apm_competence, level")
       .in("profile_id", profileRows.map((p) => p.id)).limit(5000)
       .then((r) => unwrap("benchmark_target", r) as TargetRow[]),
-  ]);
+    ]);
+
+    return {
+      fw, scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows,
+      measureRows, targetRows,
+    };
+  },
+  ["icb4-framework-rows"],
+  { tags: [FRAMEWORK_TAG], revalidate: 3600 },
+);
+
+async function loadFramework(): Promise<FrameworkApi> {
+  const {
+    fw, scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows,
+    measureRows, targetRows,
+  } = await fetchFrameworkRows();
 
   /* ---- assemble the domain shape the screens already expect ---- */
 

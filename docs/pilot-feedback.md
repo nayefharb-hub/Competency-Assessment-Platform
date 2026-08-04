@@ -193,7 +193,7 @@ see N4.
 
 ### N4 — scored/not-scored state is too quiet
 
-**Status:** Open — to fix
+**Status:** FIXED (2026-08-04, PR C)
 
 > "it still feels flat make it louder"
 
@@ -219,7 +219,7 @@ Do not fix in isolation — the owner asked for all notes to be collected first.
 
 ### N5 — filter the controls list by scored / not scored
 
-**Status:** Open — to fix
+**Status:** FIXED (2026-08-04, PR C)
 
 > "need a filter on the controls so that the user can filter by the one scored,
 > not scored"
@@ -600,7 +600,7 @@ admin-initiated resets.
 
 ### N10 — make the whole app mobile friendly
 
-**Status:** Open — audited, specific defects below
+**Status:** FIXED (2026-08-04, PR C)
 
 > "also can you make the whole app mobile friendly"
 
@@ -718,7 +718,7 @@ palette while leaving the dark one untouched is how the two drift apart.
 
 ### N12 — dark theme exists but there is no way to choose it
 
-**Status:** Open — question answered, toggle not built
+**Status:** FIXED (2026-08-04, PR C)
 
 > "also I believe there was a dark theme option which I cannot see anymore"
 
@@ -922,11 +922,24 @@ deliberately: it changes reading width on every page, and N11 says the palette
 and readability are to be re-judged by the owner now the layout is fixed, so this
 belongs in that judgement rather than ahead of it.
 
-Still open, in build order — the reasoning for each is in its note above:
+Shipped in PR C: **N10, N12, N5, N4**. Header chrome on a phone went from 204px
+to 122px (24% of the screen to 14%), and the People table from 699px inside a
+300px wrapper to 316px with no sideways scroll — tables are one card per row
+below 560px now, each cell labelled by the header it lost. Light / Dark / Auto
+lives in a cookie with no client component. The controls filter is a query
+parameter, and progress keeps reporting the whole assessment under it.
 
-1. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
-   scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
-   quietening rather than amplifying.
+**One N10 item did not exist.** "`.sec-head` collides with its eyebrow" was
+logged from reading the CSS; measured, `overlap: false` at both 390px and 360px
+— it is cramped, not colliding. The eyebrow now wraps to its own line, which is
+worth doing, but the note was wrong.
+
+**N4 was decided after N5, as planned, and the filter changed the answer.** With
+"Not scored" one click away, shouting at every unscored row is noise. The row
+carries its state quietly — a left edge, and a slight recession once scored —
+and the badge stays as the accessible label, so colour is never the only signal.
+
+Still open, in build order — the reasoning for each is in its note above:
 3. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
    migration-tracking gap that should close before a second database exists.
 4. **N11 palette**, **N15 session bounds** and **SMTP** — all waiting on the
@@ -936,13 +949,14 @@ Still open, in build order — the reasoning for each is in its note above:
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 6 | 4 | 1 | 2 | 0 |
+| 2 | 8 | 1 | 2 | 0 |
+
+Nothing buildable is left. What remains is the owner's: **N1** (untick
+Preview/Development on the two secret-bearing Vercel env vars) and **N1b**
+(a staging project), plus the standing decisions — **N11** palette and the
+72–73 character measure, **N15** session bounds, and **SMTP**.
 
 Open items, in the order they should probably be built:
-
-1. **N10** — mobile: header, section headings, People table
-2. **N5** — filter the controls list
-3. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision

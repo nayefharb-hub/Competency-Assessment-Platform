@@ -1,6 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · N14 layout). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · PR C UX pass). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
@@ -37,7 +37,7 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # expect 149/149 — writes, then cleans up after itself
+npm run e2e                # expect 166/166 — writes, then cleans up after itself
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -72,10 +72,23 @@ The self-assessment is prose-left / scoring-right and pinned above 1100px, one
 column with a fixed action bar below it. Save is on screen on load at every width
 tested, on the longest control in ICB4 as well as the shortest.
 
-**Next is the rest of PR C** (N10 mobile, N12 theme toggle, N5 controls filter,
-N4 scored-state emphasis — decide N5 before N4).
+**PR C is DONE** — N10 mobile (header chrome 204px → 122px on a phone; tables
+as cards below 560px), N12 Light/Dark/Auto in a cookie with no client component,
+N5 controls filter as a query parameter, N4 scored-state emphasis decided after
+N5 as planned. `DESIGN.md` gains three decision-log rows.
 
-**7. Two things blocked on the owner, not on code.**
+**Nothing buildable is left in the backlog.** The next step is to run the cycle:
+add the nine PMs on **People**, assign them, and let the completion figure
+collect. Everything still open is the owner's call — see item 7.
+
+**7. Everything still open is blocked on the owner, not on code.**
+- **N1 / N1b** — untick Preview and Development on the two secret-bearing Vercel
+  env vars, and decide whether a staging Supabase project is wanted.
+- **N15 session bounds** — an inactivity window and an absolute cap. The code
+  side is one constant; the rest is a Supabase dashboard setting.
+- **The reading measure** — prose renders at 72–73 characters against the 60–70
+  DESIGN.md asks for. `48ch` would land in range; left alone because it moves
+  every page and belongs with the palette judgement.
 - **SMTP** — gates emailed invite links and self-service password reset. Needs
   an IT/policy answer on whether a third-party sender is acceptable for a bank.
 - **Palette** — approved but deliberately deferred until the fixed reading
@@ -146,7 +159,7 @@ Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **149/149** through a real browser against the running app,
+- `npm run e2e` — **166/166** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password

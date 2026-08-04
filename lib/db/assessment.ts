@@ -352,6 +352,41 @@ export async function loadForAssessee(user: AppUser, id: string): Promise<Assess
 }
 
 /**
+ * Just the scores, for the one-control-at-a-time screen.
+ *
+ * That page needs the assessee's own levels and the assessment's state, and
+ * nothing else — but it reached them through findAssessment() +
+ * loadForAssessee(), which re-fetched the row it had just been handed and then
+ * joined the person, the benchmark profile and the target snapshot, none of
+ * which it renders. Six round trips for one query's worth of data, on the
+ * screen a PM loads 132 times.
+ */
+export async function scoresFor(user: AppUser, row: AssessmentRow): Promise<Score[]> {
+  if (row.assessee_id !== user.id) {
+    throw new Error("That assessment belongs to someone else.");
+  }
+  const fw = await getFramework();
+  const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
+  const rows = unwrap(
+    "score fetch",
+    await db().from("score")
+      .select("control_id, self_level, assessor_level, assessor_touched, evidence")
+      .eq("assessment_id", row.id).limit(5000),
+  ) as ScoreRow[];
+
+  const approved = row.state === "approved";
+  return rows.map((s) => ({
+    control_code: codeById.get(s.control_id) ?? s.control_id,
+    self_level: s.self_level as Level | null,
+    // Same redaction rule as loadForAssessee: before approval the assessor's
+    // revision is not the assessee's to see.
+    assessor_level: approved ? (s.assessor_level as Level | null) : null,
+    assessor_touched: approved ? s.assessor_touched : false,
+    evidence: s.evidence,
+  }));
+}
+
+/**
  * All assessments in a cycle. Batched on purpose: assembleAssessment costs four
  * queries per person, so listing nine of them one at a time is 36 round trips
  * for a screen that only needs names and states.
