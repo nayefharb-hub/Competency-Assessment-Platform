@@ -16,7 +16,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { db, supabaseAnonKey, supabaseUrl } from "./supabase/server";
+import { db, supabaseAnonKey, supabaseUrl, timedSupabaseFetch } from "./supabase/server";
 import { SESSION_COOKIE } from "./supabase/cookies";
 import type { AppUser, UserRole } from "./types";
 
@@ -24,6 +24,10 @@ import type { AppUser, UserRole } from "./types";
 export const authClient = cache(async function authClient() {
   const store = await cookies();
   return createServerClient(supabaseUrl(), supabaseAnonKey(), {
+    // Timed like the service client: auth.getUser() is a network round trip to
+    // Supabase Auth on every authenticated render, and it needs to be visible
+    // alongside the database calls rather than hiding among them.
+    global: { fetch: timedSupabaseFetch("auth") },
     cookies: {
       getAll: () => store.getAll(),
       setAll: (list) => {
