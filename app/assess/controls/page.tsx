@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
-  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+  currentCycle, findArchivedAssessment, findAssessment, scoresFor,
 } from "@/lib/db/assessment";
 import { submitAssessmentAction } from "@/app/actions";
 import NotAssigned from "../not-assigned";
@@ -29,15 +29,18 @@ export default async function ControlsIndex({
     const archived = await findArchivedAssessment(user.id);
     return <NotAssigned cycle={currentCycle()} archived={archived} />;
   }
-  const assessment = await loadForAssessee(user, row.id);
+  // Only the scores. This screen shows progress and a list; it renders nothing
+  // from the person, the profile or the target snapshot, which loadForAssessee
+  // was fetching alongside a second copy of the row it had already been handed.
+  const scores = await scoresFor(user, row);
 
   const scored = new Map(
-    assessment.scores.filter((s) => s.self_level !== null).map((s) => [s.control_code, s.self_level!]),
+    scores.filter((s) => s.self_level !== null).map((s) => [s.control_code, s.self_level!]),
   );
   const total = fw.activeControls.length;
   const done = fw.activeControls.filter((c) => scored.has(c.code)).length;
   const complete = done === total;
-  const draft = assessment.state === "draft";
+  const draft = row.state === "draft";
   const firstUnscored = fw.activeControls.find((c) => !scored.has(c.code));
 
   /* Filter (N5) — a query parameter, not the app's first client component.
@@ -62,7 +65,7 @@ export default async function ControlsIndex({
         <h2>Your assessment</h2>
         <span className="rule" />
         <span className="eyebrow">
-          cycle {assessment.cycle} · {total} active controls
+          cycle {row.cycle} · {total} active controls
         </span>
       </div>
 
@@ -107,17 +110,17 @@ export default async function ControlsIndex({
           <i style={{ width: `${total === 0 ? 0 : (done / total) * 100}%` }} />
         </div>
         <p className="note" style={{ marginTop: 10 }}>
-          {assessment.state === "draft" && !complete && (
+          {row.state === "draft" && !complete && (
             <>Score every active control to submit — {total - done} to go.</>
           )}
-          {assessment.state === "draft" && complete && (
+          {row.state === "draft" && complete && (
             <>All controls scored. Submitting hands the assessment to the Head of PMO; you
               cannot change scores afterwards.</>
           )}
-          {assessment.state === "self_submitted" && (
-            <>Submitted{assessment.submitted_at ? ` on ${assessment.submitted_at.slice(0, 10)}` : ""} — with the Head of PMO for review.</>
+          {row.state === "self_submitted" && (
+            <>Submitted{row.submitted_at ? ` on ${row.submitted_at.slice(0, 10)}` : ""} — with the Head of PMO for review.</>
           )}
-          {assessment.state === "approved" && (
+          {row.state === "approved" && (
             <>Approved — <Link href="/results">see your results</Link>.</>
           )}
         </p>

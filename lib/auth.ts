@@ -12,17 +12,23 @@
  * read goes through the service-role client in lib/supabase/server.
  */
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { db, supabaseAnonKey, supabaseUrl } from "./supabase/server";
+import { db, supabaseAnonKey, supabaseUrl, timedSupabaseFetch } from "./supabase/server";
+import { phase } from "./perf";
 import { SESSION_COOKIE } from "./supabase/cookies";
 import type { AppUser, UserRole } from "./types";
 
 /** Auth-only client bound to the request's cookie jar. */
-export async function authClient() {
+export const authClient = cache(async function authClient() {
   const store = await cookies();
   return createServerClient(supabaseUrl(), supabaseAnonKey(), {
+    // Timed like the service client: auth.getUser() is a network round trip to
+    // Supabase Auth on every authenticated render, and it needs to be visible
+    // alongside the database calls rather than hiding among them.
+    global: { fetch: timedSupabaseFetch("auth") },
     cookies: {
       getAll: () => store.getAll(),
       setAll: (list) => {
@@ -37,7 +43,7 @@ export async function authClient() {
       },
     },
   });
-}
+});
 
 /**
  * The columns that make an AppUser. Kept in one constant because this list is a
@@ -49,11 +55,30 @@ export async function authClient() {
 const APP_USER_COLUMNS =
   "id, email, full_name, job_title, role, must_change_password";
 
-/** The signed-in, invited user — or null. Never throws for "not logged in". */
-export async function currentUser(): Promise<AppUser | null> {
+/**
+ * Who is asking — resolved ONCE per render.
+ *
+ * `cache()` is React's per-request memo, and it is load-bearing here rather
+ * than a nicety. Every page render used to do this work twice: the layout calls
+ * currentUser() to draw the header, and the page itself calls requireUser().
+ * Each was a network round trip to Supabase Auth to validate the token PLUS an
+ * app_user query — four calls where two will do, on every single navigation.
+ *
+ * Three states rather than a nullable user, because the two failure modes need
+ * different answers: no session goes to /login, while a valid session with no
+ * allowlist row goes to /logout, which clears it. Collapsing them to null was
+ * what forced the two callers to duplicate the lookup in the first place.
+ */
+type Viewer =
+  | { status: "anon" }
+  | { status: "uninvited" }
+  | { status: "ok"; user: AppUser };
+
+const viewer = cache(async function viewer(): Promise<Viewer> {
+  return phase("auth: validate token + load app_user", async () => {
   const auth = await authClient();
   const { data, error } = await auth.auth.getUser();
-  if (error || !data.user) return null;
+  if (error || !data.user) return { status: "anon" };
 
   const row = await db()
     .from("app_user")
@@ -62,8 +87,15 @@ export async function currentUser(): Promise<AppUser | null> {
     .maybeSingle();
 
   // A session without an app_user row is an uninvited account: deny.
-  if (row.error || !row.data) return null;
-  return row.data as AppUser;
+  if (row.error || !row.data) return { status: "uninvited" };
+  return { status: "ok", user: row.data as AppUser };
+  });
+});
+
+/** The signed-in, invited user — or null. Never throws for "not logged in". */
+export async function currentUser(): Promise<AppUser | null> {
+  const v = await viewer();
+  return v.status === "ok" ? v.user : null;
 }
 
 /**
@@ -84,18 +116,11 @@ export async function requireUser(
     skipPasswordGate?: boolean;
   } = {},
 ): Promise<AppUser> {
-  const auth = await authClient();
-  const { data, error } = await auth.auth.getUser();
-  if (error || !data.user) redirect("/login");
+  const v = await viewer();
+  if (v.status === "anon") redirect("/login");
+  if (v.status === "uninvited") redirect("/logout?denied=1");
 
-  const row = await db()
-    .from("app_user")
-    .select(APP_USER_COLUMNS)
-    .eq("id", data.user.id)
-    .maybeSingle();
-  if (row.error || !row.data) redirect("/logout?denied=1");
-
-  const user = row.data as AppUser;
+  const user = v.user;
 
   // The password gate. Server-side on purpose: it cannot live in proxy.ts,
   // which runs on the edge holding only the anon key and cannot read app_user

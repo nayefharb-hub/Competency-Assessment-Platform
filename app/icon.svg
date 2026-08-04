@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Competency Assessment">
+  <!-- Matches the header mark in globals.css: accent azure, white letterforms.
+       Its absence was costing two 404s (/favicon.ico and /favicon.png) on every
+       single page load, visible in the Vercel logs. -->
+  <rect width="32" height="32" rx="7" fill="#2E6BE6"/>
+  <text x="16" y="21.5" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="14" font-weight="700" fill="#ffffff">CA</text>
+</svg>

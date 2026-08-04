@@ -27,6 +27,37 @@ export function supabaseAnonKey(): string {
   return required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 }
 
+/**
+ * Times every Supabase request and logs it.
+ *
+ * Vercel reports how long a render took, but not what it spent the time ON.
+ * Two rounds of this investigation were spent inferring that from call counts
+ * and getting it wrong — the round-trip count came down 18 → 4 and the render
+ * stayed slow, which only a per-call timing could have shown early.
+ *
+ * One line per query, roughly four per page. Compare their sum against the
+ * `durationMs` Vercel reports: if the sum is small and the duration is large,
+ * the time is NOT in the database and looking there is a waste.
+ *
+ * Set PERF_LOG=0 to silence it once the pilot is settled.
+ */
+function timedFetch(tag: string): typeof fetch {
+  if (process.env.PERF_LOG === "0") return fetch;
+  return async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const started = Date.now();
+    try {
+      return await fetch(input, init);
+    } finally {
+      const url = typeof input === "string" ? input
+        : input instanceof URL ? input.href : (input as Request).url;
+      const path = url.split(".supabase.co")[1]?.split("?")[0] ?? url;
+      console.log(`[supabase ${tag}] ${Date.now() - started}ms ${path}`);
+    }
+  };
+}
+
+export const timedSupabaseFetch = timedFetch;
+
 let serviceClient: SupabaseClient | null = null;
 
 /**
@@ -39,6 +70,7 @@ export function db(): SupabaseClient {
     serviceClient = createClient(supabaseUrl(), required("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false, autoRefreshToken: false },
       db: { schema: "public" },
+      global: { fetch: timedFetch("db") },
     });
   }
   return serviceClient;

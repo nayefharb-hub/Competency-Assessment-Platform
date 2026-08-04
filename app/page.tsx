@@ -2,7 +2,7 @@ import Link from "next/link";
 import { canAdmin, canAssess, requireUser } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
 import {
-  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+  currentCycle, findArchivedAssessment, findAssessment, scoresFor,
 } from "@/lib/db/assessment";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +18,11 @@ export default async function Home({
   // An assessment exists only when an admin has assigned one (N7), so this is a
   // plain read and "no row" is a real, expected state rather than a first visit.
   const row = await findAssessment(user.id);
-  const mine = row ? await loadForAssessee(user, row.id) : null;
+  // A count and a state — not the four joins loadForAssessee would fetch.
+  const mine = row ? await scoresFor(user, row) : null;
   const archived = row ? null : await findArchivedAssessment(user.id);
 
-  const scored = mine?.scores.filter((s) => s.self_level !== null).length ?? 0;
+  const scored = mine?.filter((s) => s.self_level !== null).length ?? 0;
   const total = fw.activeControls.length;
   const cycle = currentCycle();
 
@@ -59,7 +60,7 @@ export default async function Home({
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
           {mine && (
             <Link className="btn btn-primary" href="/assess/controls">
-              {mine.state === "draft"
+              {row!.state === "draft"
                 ? scored === 0
                   ? "Start self-assessment"
                   : `Continue self-assessment (${scored}/${total})`
