@@ -251,7 +251,7 @@ need answered a different way.
 
 ### N6 — can an admin delete an assessment?
 
-**Status:** FIXED (2026-08-04, PR B) — **needs migration `0004` applied**
+**Status:** FIXED (2026-08-04, PR B) — migration `0004` applied
 
 > "can and admin delete a certain assessment?"
 
@@ -881,13 +881,20 @@ the headline number move with nothing on screen to explain it. Archiving is
 reversible, the reason is required, and an archived record stays openable but
 never editable.
 
-**Migration `0004` must be applied before N6 is actually finished.** `0001`
-declared `unique (assessee_id, cycle)`; an archived row still occupies that
-slot, so archiving somebody's cycle would permanently prevent re-assigning it to
-them. Verified against the live database, not assumed: re-assigning after an
-archive is refused with `duplicate key value violates unique constraint`. `0004`
-replaces the constraint with a partial unique index over live rows. Until it is
-run, `npm run e2e` is **138/139** and the failing test names the migration.
+**Migration `0004` was required and is applied.** `0001` declared
+`unique (assessee_id, cycle)`; an archived row still occupied that slot, so
+archiving somebody's cycle would permanently have prevented re-assigning it to
+them. `0004` replaces the constraint with a partial unique index over live rows.
+Verified both directions against the live database after applying: re-assigning
+after an archive succeeds, and two live assessments for one person and cycle are
+still refused. `npm run e2e` is **149/149**.
+
+Applying it also exposed a gap the pre-migration suite could not reach. Once a
+person was re-assigned, their archived record disappeared from the People screen
+entirely — so **Restore was unreachable**, and the "already has a live
+assessment" guard could never fire through the UI. An archived record that
+vanishes the moment somebody is re-assigned is a delete with extra steps, not
+history. The archived line now renders beside the live one.
 
 Shipped with the amendment approved: **N14**. Prose left, scoring panel right and
 pinned above 1100px; one column with the actions fixed to the viewport below it.

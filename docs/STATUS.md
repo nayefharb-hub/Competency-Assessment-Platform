@@ -3,8 +3,8 @@
 Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · N14 layout). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
-**Live.** Deployed on Vercel from `main`. Migration `0003` is applied; **`0004`
-is not yet — see item 6.** Pilot feedback from using it is logged in
+**Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
+applied. Pilot feedback from using it is logged in
 `docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
 `docs/eng-plan-admin-and-ux.md`.
 
@@ -37,7 +37,7 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # 146 checks; see item 6 about migration 0004
+npm run e2e                # expect 149/149 — writes, then cleans up after itself
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -60,18 +60,11 @@ renamed `assigned`, because that is what it counts. Withdrawing an assignment is
 allowed only while nothing has been scored. No migration was needed: `0003`
 already added `assigned_at` / `assigned_by`.
 
-**PR B — archive (N6) is DONE, but migration `0004` is NOT APPLIED.** Paste
-`supabase/migrations/0004_archive_frees_the_cycle.sql` into the Supabase SQL
-editor, as `0003` was. It replaces `unique (assessee_id, cycle)` with a partial
-unique index over live rows: an archived row otherwise keeps the slot, so
-archiving somebody's cycle would permanently prevent re-assigning it to them.
-Verified against the live database rather than assumed — re-assigning after an
-archive is refused today with `duplicate key value violates unique constraint`.
-
-**Until `0004` runs, `npm run e2e` is 145/146**, and the one failing check is
-named `re-assigning after an archive succeeds (needs migration 0004)`. That is
-deliberate: the earlier version of that test only counted a checkbox and passed
-while the feature was broken. Everything else is green and cleanup still runs.
+**PR B — archive (N6) is DONE and migration `0004` is APPLIED** (2026-08-04). It
+replaced `unique (assessee_id, cycle)` with a partial unique index over live
+rows, so an archived record no longer holds the slot. Verified both directions
+against the live database: re-assigning after an archive succeeds, and two live
+assessments for one person and cycle are still refused.
 
 **N14 is DONE** — the owner approved the DESIGN.md amendment, which is applied
 (§Layout gains the interactive-panel exception; two rows in the decisions log).
@@ -153,14 +146,14 @@ Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **145/146** through a real browser against the running app,
+- `npm run e2e` — **149/149** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
   gate, the People screen, session-cookie flags, archive/restore, and the N14
   layout guarantee (Save on screen without scrolling at three viewports on both
   the shortest and longest controls, with the prose still capped at the reading
-  measure). The single failure is the migration-`0004` check described above.
+  measure).
 
 ## What was built
 

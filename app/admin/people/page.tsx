@@ -251,8 +251,16 @@ export default async function PeoplePage({
                           </form>
                         )}
                       </>
-                    ) : p.archived_id ? (
-                      <>
+                    ) : p.archived_id ? null : (
+                      <span className="muted">not assigned</span>
+                    )}
+
+                    {/* Shown even when a live assessment exists beside it. An
+                        archived record that disappears the moment the person is
+                        re-assigned is not history, it is a delete with extra
+                        steps — and it would leave Restore unreachable. */}
+                    {p.archived_id && (
+                      <div style={{ marginTop: p.assessment_state ? 8 : 0 }}>
                         <span className="tick tick-todo">archived</span>
                         <div className="note">
                           {p.archived_at?.slice(0, 10)}
@@ -264,9 +272,7 @@ export default async function PeoplePage({
                             Restore
                           </button>
                         </form>
-                      </>
-                    ) : (
-                      <span className="muted">not assigned</span>
+                      </div>
                     )}
                   </td>
                   <td>
