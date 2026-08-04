@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
-  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+  currentCycle, findArchivedAssessment, findAssessment, scoresFor,
 } from "@/lib/db/assessment";
 import { saveSelfScoreAction } from "@/app/actions";
 import NotAssigned from "./not-assigned";
@@ -37,7 +37,9 @@ export default async function AssessPage({
     const archived = await findArchivedAssessment(user.id);
     return <NotAssigned cycle={currentCycle()} archived={archived} />;
   }
-  const assessment = await loadForAssessee(user, row.id);
+  // Only the scores: this screen renders nothing from the person, the profile
+  // or the target snapshot, and a PM loads it 132 times.
+  const scores = await scoresFor(user, row);
 
   const code = c && fw.controlByCode(c)?.active ? c : fw.activeControls[0].code;
   const control = fw.controlByCode(code)!;
@@ -46,9 +48,9 @@ export default async function AssessPage({
   const pos = fw.controlPosition(code);
   const { prev, next } = fw.neighbours(code);
 
-  const score = assessment.scores.find((s) => s.control_code === code);
-  const answered = assessment.scores.filter((s) => s.self_level !== null).length;
-  const locked = assessment.state !== "draft";
+  const score = scores.find((s) => s.control_code === code);
+  const answered = scores.filter((s) => s.self_level !== null).length;
+  const locked = row.state !== "draft";
 
   return (
     <div className="section assess-wide">
@@ -71,7 +73,7 @@ export default async function AssessPage({
       {locked && (
         <div className="banner banner-warn" role="status">
           You submitted this assessment on{" "}
-          {assessment.submitted_at?.slice(0, 10) ?? "submission"} — it is with the
+          {row.submitted_at?.slice(0, 10) ?? "submission"} — it is with the
           Head of PMO now, so scores can no longer be changed.
         </div>
       )}
