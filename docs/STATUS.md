@@ -1,6 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · N14 layout). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migration `0003` is applied; **`0004`
@@ -73,11 +73,14 @@ named `re-assigning after an archive succeeds (needs migration 0004)`. That is
 deliberate: the earlier version of that test only counted a checkbox and passed
 while the feature was broken. Everything else is green and cleanup still runs.
 
-**Next is PR C** (N14 assess-screen fit, N10 mobile, N12 theme toggle, N5
-controls filter, N4 scored-state emphasis — decide N5 before N4). **N14 is
-blocked on a DESIGN.md amendment the owner has to approve** — see the N14 note in
-`docs/pilot-feedback.md`, which carries the measurements and the proposed
-wording.
+**N14 is DONE** — the owner approved the DESIGN.md amendment, which is applied
+(§Layout gains the interactive-panel exception; two rows in the decisions log).
+The self-assessment is prose-left / scoring-right and pinned above 1100px, one
+column with a fixed action bar below it. Save is on screen on load at every width
+tested, on the longest control in ICB4 as well as the shortest.
+
+**Next is the rest of PR C** (N10 mobile, N12 theme toggle, N5 controls filter,
+N4 scored-state emphasis — decide N5 before N4).
 
 **7. Two things blocked on the owner, not on code.**
 - **SMTP** — gates emailed invite links and self-service password reset. Needs

@@ -776,7 +776,7 @@ trust in an assessment system, and the answer needs to be findable.
 
 ### N14 — the self-assessment does not fit a screen, and wastes a big one
 
-**Status:** Open — plan below, needs a DESIGN.md amendment
+**Status:** FIXED (2026-08-04) — amendment approved by the owner and applied
 
 > "i have a 27 inch screen and the save & next control is not on the screen, i
 > have to scroll vertically for seeing it and doing it for every control is
@@ -889,12 +889,35 @@ archive is refused with `duplicate key value violates unique constraint`. `0004`
 replaces the constraint with a partial unique index over live rows. Until it is
 run, `npm run e2e` is **138/139** and the failing test names the migration.
 
+Shipped with the amendment approved: **N14**. Prose left, scoring panel right and
+pinned above 1100px; one column with the actions fixed to the viewport below it.
+Measured before → after: 2048×1152 went from 363px of scroll to fitting outright,
+2560×1440 from 75px to fitting, and the 1440×900 laptop from 615px to 61px with
+Save on screen on load. The longest control still scrolls its prose and always
+will — ICB4 source text is never edited — but Save is on screen on load at every
+width tested, including 390×844. Prose still renders at exactly the 52ch cap, so
+the container widened and the measure did not.
+
+Two things measurement caught that looking would not have. `position: sticky`
+cannot pin the mobile action bar: the scoring panel sits below a long indicator,
+so on load its whole box is off-screen, and sticky only holds an element inside
+its parent's visible range — `fixed` was needed. And an inline `style` on the
+actions row would have silently beaten the mobile media query, the same trap as
+the `flex: 1` one in the earlier mobile audit.
+
+**One measurement worth a decision, not fixed here.** The prose now measures
+**72–73 characters per line**, against the 60–70 that DESIGN.md §Layout asks for.
+That is not a regression from this change — the cap governs identically before
+and after — it means the original `52ch` calibration was optimistic; it was
+derived as "≈68" by a rougher method than the widest-line measurement used here.
+Tightening `--measure` to about `48ch` would land inside the range. Left alone
+deliberately: it changes reading width on every page, and N11 says the palette
+and readability are to be re-judged by the owner now the layout is fixed, so this
+belongs in that judgement rather than ahead of it.
+
 Still open, in build order — the reasoning for each is in its note above:
 
-1. **N14** the assess screen's height and width — needs the DESIGN.md amendment
-   in the note above before it can be built. Belongs with N10, since the sticky
-   action bar and the mobile work are the same layout pass.
-2. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
+1. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
    scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
    quietening rather than amplifying.
 3. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
@@ -906,14 +929,13 @@ Still open, in build order — the reasoning for each is in its note above:
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 7 | 3 | 1 | 2 | 0 |
+| 6 | 4 | 1 | 2 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N14** — assess screen height/width (needs the DESIGN.md amendment)
-2. **N10** — mobile: header, section headings, People table
-3. **N5** — filter the controls list
-4. **N4** — scored-state emphasis, decided together with N5
+1. **N10** — mobile: header, section headings, People table
+2. **N5** — filter the controls list
+3. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision
