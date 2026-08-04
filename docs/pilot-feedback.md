@@ -405,7 +405,7 @@ a narrower reason than "defend the metric".
 
 ### N7 — an assessment is *assigned* by the admin, not created by logging in
 
-**Status:** Open — accepted design, supersedes the metric argument in N6
+**Status:** FIXED (2026-08-04, PR A2) — supersedes the metric argument in N6
 
 > "invite does not mean assessment start flag is on, we can add a control for
 > the admin to trigger a certain assessment for a user, meaning logging in does
@@ -774,39 +774,43 @@ Recorded here rather than quietly corrected, because "the tool showed me
 something that then vanished" is precisely the class of report that destroys
 trust in an assessment system, and the answer needs to be findable.
 
-## Where this stands (end of 2026-08-03)
+## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
 leading, N13. Migration `0003` applied to the pilot database.
 
+Shipped in PR A2: **N7**. Assignment is live. `getOrCreateAssessment` is gone, so
+an assessment exists only because an admin assigned it from `/admin/people`; the
+completion denominator counts assignments, and the two crutches that existed to
+paper over rows appearing unbidden — the `Math.max(invitedCount, …)` fudge and
+the `assessee_is_pm` filter — were deleted, not left in place to disagree
+quietly with the new number. `CompletionStats.invited` is now `assigned`.
+Withdrawing an assignment is allowed only while nothing has been scored, and the
+e2e suite proves the server refuses a withdraw posted from a tab that went stale
+after the person started. 112/112 against the live database.
+
 Still open, in build order — the reasoning for each is in its note above:
 
-1. **N7** assignment — largest, and the one that makes the completion figure a
-   fact rather than an inference. Specified and reviewed; columns already exist.
-2. **N6** archive — columns already exist too.
-3. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
+1. **N6** archive — columns already exist; cleaner to design now N7 is in.
+2. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
    scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
    quietening rather than amplifying.
-4. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
+3. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
    migration-tracking gap that should close before a second database exists.
-5. **N11 palette** and **SMTP** — both waiting on the owner, not on code.
+4. **N11 palette** and **SMTP** — both waiting on the owner, not on code.
 
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 8 | 1 | 1 | 1 | 0 |
+| 7 | 2 | 1 | 1 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N7 + N8 + N9** — the admin People screen: add a person, assign them a
-   cycle, reset a password. One screen, one workflow. Largest item; also changes
-   the entry path for every assessee and the completion metric's denominator.
-   The "change my own password" half of N9 is independent and can ship first.
-2. **N6** — archive, cleaner to design once N7 exists
-3. **N10** — mobile: header, section headings, People table
-4. **N5** — filter the controls list
-5. **N4** — scored-state emphasis, decided together with N5
+1. **N6** — archive
+2. **N10** — mobile: header, section headings, People table
+3. **N5** — filter the controls list
+4. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision

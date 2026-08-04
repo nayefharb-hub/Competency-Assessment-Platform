@@ -1,7 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-03 (deployed to Vercel; admin People screen + password
-gate). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-04 (A2 — assignment). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migration `0003` is applied. Pilot
@@ -37,7 +36,7 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # expect 92/92 — writes, then cleans up after itself
+npm run e2e                # expect 112/112 — writes, then cleans up after itself
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -51,15 +50,18 @@ If `verify:db` fails, stop: it is credentials or network, not code.
 | Visual rules — locked, do not deviate | `DESIGN.md` |
 | Rollup arithmetic contract | `docs/rollup-spec.md` |
 
-**6. Next task is PR A2 — assignment (N7).** Already specified in the eng plan
-and already reviewed. The columns (`assigned_at`, `assigned_by`) exist in the
-database, so no migration is needed. In short: delete `getOrCreateAssessment`
-so an assessment only exists when an admin assigns it, add an Assign control to
-`/admin/people`, make the completion denominator the count of assignments, and
-delete both the `Math.max(invitedCount, …)` fudge and the `assessee_is_pm`
-filter — they exist only to paper over assessments appearing unbidden. The e2e
-rewrite ships **with** it, not after: every current test assumes an assessment
-appears on first visit, which A2 removes.
+**6. PR A2 — assignment (N7) is DONE.** `getOrCreateAssessment` is gone; an
+assessment exists only because an admin assigned it, from `/admin/people`. The
+completion denominator is now a count of assignments, and both crutches — the
+`Math.max(invitedCount, …)` fudge and the `assessee_is_pm` filter — are deleted
+rather than left to disagree quietly with it. `CompletionStats.invited` is
+renamed `assigned`, because that is what it counts. Withdrawing an assignment is
+allowed only while nothing has been scored. No migration was needed: `0003`
+already added `assigned_at` / `assigned_by`.
+
+**Next is PR B — archive (N6)**, then PR C (N10 mobile, N12 theme toggle, N5
+controls filter, N4 scored-state emphasis — decide N5 before N4). The
+`deleted_at` / `deleted_by` / `deleted_reason` columns already exist from `0003`.
 
 **7. Two things blocked on the owner, not on code.**
 - **SMTP** — gates emailed invite links and self-service password reset. Needs
@@ -128,15 +130,15 @@ the single seam; it queries Supabase instead of `data/seed/icb4-framework.json`.
 The seed JSON stays in the repo as the source `supabase/seed.sql` was generated
 from — it is no longer read at runtime.
 
-Verified 2026-08-03 against the live database:
+Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **92/92** through a real browser against the running app, then
-  checked in Postgres directly. Covers auth, role gates, target blinding,
-  score persistence, submit, review, accept-all, approve + snapshot, locking,
-  cross-user access, rollup arithmetic, the admin editor, the password gate and
-  the People screen.
+- `npm run e2e` — **112/112** through a real browser against the running app,
+  then checked in Postgres directly. Covers auth, assignment, role gates, target
+  blinding, score persistence, submit, review, accept-all, approve + snapshot,
+  locking, cross-user access, rollup arithmetic, the admin editor, the password
+  gate and the People screen.
 
 ## What was built
 
@@ -158,14 +160,16 @@ Verified 2026-08-03 against the live database:
   that matches nothing is not an error and would otherwise report success.
 - **Completion instrumentation** — `started_at` on first save, `completed_at` on
   submit; the assessor's first screen leads with finished-count and median
-  time-to-complete. Only `assessee`-role people count, so the Head of PMO
-  opening the form cannot move the number.
+  time-to-complete. The denominator is the number of people an admin **assigned**
+  this cycle — a recorded fact, not an inference from who holds a login.
 
 ## Next step
 
-**Invite the nine PMs and run the cycle.** Deployment is done
-(`docs/deploy.md`); adding people no longer needs a terminal — sign in as an
-admin and use **People** in the nav.
+**Invite the nine PMs, assign them the cycle, and run it.** Deployment is done
+(`docs/deploy.md`); neither adding people nor assigning needs a terminal — sign
+in as an admin and use **People** in the nav. Adding someone does not start
+anything; assigning does, and that assignment is what the completion figure
+counts.
 
 Then:
 
