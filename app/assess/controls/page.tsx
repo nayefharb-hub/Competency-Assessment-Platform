@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
-import { getOrCreateAssessment, loadForAssessee } from "@/lib/db/assessment";
+import {
+  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+} from "@/lib/db/assessment";
 import { submitAssessmentAction } from "@/app/actions";
+import NotAssigned from "../not-assigned";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +21,12 @@ export default async function ControlsIndex({
 }) {
   const { saved, submitted, error } = await searchParams;
   const user = await requireUser();
-  const [fw, row] = await Promise.all([getAssesseeFramework(), getOrCreateAssessment(user.id)]);
+  const [fw, row] = await Promise.all([getAssesseeFramework(), findAssessment(user.id)]);
+  if (!row) {
+    // Distinguish "never assigned" from "yours was archived" — see NotAssigned.
+    const archived = await findArchivedAssessment(user.id);
+    return <NotAssigned cycle={currentCycle()} archived={archived} />;
+  }
   const assessment = await loadForAssessee(user, row.id);
 
   const scored = new Map(

@@ -57,23 +57,40 @@ const check = (name, ok, detail = "") => {
 /** Remove a QA account and everything it produced. `keepAccount` is for the
  *  mid-run reset; the end-of-run call takes the account away too, so the
  *  allowlist and the completion denominator go back to how they were. */
+/**
+ * Delete the sign-in half of an account by EMAIL.
+ *
+ * A run that dies mid-flight leaves an `auth.users` row with no `app_user` row —
+ * invisible to every app_user query, and enough to make the next "add person"
+ * fail with "email already registered". Cleaning up by id only cannot reach it.
+ */
+async function deleteAuthUser(email) {
+  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const found = (data?.users ?? []).find((u) => u.email === email);
+  if (found) await db.auth.admin.deleteUser(found.id);
+}
+
 async function purge(email, { keepAccount = false } = {}) {
   const { data: user } = await db.from("app_user").select("id").eq("email", email).maybeSingle();
-  if (!user) return;
-  const { data: rows } = await db.from("assessment").select("id").eq("assessee_id", user.id);
-  for (const a of rows ?? []) {
-    await db.from("target_snapshot").delete().eq("assessment_id", a.id);
-    await db.from("score").delete().eq("assessment_id", a.id);
-    await db.from("assessment").delete().eq("id", a.id);
+  if (user) {
+    const { data: rows } = await db.from("assessment").select("id").eq("assessee_id", user.id);
+    for (const a of rows ?? []) {
+      await db.from("target_snapshot").delete().eq("assessment_id", a.id);
+      await db.from("score").delete().eq("assessment_id", a.id);
+      await db.from("assessment").delete().eq("id", a.id);
+    }
   }
   if (keepAccount) return;
-  await db.from("app_user").delete().eq("id", user.id);
-  await db.auth.admin.deleteUser(user.id);
+  if (user) await db.from("app_user").delete().eq("id", user.id);
+  await deleteAuthUser(email);
 }
 
 async function ensure(person) {
   await purge(person.email, { keepAccount: true });
   const { data: existing } = await db.from("app_user").select("id").eq("email", person.email).maybeSingle();
+  // No allowlist row, but there may still be an orphaned sign-in account from an
+  // interrupted run; createUser would refuse the email.
+  if (!existing) await deleteAuthUser(person.email);
   if (existing) {
     await db.auth.admin.updateUserById(existing.id, { password: person.password, email_confirm: true });
     // Fixtures start unflagged; the password-gate tests set the flag themselves.
@@ -117,8 +134,17 @@ async function session(email, password) {
 }
 const idOf = async (email) =>
   (await db.from("app_user").select("id").eq("email", email).single()).data.id;
+/**
+ * The person's LIVE assessment, or null.
+ *
+ * maybeSingle, not single: "no assessment" is an ordinary state — nobody has one
+ * until an admin assigns it. Filtered to live rows because archiving lets one
+ * person accumulate several rows per cycle, and an unfiltered maybeSingle would
+ * start throwing on the second archive.
+ */
 const assessmentOf = async (email) =>
-  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email)).single()).data;
+  (await db.from("assessment").select("*").eq("assessee_id", await idOf(email))
+    .is("deleted_at", null).maybeSingle()).data;
 
 const { data: activeControls } = await db
   .from("control").select("id, code, target_level").eq("active", true).order("sort_order").limit(5000);
@@ -141,11 +167,111 @@ console.log("\n[1] Invite-only auth");
 
 const pm = await session(PM.email, PM.password);
 check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
+
+// @supabase/ssr defaults to httpOnly: false so a browser-side client can read
+// the session. This app has no browser-side client, so the token has no
+// business being reachable from page JavaScript — assert the override took,
+// because nothing fails loudly if it silently stops applying.
+{
+  const authCookies = (await pm.ctx.cookies()).filter((c) => c.name.startsWith("sb-"));
+  check("the session cookie exists", authCookies.length > 0);
+  check("the session cookie is httpOnly", authCookies.every((c) => c.httpOnly),
+    authCookies.filter((c) => !c.httpOnly).map((c) => c.name).join(","));
+  const visible = await pm.page.evaluate(() =>
+    document.cookie.split("; ").filter((c) => c.startsWith("sb-")));
+  check("page JavaScript cannot read the session", visible.length === 0, visible.join(","));
+}
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 
-/* -------------------------------------- 2. role gates and target blinding */
-console.log("\n[2] Role gates and target blinding");
+/* ------------------------------------------------------- 2. assignment */
+console.log("\n[2] Assignment — an assessment exists only when an admin assigns it (A2)");
+{
+  check("signing in does not create an assessment", (await assessmentOf(PM.email)) === null);
+
+  await pm.page.goto("/assess/controls");
+  check("the PM is told nothing has been assigned",
+    (await pm.page.content()).includes("No assessment has been assigned"));
+  await pm.page.goto("/assess?c=4.3.1.1");
+  check("there is nothing to score before assignment",
+    (await pm.page.locator('input[name="level"]').count()) === 0);
+  check("and looking at those pages still created nothing",
+    (await assessmentOf(PM.email)) === null);
+
+  const pmId = await idOf(PM.email);
+  const otherId = await idOf(OTHER.email);
+  const bossId = await idOf(BOSS.email);
+
+  await boss.page.goto("/admin/people");
+  check("the assign list offers the unassigned PM",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 1);
+  // Untick everyone first: this suite must never assign a cycle to a real
+  // colleague who happens to be on the allowlist (the N13 lesson).
+  const boxes = boss.page.locator('input[name="assignee"]');
+  for (let i = 0; i < (await boxes.count()); i++) await boxes.nth(i).setChecked(false);
+  await boss.page.check(`input[name="assignee"][value="${pmId}"]`);
+  await boss.page.check(`input[name="assignee"][value="${otherId}"]`);
+  await boss.page.click('button:has-text("Assign selected")');
+  await boss.page.waitForLoadState("networkidle");
+
+  const a = await assessmentOf(PM.email);
+  check("assigning creates the assessment", a !== null);
+  check("state starts at draft", a?.state === "draft", a?.state);
+  check("assigned_at stamped", a?.assigned_at !== null);
+  check("assigned_by records who asked", a?.assigned_by === bossId, a?.assigned_by);
+  check("assignment does NOT stamp started_at — nobody has started yet",
+    a?.started_at === null, a?.started_at);
+  check("no scores are pre-created",
+    ((await db.from("score").select("*", { count: "exact", head: true })
+      .eq("assessment_id", a.id)).count ?? 0) === 0);
+
+  // Idempotence rests on the unique constraint, so assert the constraint itself
+  // rather than the code that leans on it.
+  const dup = await db.from("assessment").insert({
+    framework_id: a.framework_id, profile_id: a.profile_id,
+    assessee_id: pmId, cycle: a.cycle, state: "draft",
+  });
+  check("the database refuses a second assessment for the same person and cycle",
+    dup.error !== null, dup.error?.message);
+
+  await boss.page.goto("/admin/people");
+  check("an assigned person drops off the assign list",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 0);
+
+  await pm.page.goto("/assess/controls");
+  check("the PM can now start", (await pm.page.content()).includes("controls scored"));
+
+  /* withdraw: allowed while untouched, refused the moment anything is scored */
+  const otherA = await assessmentOf(OTHER.email);
+  const otherRow = boss.page.locator("tr", { hasText: OTHER.name });
+  check("an unstarted assignment offers Withdraw",
+    (await otherRow.locator('button:has-text("Withdraw")').count()) === 1);
+
+  // Score it behind the page's back — exactly the stale tab the guard exists
+  // for. The button is still in this DOM; the server has to say no.
+  await db.from("score").insert({
+    assessment_id: otherA.id, control_id: activeControls[0].id, self_level: 3,
+  });
+  await otherRow.locator('button:has-text("Withdraw")').click();
+  // waitForURL, not networkidle: the redirect from a server action lands after
+  // the network has already gone quiet, so networkidle reads the stale page.
+  await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  check("withdrawing a started assessment is refused by the server",
+    (await boss.page.content()).includes("would destroy them"), boss.page.url());
+  check("the started assessment survived the refused withdraw",
+    (await assessmentOf(OTHER.email)) !== null);
+
+  await db.from("score").delete().eq("assessment_id", otherA.id);
+  await boss.page.goto("/admin/people");
+  await boss.page.locator("tr", { hasText: OTHER.name })
+    .locator('button:has-text("Withdraw")').click();
+  await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  check("withdrawing an unstarted assignment removes it",
+    (await assessmentOf(OTHER.email)) === null);
+}
+
+/* -------------------------------------- 3. role gates and target blinding */
+console.log("\n[3] Role gates and target blinding");
 {
   await pm.page.goto("/review");
   check("PM cannot open the assessor review", pm.page.url().includes("denied=1"), pm.page.url());
@@ -160,8 +286,8 @@ console.log("\n[2] Role gates and target blinding");
   check("scale labels come from the database", html.includes("Practised") && html.includes("Proficient"));
 }
 
-/* -------------------------------------------- 3. self-scoring persistence */
-console.log("\n[3] Self-scoring persists to Postgres");
+/* -------------------------------------------- 4. self-scoring persistence */
+console.log("\n[4] Self-scoring persists to Postgres");
 {
   await pm.page.goto("/assess?c=4.3.1.1");
   await pm.page.check('input[name="level"][value="3"]');
@@ -185,6 +311,33 @@ console.log("\n[3] Self-scoring persists to Postgres");
   await pm.page.goto("/assess?c=4.3.1.1");
   check("saved score is re-selected on reload", await pm.page.isChecked('input[name="level"][value="3"]'));
 
+  /* N14: the answer and Save must be on screen without scrolling, at every
+     width and on the longest control in ICB4. This is the guarantee the layout
+     exists for — and it is invisible to every other test here, all of which
+     drive the page through the DOM and never care where anything sits. */
+  for (const [w, h] of [[390, 844], [1440, 900], [2048, 1152]]) {
+    await pm.page.setViewportSize({ width: w, height: h });
+    for (const code of ["4.3.1.1", "4.5.1.1"]) {
+      await pm.page.goto(`/assess?c=${code}`);
+      const onScreen = await pm.page.evaluate(() => {
+        const r = document.querySelector('button[type="submit"]').getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight;
+      });
+      check(`Save is on screen without scrolling at ${w}x${h} (${code})`, onScreen);
+    }
+  }
+  await pm.page.setViewportSize({ width: 1280, height: 900 });
+
+  // The layout must not have bought that by widening sentences — the whole
+  // point of the amendment is that --measure still caps the prose.
+  await pm.page.goto("/assess?c=4.3.1.1");
+  const prose = await pm.page.evaluate(() => {
+    const p = document.querySelector(".lede");
+    return { width: p.getBoundingClientRect().width, cap: parseFloat(getComputedStyle(p).maxWidth) };
+  });
+  check("prose is still capped at the reading measure, not the column width",
+    prose.width <= prose.cap + 1, `${Math.round(prose.width)}px vs cap ${Math.round(prose.cap)}px`);
+
   await pm.page.goto("/assess/controls");
   check("submit is blocked while controls are unscored",
     await pm.page.isDisabled('button:has-text("Submit for review")'));
@@ -202,8 +355,8 @@ console.log("\n[3] Self-scoring persists to Postgres");
     (await assessmentOf(PM.email)).state === "draft");
 }
 
-/* -------------------------------------------------------------- 4. submit */
-console.log("\n[4] Submit: draft -> self_submitted");
+/* -------------------------------------------------------------- 5. submit */
+console.log("\n[5] Submit: draft -> self_submitted");
 {
   const a = await assessmentOf(PM.email);
   // deterministic spread, so the rollup has real variation to report
@@ -242,8 +395,8 @@ console.log("\n[4] Submit: draft -> self_submitted");
     (await pm.page.content()).includes("Results are not available yet"));
 }
 
-/* ------------------------------------------ 5. assessor review-and-revise */
-console.log("\n[5] Assessor review-and-revise");
+/* ------------------------------------------ 6. assessor review-and-revise */
+console.log("\n[6] Assessor review-and-revise");
 const assessmentId = (await assessmentOf(PM.email)).id;
 {
   await boss.page.goto("/review");
@@ -285,8 +438,8 @@ const assessmentId = (await assessmentOf(PM.email)).id;
     filled.every((r) => r.assessor_level === r.self_level), JSON.stringify(filled));
 }
 
-/* --------------------------------------------- 6. approval and snapshot */
-console.log("\n[6] Approval snapshots targets and locks the record");
+/* --------------------------------------------- 7. approval and snapshot */
+console.log("\n[7] Approval snapshots targets and locks the record");
 {
   // same shape as the submit gate: clear a score, force the button, post anyway
   const orphan = activeControls.find((c) => c.code === "4.3.1.4").id;
@@ -345,8 +498,8 @@ console.log("\n[6] Approval snapshots targets and locks the record");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
 }
 
-/* --------------------------------------- 7. locked record, cross-user read */
-console.log("\n[7] Locked record and cross-user access");
+/* --------------------------------------- 8. locked record, cross-user read */
+console.log("\n[8] Locked record and cross-user access");
 {
   await boss.page.goto(`/review?a=${assessmentId}`);
   check("approved sheet says it is locked", (await boss.page.content()).includes("locked"));
@@ -362,8 +515,8 @@ console.log("\n[7] Locked record and cross-user access");
   await other.ctx.close();
 }
 
-/* -------------------------------------------------- 8. rollup arithmetic */
-console.log("\n[8] Rollup arithmetic recomputed from the database");
+/* -------------------------------------------------- 9. rollup arithmetic */
+console.log("\n[9] Rollup arithmetic recomputed from the database");
 {
   const { data: rows } = await db.from("score")
     .select("assessor_level, control:control_id(code, active, competence_element:ce_id(code, target_level))")
@@ -392,8 +545,8 @@ console.log("\n[8] Rollup arithmetic recomputed from the database");
     matched === byCe.size, `${matched}/${byCe.size}`);
 }
 
-/* ------------------------------------------------------ 9. framework admin */
-console.log("\n[9] Framework admin writes the tunable layer only");
+/* ------------------------------------------------------ 10. framework admin */
+console.log("\n[10] Framework admin writes the tunable layer only");
 {
   const stamp = `QA note ${Date.now()}`;
   // remember the seeded values so cleanup restores them exactly
@@ -434,8 +587,8 @@ console.log("\n[9] Framework admin writes the tunable layer only");
 }
 
 
-/* ------------------------------- 10. password gate and the People screen */
-console.log("\n[10] Password gate (A1)");
+/* ------------------------------- 11. password gate and the People screen */
+console.log("\n[11] Password gate (A1)");
 {
   // F1 regression: if must_change_password is missing from the column list in
   // lib/auth.ts it reads back undefined, therefore falsy, therefore the gate
@@ -505,7 +658,7 @@ console.log("\n[10] Password gate (A1)");
   OTHER.password = NEWPASS;
 }
 
-console.log("\n[11] People screen (A1)");
+console.log("\n[12] People screen (A1)");
 {
   await pm.page.goto("/admin/people");
   check("a PM cannot reach the People screen", pm.page.url().includes("denied=1"), pm.page.url());
@@ -515,7 +668,7 @@ console.log("\n[11] People screen (A1)");
   check("the allowlist is listed", (await boss.page.content()).includes(PM.email));
 
   const NEWMAIL = "qa.added@example.test";
-  await db.from("app_user").delete().eq("email", NEWMAIL);
+  await purge(NEWMAIL);
   await boss.page.fill("#full_name", "QA Added Person");
   await boss.page.fill("#email", NEWMAIL);
   await boss.page.fill("#job_title", "Project Manager");
@@ -529,6 +682,8 @@ console.log("\n[11] People screen (A1)");
   check("the person is on the allowlist", made !== null);
   check("created flagged to set their own password", made?.must_change_password === true);
   check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
+  check("a new person appears in the assign list, without an assessment",
+    (await boss.page.locator(`input[name="assignee"][value="${made?.id}"]`).count()) === 1);
 
   // the account really works, and lands on the gate
   const fresh = await session(NEWMAIL, "AddedByAdmin1!");
@@ -564,6 +719,149 @@ console.log("\n[11] People screen (A1)");
   await purge(NEWMAIL);
 }
 
+/* ----------------------------------------------------- 13. archive (N6) */
+console.log("\n[13] Archive instead of destroy (PR B)");
+{
+  // PM's assessment is approved by now: scored, finished, timed. Exactly the
+  // record a hard delete would silently take out of the headline figure.
+  const before = await assessmentOf(PM.email);
+  const stats = async () => {
+    await boss.page.goto("/review");
+    const txt = await boss.page.locator(".card.pad").first().innerText();
+    return txt;
+  };
+  const beforeText = await stats();
+  check("the approved assessment is counted before archiving",
+    beforeText.includes("Median time to complete"));
+  check("it is listed in the review overview",
+    (await boss.page.content()).includes(PM.name));
+
+  await boss.page.goto("/admin/people");
+  const row = boss.page.locator("tr", { hasText: PM.name });
+  check("a started assessment offers Archive, not Withdraw",
+    (await row.locator('button:has-text("Archive")').count()) === 1
+      && (await row.locator('button:has-text("Withdraw")').count()) === 0);
+
+  // the reason is the audit trail, so it is required
+  await row.locator('input[name="reason"]').fill("");
+  await row.locator('input[name="reason"]').evaluate((el) => el.removeAttribute("required"));
+  await row.locator('button:has-text("Archive")').click();
+  await boss.page.waitForURL(/[?&](error|archived)=/);
+  check("archiving without a reason is refused",
+    (await boss.page.content()).includes("the reason is the audit trail"), boss.page.url());
+  check("nothing was archived by the refused attempt",
+    (await assessmentOf(PM.email))?.deleted_at == null);
+
+  await boss.page.goto("/admin/people");
+  await boss.page.locator("tr", { hasText: PM.name })
+    .locator('input[name="reason"]').fill("QA archive test");
+  await boss.page.locator("tr", { hasText: PM.name })
+    .locator('button:has-text("Archive")').click();
+  await boss.page.waitForURL(/[?&](error|archived)=/);
+
+  const gone = (await db.from("assessment").select("*").eq("id", before.id).single()).data;
+  check("deleted_at stamped", gone.deleted_at !== null);
+  check("deleted_by records who archived it", gone.deleted_by === (await idOf(BOSS.email)));
+  check("the reason is stored", gone.deleted_reason === "QA archive test");
+  check("the scores survive the archive",
+    ((await db.from("score").select("*", { count: "exact", head: true })
+      .eq("assessment_id", before.id)).count ?? 0) > 0);
+  check("the frozen targets survive too",
+    ((await db.from("target_snapshot").select("*", { count: "exact", head: true })
+      .eq("assessment_id", before.id)).count ?? 0) === 133);
+  check("started_at and completed_at survive — the metric stays reconstructible",
+    gone.started_at !== null && gone.completed_at !== null);
+
+  await boss.page.goto("/review");
+  const after = await boss.page.content();
+  check("archived rows leave the review overview", !after.includes(PM.name));
+  check("the completion panel states the exclusion rather than moving silently",
+    after.includes("archived, excluded"), "no exclusion note on /review");
+
+  // the assessee is told the truth, not "you were never assigned one"
+  await pm.page.goto("/assess/controls");
+  const seen = await pm.page.content();
+  check("the assessee is told it was withdrawn, not that they were never assigned",
+    seen.includes("was withdrawn") && !seen.includes("No assessment has been assigned"));
+  check("the reason is shown to them", seen.includes("QA archive test"));
+  await pm.page.goto("/results");
+  check("archived results are not shown",
+    !(await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
+
+  // an archived record is frozen — still inspectable, never editable
+  await boss.page.goto(`/review?a=${before.id}`);
+  check("an admin can still open an archived record, and it says it is archived",
+    (await boss.page.content()).includes("archived"));
+  check("an archived record offers no save or approve",
+    (await boss.page.locator('button:has-text("Save revisions")').count()) === 0
+      && (await boss.page.locator('button:has-text("Approve assessment")').count()) === 0);
+  await pm.page.goto("/assess?c=4.3.1.1");
+  check("the assessee gets no scoring form on an archived assessment",
+    (await pm.page.locator('input[name="level"]').count()) === 0);
+
+  // Re-assignment must actually WORK, not merely be offered. 0001 declared
+  // `unique (assessee_id, cycle)`, which an archived row still occupies — so
+  // before migration 0004 the checkbox appears and the insert is refused. A
+  // test that only counted the checkbox passed while the feature was broken.
+  await boss.page.goto("/admin/people");
+  const pmId = await idOf(PM.email);
+  check("an archived person is offered for re-assignment",
+    (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 1);
+
+  const boxes2 = boss.page.locator('input[name="assignee"]');
+  for (let i = 0; i < (await boxes2.count()); i++) await boxes2.nth(i).setChecked(false);
+  await boss.page.check(`input[name="assignee"][value="${pmId}"]`);
+  await boss.page.click('button:has-text("Assign selected")');
+  await boss.page.waitForURL(/[?&](error|assigned)=/);
+  const reassigned = await assessmentOf(PM.email);
+  const reassignWorked = reassigned !== null && reassigned.id !== before.id;
+  check("re-assigning after an archive succeeds (needs migration 0004)",
+    reassignWorked, decodeURIComponent(boss.page.url()));
+
+  // Everything below depends on a replacement existing. Guarded rather than
+  // left to throw: a suite that dies here skips its own cleanup and leaves QA
+  // accounts on the live allowlist.
+  if (reassignWorked) {
+    check("the replacement is a fresh draft, not the archived record",
+      reassigned.state === "draft" && reassigned.deleted_at === null);
+    check("the archived record is still there beside its replacement",
+      ((await db.from("assessment").select("*", { count: "exact", head: true })
+        .eq("assessee_id", pmId).not("deleted_at", "is", null)).count ?? 0) === 1);
+
+    // restoring while a live one exists would produce two; say so in a sentence
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Restore")').click();
+    await boss.page.waitForURL(/[?&](error|restored)=/);
+    check("restore is refused while a live assessment exists",
+      (await boss.page.content()).includes("already has a live assessment"), boss.page.url());
+
+    // clear the replacement so the original can come back
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Withdraw")').click();
+    await boss.page.waitForURL(/[?&](error|withdrawn)=/);
+  } else {
+    console.log("  … 3 checks skipped: they need migration 0004 (see the failure above)");
+  }
+
+  // restore puts it back exactly as it was
+  const stillArchived = (await db.from("assessment").select("id")
+    .eq("id", before.id).not("deleted_at", "is", null).maybeSingle()).data;
+  if (stillArchived) {
+    await boss.page.goto("/admin/people");
+    await boss.page.locator("tr", { hasText: PM.name })
+      .locator('button:has-text("Restore")').click();
+    await boss.page.waitForURL(/[?&](error|restored)=/);
+  }
+  const backAgain = await assessmentOf(PM.email);
+  check("restore clears the archive", backAgain?.deleted_at === null);
+  check("restore keeps the state it was archived in", backAgain?.state === "approved");
+  await boss.page.goto("/review");
+  check("a restored assessment is counted again",
+    (await boss.page.content()).includes(PM.name));
+}
+
 /* ---------------------------------------------------------------- cleanup */
 console.log("\nCleaning up QA data and accounts…");
 await purge(PM.email);
@@ -572,6 +870,10 @@ await purge(BOSS.email);
 const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
 check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
   (leftovers ?? []).map((u) => u.email).join(","));
+const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
+check("no QA sign-in accounts left behind either", strays.length === 0,
+  strays.map((u) => u.email).join(","));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();

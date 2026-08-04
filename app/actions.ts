@@ -6,7 +6,7 @@ import { requireRole, requireUser } from "@/lib/auth";
 import { getFramework, invalidateFramework } from "@/lib/framework";
 import { db } from "@/lib/supabase/server";
 import {
-  acceptAllRemaining, approveAssessment, getOrCreateAssessment, saveSelfScore,
+  acceptAllRemaining, approveAssessment, findAssessment, saveSelfScore,
   setAssessorLevels, submitSelfAssessment,
 } from "@/lib/db/assessment";
 import type { Level } from "@/lib/types";
@@ -29,7 +29,8 @@ function fail(path: string, message: string): never {
  *  else's sheet. */
 export async function saveSelfScoreAction(formData: FormData): Promise<void> {
   const user = await requireUser();
-  const assessment = await getOrCreateAssessment(user.id);
+  const assessment = await findAssessment(user.id);
+  if (!assessment) fail("/assess", "No assessment has been assigned to you for this cycle.");
   const code = String(formData.get("control") ?? "");
   const level = levelOf(formData.get("level"));
   const evidence = String(formData.get("evidence") ?? "").trim() || null;
@@ -49,7 +50,8 @@ export async function saveSelfScoreAction(formData: FormData): Promise<void> {
 
 export async function submitAssessmentAction(): Promise<void> {
   const user = await requireUser();
-  const assessment = await getOrCreateAssessment(user.id);
+  const assessment = await findAssessment(user.id);
+  if (!assessment) fail("/assess/controls", "No assessment has been assigned to you for this cycle.");
   try {
     await submitSelfAssessment(user, assessment.id);
   } catch (e) {

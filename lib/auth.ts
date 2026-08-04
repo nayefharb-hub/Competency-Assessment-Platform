@@ -7,15 +7,16 @@
  * with no matching app_user row gets no access at all. That keeps the pilot's
  * "invited emails only" rule in one place rather than scattered across routes.
  *
- * Sessions ride in httpOnly cookies managed by @supabase/ssr with the anon key.
- * The anon key can read nothing (RLS on, zero policies, privileges revoked) —
- * every table read goes through the service-role client in lib/supabase/server.
+ * Sessions ride in cookies managed by @supabase/ssr with the anon key. The anon
+ * key can read nothing (RLS on, zero policies, privileges revoked) — every table
+ * read goes through the service-role client in lib/supabase/server.
  */
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import { db, supabaseAnonKey, supabaseUrl } from "./supabase/server";
+import { SESSION_COOKIE } from "./supabase/cookies";
 import type { AppUser, UserRole } from "./types";
 
 /** Auth-only client bound to the request's cookie jar. */
@@ -26,7 +27,9 @@ export async function authClient() {
       getAll: () => store.getAll(),
       setAll: (list) => {
         try {
-          for (const { name, value, options } of list) store.set(name, value, options);
+          for (const { name, value, options } of list) {
+            store.set(name, value, { ...options, ...SESSION_COOKIE });
+          }
         } catch {
           // Called from a server component, where cookies are read-only. The
           // middleware refreshes the session, so this is safe to ignore.

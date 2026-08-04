@@ -203,7 +203,12 @@ async function NotYet({
           Results are not available yet
         </h2>
         <p className="note">
-          {!assessment || assessment.state === "draft" ? (
+          {!assessment ? (
+            <>
+              No assessment has been assigned to you for this cycle, so there is nothing to
+              report yet. The Head of PMO assigns each cycle.
+            </>
+          ) : assessment.state === "draft" ? (
             <>
               Your self-assessment is still in progress.{" "}
               <Link href="/assess/controls">Pick up where you left off</Link>. Results appear

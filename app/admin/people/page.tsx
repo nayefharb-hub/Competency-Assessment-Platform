@@ -2,7 +2,10 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { listPeople } from "@/lib/db/people";
 import { currentCycle } from "@/lib/db/assessment";
-import { addPersonAction, resetPasswordAction } from "./actions";
+import {
+  addPersonAction, archiveAction, assignAction, resetPasswordAction,
+  restoreAction, unassignAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,14 +25,20 @@ const ROLE_LABEL: Record<string, string> = {
 export default async function PeoplePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; added?: string; reset?: string }>;
+  searchParams: Promise<{
+    error?: string; added?: string; reset?: string;
+    assigned?: string; withdrawn?: string; archived?: string; restored?: string;
+  }>;
 }) {
-  const { error, added, reset } = await searchParams;
+  const { error, added, reset, assigned, withdrawn, archived, restored } =
+    await searchParams;
   const admin = await requireRole("admin");
   const cycle = currentCycle();
   const people = await listPeople(cycle);
 
   const pms = people.filter((p) => p.role === "assessee").length;
+  const unassigned = people.filter((p) => p.assessment_id === null);
+  const assignedCount = people.length - unassigned.length;
 
   return (
     <div className="section">
@@ -53,6 +62,83 @@ export default async function PeoplePage({
           Password reset. They must replace it on their next sign-in.
         </div>
       )}
+      {assigned && (
+        <div className="banner banner-ok" role="status">
+          {assigned === "0"
+            ? "Everyone you picked already had this cycle — nothing changed."
+            : `Assigned the ${cycle} cycle to ${assigned} ${assigned === "1" ? "person" : "people"}. They can start now.`}
+        </div>
+      )}
+      {withdrawn && (
+        <div className="banner banner-ok" role="status">
+          Assignment withdrawn. Nothing was scored, so nothing was lost.
+        </div>
+      )}
+      {archived && (
+        <div className="banner banner-ok" role="status">
+          Archived. It is out of the review list and every figure, and the
+          completion panel now says so — the scores and timings are kept, so the
+          number can still be reconciled later. You can restore it from here.
+        </div>
+      )}
+      {restored && (
+        <div className="banner banner-ok" role="status">
+          Restored. It counts again, exactly as it did before.
+        </div>
+      )}
+
+      <div className="card pad" style={{ marginBottom: 20 }}>
+        <div className="cap" style={{ marginBottom: 10 }}>
+          ASSIGN THE {cycle} CYCLE
+        </div>
+        <p className="note lede" style={{ marginBottom: 14 }}>
+          Nobody has an assessment until you assign one. That is what makes the
+          completion figure mean something: {assignedCount} assigned is{" "}
+          {assignedCount} people asked, not {people.length} people who happen to
+          hold a login.
+        </p>
+
+        {unassigned.length === 0 ? (
+          <p className="note">
+            Everyone on the allowlist has the {cycle} cycle.{" "}
+            <Link href="/review">See how they are getting on</Link>.
+          </p>
+        ) : (
+          <form action={assignAction}>
+            <ul className="picklist">
+              {unassigned.map((p) => (
+                <li key={p.id}>
+                  <label className="opt">
+                    <input
+                      type="checkbox"
+                      name="assignee"
+                      value={p.id}
+                      defaultChecked={p.role === "assessee"}
+                    />
+                    <span>
+                      <b>{p.full_name}</b>
+                      <span className="gloss">
+                        {ROLE_LABEL[p.role] ?? p.role}
+                        {p.job_title ? ` · ${p.job_title}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button className="btn btn-accent" type="submit">
+                Assign selected
+              </button>
+            </div>
+            <p className="note" style={{ marginTop: 10 }}>
+              Project managers are ticked by default. Assessors and admins are
+              listed too — assigning yourself is how you walk the loop end to end,
+              and it counts like anyone else.
+            </p>
+          </form>
+        )}
+      </div>
 
       <div className="card pad" style={{ marginBottom: 20 }}>
         <div className="cap" style={{ marginBottom: 10 }}>ADD SOMEONE</div>
@@ -138,9 +224,55 @@ export default async function PeoplePage({
                       <>
                         {p.assessment_state.replace("_", " ")}
                         <div className="note tnum">{p.scored} scored</div>
+                        {p.assessment_state === "draft" && p.scored === 0 ? (
+                          // Nothing to lose yet, so this is a plain undo.
+                          <form action={unassignAction}>
+                            <input type="hidden" name="assessment_id" value={p.assessment_id ?? ""} />
+                            <button className="btn btn-secondary btn-sm" type="submit">
+                              Withdraw
+                            </button>
+                          </form>
+                        ) : (
+                          // Work exists. Archiving keeps it — and keeps the
+                          // completion figure reconcilable — where a delete
+                          // would move the headline number silently (N6).
+                          <form action={archiveAction} className="revise">
+                            <input type="hidden" name="assessment_id" value={p.assessment_id ?? ""} />
+                            <input
+                              className="input"
+                              name="reason"
+                              required
+                              placeholder="Why archive?"
+                              aria-label={`Reason for archiving ${p.full_name}'s assessment`}
+                            />
+                            <button className="btn btn-secondary btn-sm" type="submit">
+                              Archive
+                            </button>
+                          </form>
+                        )}
                       </>
-                    ) : (
-                      <span className="muted">not started</span>
+                    ) : p.archived_id ? null : (
+                      <span className="muted">not assigned</span>
+                    )}
+
+                    {/* Shown even when a live assessment exists beside it. An
+                        archived record that disappears the moment the person is
+                        re-assigned is not history, it is a delete with extra
+                        steps — and it would leave Restore unreachable. */}
+                    {p.archived_id && (
+                      <div style={{ marginTop: p.assessment_state ? 8 : 0 }}>
+                        <span className="tick tick-todo">archived</span>
+                        <div className="note">
+                          {p.archived_at?.slice(0, 10)}
+                          {p.archived_reason ? ` — ${p.archived_reason}` : ""}
+                        </div>
+                        <form action={restoreAction}>
+                          <input type="hidden" name="assessment_id" value={p.archived_id} />
+                          <button className="btn btn-secondary btn-sm" type="submit">
+                            Restore
+                          </button>
+                        </form>
+                      </div>
                     )}
                   </td>
                   <td>
@@ -169,10 +301,19 @@ export default async function PeoplePage({
         </div>
 
         <p className="note lede" style={{ marginTop: 14 }}>
-          Removing someone is deliberately not here yet: deleting an `app_user`
-          row cascades and destroys their assessment, scores and frozen targets.
-          Use <code>npm run invite remove</code>, which refuses when they hold
-          assessment data.
+          <b>Archive, don’t delete.</b> Archiving takes an assessment out of the
+          review list and out of every figure, but keeps its scores and its
+          timings — so a completion number already reported upward can still be
+          reconciled afterwards, and the review panel says how many were
+          excluded. Archiving is reversible; you can restore from this table.
+        </p>
+        <p className="note lede" style={{ marginTop: 10 }}>
+          Removing a <i>person</i> is deliberately not here: deleting an
+          <code> app_user</code> row cascades and destroys their assessment,
+          scores and frozen targets outright, with no record that any of it
+          existed. Use <code>npm run invite remove</code>, which refuses when
+          they hold assessment data — and archive the assessment first if what
+          you actually want is for it to stop counting.
         </p>
       </div>
     </div>

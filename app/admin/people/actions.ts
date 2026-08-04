@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { addPerson, resetPassword } from "@/lib/db/people";
+import {
+  archiveAssessment, assignAssessment, restoreAssessment, unassignAssessment,
+} from "@/lib/db/assessment";
 import type { UserRole } from "@/lib/types";
 
 const ROLES: UserRole[] = ["assessee", "assessor", "admin"];
@@ -32,6 +35,82 @@ export async function addPersonAction(formData: FormData): Promise<void> {
   // The password is deliberately NOT echoed back in the URL — it would land in
   // browser history and server logs. The admin typed it; they have it.
   back({ added: String(formData.get("email") ?? "").trim().toLowerCase() });
+}
+
+/**
+ * Assign the cycle. This is the act that brings an assessment into existence —
+ * before it, a PM signing in has nothing to fill in, which is the point: the
+ * completion denominator is now "people we asked", a fact somebody recorded,
+ * rather than "people who happen to hold a login" (N7).
+ */
+export async function assignAction(formData: FormData): Promise<void> {
+  const admin = await requireRole("admin");
+  const ids = formData.getAll("assignee").map(String).filter(Boolean);
+  if (ids.length === 0) back({ error: "Tick at least one person to assign." });
+
+  // redirect() throws, so it must sit outside the try or the catch would treat
+  // a successful assignment as a failure.
+  let assigned = 0;
+  try {
+    ({ assigned } = await assignAssessment(admin, ids));
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Assigning failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ assigned: String(assigned) });
+}
+
+/** Withdraw an assignment nobody has started. */
+export async function unassignAction(formData: FormData): Promise<void> {
+  await requireRole("admin");
+  const id = String(formData.get("assessment_id") ?? "");
+  try {
+    await unassignAssessment(id);
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Withdrawing failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ withdrawn: "1" });
+}
+
+/**
+ * Archive an assessment (N6) — the answer to "can an admin delete one?".
+ *
+ * Deliberately not a delete: the timestamps that make up the completion metric
+ * survive, so a figure reported upward stays reconstructible afterwards.
+ */
+export async function archiveAction(formData: FormData): Promise<void> {
+  const admin = await requireRole("admin");
+  const id = String(formData.get("assessment_id") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  try {
+    await archiveAssessment(admin, id, reason);
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Archiving failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ archived: "1" });
+}
+
+/** Undo an archive. The safe option has to be reversible to deserve the name. */
+export async function restoreAction(formData: FormData): Promise<void> {
+  await requireRole("admin");
+  const id = String(formData.get("assessment_id") ?? "");
+  try {
+    await restoreAssessment(id);
+  } catch (e) {
+    back({ error: e instanceof Error ? e.message : "Restoring failed." });
+  }
+
+  revalidatePath("/admin/people");
+  revalidatePath("/review");
+  back({ restored: "1" });
 }
 
 export async function resetPasswordAction(formData: FormData): Promise<void> {

@@ -67,6 +67,16 @@ decision; do not deviate without explicit approval.
   · **app shell 1080px** (lists, review, results) · **full-width** for the
   dashboard. A reading page in a 1080px container strands its prose in the left
   half while its controls span the full width.
+- **Exception — a reading page with an interactive panel beside it.** Such a page
+  may use a wider container (up to 1000px), because its second column is not
+  prose: it is a control group. The cap that matters is `--measure` on the
+  sentences, not the container on the page — prose never widens to fill the extra
+  space, which is spent putting the controls *beside* the text rather than below
+  it. This is the same container/measure distinction as above, applied the other
+  way round; it is not a licence to stretch paragraphs.
+  - Below the two-column breakpoint the page returns to the 780px reading width
+    and only the action bar stays pinned, so the guarantee — the answer and the
+    primary action never leave the screen — holds at every width.
 - **Reading measure:** **60–70 characters** on any block read in sentences.
   This is NOT the same as container width, and conflating the two is what
   produced 131-character lines in the first build — a container is how wide the
@@ -103,4 +113,6 @@ decision; do not deviate without explicit approval.
 | 2026-08-03 | Bar-on-bar as the results mark, no radar | Legibility over 28-axis radar (per handover brief §8) |
 | 2026-08-03 | Reading measure split from container width; `68ch` cap | Measured 131 chars/line against a comfortable 45–75. "~1080px for reading" was read as a measure and stretched sentences to fill the card. The system's own aim — "makes a dense 132-control assessment feel calm and legible" — was being defeated by its own layout line |
 | 2026-08-03 | Line height added to the scale (prose 1.6 / UI 1.5 / headings 1.25) | The scale specified size and weight but no leading, so 1.5 was inherited everywhere including long prose |
+| 2026-08-04 | Reading pages may widen to 1000px **when a control panel sits beside the prose**; measure unchanged | Self-assessment was 1515px tall at 1440px, 2048px and 2560px wide alike — height did not respond to width at all, because the card never exceeded 780px. Save & next landed 481px below the fold on a laptop, on every one of 132 controls. Stacking prose above a six-row radio group is what made it tall; the fix is to put them side by side, not to widen sentences (N14) |
+| 2026-08-04 | The scoring panel is sticky; below 1100px the action bar is | ICB4's longest indicator is 2,596 characters of text that is never edited, so "everything fits without scrolling" cannot be promised. What can be: the answer and Save never leave the screen |
 | 2026-08-03 | Palette left unchanged after a readability complaint | Light ink-on-surface measures 16.4:1 vs dark mode's 14.1:1 — light is the harsher of the two. But measure was the dominant fatigue driver, so it is fixed first and the palette re-judged after. If still tiring, soften the reading **surface** toward dark's ~14:1 rather than lightening the ink: ink `#16202E` carries the "serious, trustworthy" anchor, and lifting it compresses the ink/muted hierarchy |

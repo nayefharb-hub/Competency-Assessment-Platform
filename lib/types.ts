@@ -137,8 +137,6 @@ export interface Assessment {
   assessee_id?: string;
   assessee_name: string;
   assessee_role: string;
-  /** false for the Head of PMO's own sheet — kept out of the completion metric */
-  assessee_is_pm?: boolean;
   cycle: string;
   /** benchmark profile applied, e.g. "Intermediate" */
   profile: string;
@@ -152,18 +150,35 @@ export interface Assessment {
   completed_at?: string | null;
   /** per-control targets frozen at approval; empty until approved */
   snapshot_targets?: Record<string, Level | null>;
+  /** archived (N6): out of the cycle, excluded from every rollup and figure */
+  deleted_at?: string | null;
+  deleted_reason?: string | null;
 }
 
 /** Completion instrumentation — the prototype's whole thesis (T9). */
 export interface CompletionStats {
   cycle: string;
-  invited: number;
+  /**
+   * People an admin actually assigned this cycle — one row per assignment, not
+   * per login. Called `invited` until assignment existed, when it had to be
+   * guessed from who held an account (N7).
+   */
+  assigned: number;
   started: number;
   /** self-assessment submitted — the "finished" flag */
   finished: number;
   approved: number;
   /** median hours from started_at to completed_at, over finished assessments */
   median_hours: number | null;
+  /**
+   * Archived this cycle — excluded from every figure above, and stated on
+   * screen alongside them. Hiding an archive would let the headline number move
+   * with nothing on record to explain it, which is the whole reason archiving
+   * exists instead of deletion (N6).
+   */
+  archived: number;
+  /** of those archived, how many had been finished — the ones that moved the median */
+  archived_finished: number;
   rows: {
     assessment_id: string;
     assessee_name: string;

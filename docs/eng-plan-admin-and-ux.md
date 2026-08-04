@@ -158,9 +158,17 @@ New e2e coverage:
 - **`scripts/e2e.mjs`** — every current test assumes an assessment exists on
   first visit. The rewrite ships with A2, not after.
 
-## PR B — archive instead of destroy
+## PR B — archive instead of destroy — SHIPPED 2026-08-04
 
 Depends on A1 (columns already exist) and reads better after A2.
+
+**One thing this plan got wrong, found while building it:** "columns already
+exist, so no migration" was true of the columns and false of the constraint.
+`0001` declares `unique (assessee_id, cycle)`, which an archived row still
+occupies — so archiving somebody's cycle would permanently block re-assigning
+it to them. Migration `0004` replaces it with a partial unique index over live
+rows. Verified against the live database, not reasoned about: the insert is
+refused with `duplicate key value violates unique constraint`.
 
 - `archiveAssessment(admin, id, reason)` sets `deleted_at`/`deleted_by`/
   `deleted_reason`; every read path filters `deleted_at is null`.

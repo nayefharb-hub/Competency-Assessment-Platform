@@ -251,7 +251,7 @@ need answered a different way.
 
 ### N6 — can an admin delete an assessment?
 
-**Status:** Open — question answered, design decision outstanding
+**Status:** FIXED (2026-08-04, PR B) — migration `0004` applied
 
 > "can and admin delete a certain assessment?"
 
@@ -405,7 +405,7 @@ a narrower reason than "defend the metric".
 
 ### N7 — an assessment is *assigned* by the admin, not created by logging in
 
-**Status:** Open — accepted design, supersedes the metric argument in N6
+**Status:** FIXED (2026-08-04, PR A2) — supersedes the metric argument in N6
 
 > "invite does not mean assessment start flag is on, we can add a control for
 > the admin to trigger a certain assessment for a user, meaning logging in does
@@ -774,22 +774,175 @@ Recorded here rather than quietly corrected, because "the tool showed me
 something that then vanished" is precisely the class of report that destroys
 trust in an assessment system, and the answer needs to be findable.
 
+### N14 — the self-assessment does not fit a screen, and wastes a big one
+
+**Status:** FIXED (2026-08-04) — amendment approved by the owner and applied
+
+> "i have a 27 inch screen and the save & next control is not on the screen, i
+> have to scroll vertically for seeing it and doing it for every control is
+> tiring, all the screen content should fit without scrolling… also the content
+> size is narrower now not sure if it is because of mobile friendliness, but it
+> should not impact the pc screen or bigger sized screens"
+
+Both halves are the same bug, and it is one I introduced: the N11 readability
+fix (PR #6) capped `.reading` at 780px, and `/assess` uses that as its **page**
+container — so the scoring controls are squeezed into a prose column instead of
+using the width a large screen has.
+
+Measured against the running app (`4.3.1.1`, a mid-length control, and
+`4.5.1.1`, the longest at 2596 characters):
+
+| viewport | 4.3.1.1 | 4.5.1.1 |
+|---|---|---|
+| 1440×900 laptop | 615px scroll · Save off-screen | 1285px scroll |
+| 2560×1440 @100% | 75px scroll | 745px scroll |
+| 2560×1440 @125% | 363px scroll · Save off-screen | 1033px scroll |
+
+The page is **1515px tall at every one of those widths** — height does not
+respond to width at all, because the card never exceeds 780px. On a 2560px
+screen that strands 1780px. The vertical budget is roughly: measures 262–308px,
+six level options 441px, and the description growing to ~900px on the longest
+controls.
+
+**"Everything fits without scrolling" is not achievable for every control, and
+promising it would be dishonest.** ICB4's longest indicator is 2596 characters
+of source text that must not be cut (domain rule: ICB4 text is never edited). At
+1152px of usable height, that text alone fills the screen. What *is* achievable
+is the thing actually being asked for — never having to scroll to reach the
+answer and the Save button:
+
+1. **Two columns above ~1200px.** Left: breadcrumb, indicator, description,
+   measures — prose, still capped at `--measure`, which is what the readability
+   fix was for. Right: the six level options, evidence and the actions. This is
+   what turns 1780px of waste into roughly half the height.
+2. **The scoring column sticks.** Pin it so the options and *Save & next* stay
+   in view while the left column scrolls under a long indicator. This is the
+   guarantee that holds even on the worst control — and on a laptop and a phone,
+   where two columns do not fit, the action bar alone sticks to the bottom.
+3. **Tighten the options.** 441px for six rows is generous; ~60px is available
+   in padding and gloss size without touching the tap target.
+
+Ordered deliberately: (2) is what removes the tiring part, so it ships even if
+(1) is cut. (1) is what answers "it should not impact bigger screens".
+
+**This needs a DESIGN.md decision, which is why it is not already done.**
+DESIGN.md §Layout names three container widths and puts self-assessment in
+"reading pages 780px", warning that a reading page in a wider container "strands
+its prose in the left half while its controls span the full width". That warning
+is right about prose and wrong about a page whose second half is not prose at
+all. The amendment: a reading page may use a wider container **when it carries
+an interactive panel beside the prose** — the cap that matters is `--measure` on
+the sentences, not the container on the page. Same principle the file already
+states; this extends it rather than reversing it.
+
+### N15 — session lifetime is unbounded
+
+**Status:** Logged, deferred by the owner ("log session timeout for now")
+
+Raised by the owner noticing they were still signed in on a fresh browser visit.
+The session survives because `@supabase/ssr` writes a persistent cookie with a
+400-day max-age and `proxy.ts` refreshes it on every request, so a session in
+regular use renews indefinitely. Nothing is wrong with it; nothing bounds it
+either.
+
+Two knobs, both unset, documented in `docs/deploy.md`:
+- **Supabase → Authentication → Sessions** — inactivity timeout and absolute
+  time-box. Dashboard-only; the owner has to set these.
+- `SESSION_COOKIE.maxAge` in `lib/supabase/cookies.ts` — the browser-side bound.
+
+For a bank's internal tool both should probably be bounded rather than left at a
+library default, but the tradeoff against convenience is a policy call.
+
+Fixed at the same time, and not deferred, because it was a genuine defect rather
+than a policy gap: the session cookie was **not** `httpOnly`. `@supabase/ssr`
+defaults it to `false` so a browser-side Supabase client can read the token; this
+app has none, so that bought nothing and exposed the session to any script on
+the page. Now `httpOnly` and `Secure`, asserted in `scripts/e2e.mjs`.
+
+## Where this stands (end of 2026-08-04)
+
+Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
+leading, N13. Migration `0003` applied to the pilot database.
+
+Shipped in PR A2: **N7**. Assignment is live. `getOrCreateAssessment` is gone, so
+an assessment exists only because an admin assigned it from `/admin/people`; the
+completion denominator counts assignments, and the two crutches that existed to
+paper over rows appearing unbidden — the `Math.max(invitedCount, …)` fudge and
+the `assessee_is_pm` filter — were deleted, not left in place to disagree
+quietly with the new number. `CompletionStats.invited` is now `assigned`.
+Withdrawing an assignment is allowed only while nothing has been scored, and the
+e2e suite proves the server refuses a withdraw posted from a tab that went stale
+after the person started. 112/112 against the live database.
+
+Shipped in PR B: **N6**. Archive, not delete. Scores, frozen targets and the
+completion timestamps all survive, so a figure already reported upward stays
+reconcilable; the review panel states "N archived, excluded" rather than letting
+the headline number move with nothing on screen to explain it. Archiving is
+reversible, the reason is required, and an archived record stays openable but
+never editable.
+
+**Migration `0004` was required and is applied.** `0001` declared
+`unique (assessee_id, cycle)`; an archived row still occupied that slot, so
+archiving somebody's cycle would permanently have prevented re-assigning it to
+them. `0004` replaces the constraint with a partial unique index over live rows.
+Verified both directions against the live database after applying: re-assigning
+after an archive succeeds, and two live assessments for one person and cycle are
+still refused. `npm run e2e` is **149/149**.
+
+Applying it also exposed a gap the pre-migration suite could not reach. Once a
+person was re-assigned, their archived record disappeared from the People screen
+entirely — so **Restore was unreachable**, and the "already has a live
+assessment" guard could never fire through the UI. An archived record that
+vanishes the moment somebody is re-assigned is a delete with extra steps, not
+history. The archived line now renders beside the live one.
+
+Shipped with the amendment approved: **N14**. Prose left, scoring panel right and
+pinned above 1100px; one column with the actions fixed to the viewport below it.
+Measured before → after: 2048×1152 went from 363px of scroll to fitting outright,
+2560×1440 from 75px to fitting, and the 1440×900 laptop from 615px to 61px with
+Save on screen on load. The longest control still scrolls its prose and always
+will — ICB4 source text is never edited — but Save is on screen on load at every
+width tested, including 390×844. Prose still renders at exactly the 52ch cap, so
+the container widened and the measure did not.
+
+Two things measurement caught that looking would not have. `position: sticky`
+cannot pin the mobile action bar: the scoring panel sits below a long indicator,
+so on load its whole box is off-screen, and sticky only holds an element inside
+its parent's visible range — `fixed` was needed. And an inline `style` on the
+actions row would have silently beaten the mobile media query, the same trap as
+the `flex: 1` one in the earlier mobile audit.
+
+**One measurement worth a decision, not fixed here.** The prose now measures
+**72–73 characters per line**, against the 60–70 that DESIGN.md §Layout asks for.
+That is not a regression from this change — the cap governs identically before
+and after — it means the original `52ch` calibration was optimistic; it was
+derived as "≈68" by a rougher method than the widest-line measurement used here.
+Tightening `--measure` to about `48ch` would land inside the range. Left alone
+deliberately: it changes reading width on every page, and N11 says the palette
+and readability are to be re-judged by the owner now the layout is fixed, so this
+belongs in that judgement rather than ahead of it.
+
+Still open, in build order — the reasoning for each is in its note above:
+
+1. **N10** mobile · **N12** theme toggle · **N5** controls filter · **N4**
+   scored-state emphasis. Decide N5 before N4: a filter may mean the badges want
+   quietening rather than amplifying.
+3. **N1** preview/database scoping and **N1b** staging — owner's call, plus the
+   migration-tracking gap that should close before a second database exists.
+4. **N11 palette**, **N15 session bounds** and **SMTP** — all waiting on the
+   owner, not on code.
+
 ## Triage summary
 
 | Open | Fixed | Superseded | Deferred | Won't do |
 |---:|---:|---:|---:|---:|
-| 8 | 1 | 1 | 1 | 0 |
+| 6 | 4 | 1 | 2 | 0 |
 
 Open items, in the order they should probably be built:
 
-1. **N7 + N8 + N9** — the admin People screen: add a person, assign them a
-   cycle, reset a password. One screen, one workflow. Largest item; also changes
-   the entry path for every assessee and the completion metric's denominator.
-   The "change my own password" half of N9 is independent and can ship first.
-2. **N6** — archive, cleaner to design once N7 exists
-3. **N10** — mobile: header, section headings, People table
-4. **N5** — filter the controls list
-5. **N4** — scored-state emphasis, decided together with N5
+1. **N10** — mobile: header, section headings, People table
+2. **N5** — filter the controls list
+3. **N4** — scored-state emphasis, decided together with N5
 
 **Blocked on a decision, not on code:** emailed invite links (N8) and
 self-service password reset (N9) both need outbound mail. One SMTP decision

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { canAdmin, canAssess, requireUser } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
-import { findAssessment, loadForAssessee } from "@/lib/db/assessment";
+import {
+  currentCycle, findArchivedAssessment, findAssessment, loadForAssessee,
+} from "@/lib/db/assessment";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +15,15 @@ export default async function Home({
   const { denied } = await searchParams;
   const user = await requireUser();
   const fw = await getFramework();
-  // read-only: opening the home page must not create an assessment, or the
-  // Head of PMO would appear in the completion numbers as a project manager
+  // An assessment exists only when an admin has assigned one (N7), so this is a
+  // plain read and "no row" is a real, expected state rather than a first visit.
   const row = await findAssessment(user.id);
   const mine = row ? await loadForAssessee(user, row.id) : null;
+  const archived = row ? null : await findArchivedAssessment(user.id);
 
   const scored = mine?.scores.filter((s) => s.self_level !== null).length ?? 0;
   const total = fw.activeControls.length;
+  const cycle = currentCycle();
 
   return (
     <div className="section">
@@ -37,15 +41,35 @@ export default async function Home({
           {fw.data.framework} · {fw.counts.active} active controls across {fw.counts.ces} competence
           elements · rated on the {fw.scale.name} ({fw.scale.axis} axis).
         </p>
+        {!mine && (
+          <p className="note" style={{ fontSize: 14, marginTop: 10 }}>
+            {archived ? (
+              <>
+                Your {cycle} assessment was withdrawn by the Head of PMO.{" "}
+                <Link href="/assess/controls">See what that means</Link>.
+              </>
+            ) : (
+              <>
+                No assessment has been assigned to you for the {cycle} cycle
+                {canAdmin(user) ? " — assign one from People." : "."}
+              </>
+            )}
+          </p>
+        )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-          <Link className="btn btn-primary" href="/assess/controls">
-            {!mine || mine.state === "draft"
-              ? scored === 0
-                ? "Start self-assessment"
-                : `Continue self-assessment (${scored}/${total})`
-              : "View your assessment"}
-          </Link>
+          {mine && (
+            <Link className="btn btn-primary" href="/assess/controls">
+              {mine.state === "draft"
+                ? scored === 0
+                  ? "Start self-assessment"
+                  : `Continue self-assessment (${scored}/${total})`
+                : "View your assessment"}
+            </Link>
+          )}
           <Link className="btn btn-secondary" href="/results">View results</Link>
+          {canAdmin(user) && (
+            <Link className="btn btn-secondary" href="/admin/people">People &amp; assignment</Link>
+          )}
           {canAssess(user) && (
             <Link className="btn btn-secondary" href="/review">Review &amp; approve</Link>
           )}

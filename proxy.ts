@@ -7,6 +7,7 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { SESSION_COOKIE } from "@/lib/supabase/cookies";
 
 const PUBLIC_PATHS = ["/login", "/logout"];
 
@@ -23,7 +24,8 @@ export async function proxy(request: NextRequest) {
           for (const { name, value } of list) request.cookies.set(name, value);
           response = NextResponse.next({ request });
           for (const { name, value, options } of list) {
-            response.cookies.set(name, value, options);
+            // SESSION_COOKIE last: it must beat the library's httpOnly: false.
+            response.cookies.set(name, value, { ...options, ...SESSION_COOKIE });
           }
         },
       },

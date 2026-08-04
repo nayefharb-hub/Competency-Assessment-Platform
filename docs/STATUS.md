@@ -1,12 +1,93 @@
 # Project status & handoff
 
-Last updated: 2026-08-03 (deployed to Vercel; admin People screen + password
-gate). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · N14 layout). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
-**Live.** Deployed on Vercel from `main`. Migration `0003` is applied. Pilot
-feedback from using it is logged in `docs/pilot-feedback.md` (13 notes, triaged);
-the plan for the rest is `docs/eng-plan-admin-and-ux.md`.
+**Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
+applied. Pilot feedback from using it is logged in
+`docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
+`docs/eng-plan-admin-and-ux.md`.
+
+---
+
+## Picking this up in a new session — read this first
+
+**1. Recreate `.env.local` before anything else.** It is gitignored and the
+session container is ephemeral, so a fresh session has no credentials and every
+script fails with "Missing SUPABASE_URL". Copy `.env.example` and fill in the
+four values from Supabase → Project Settings → API. Nothing else works until
+this exists.
+
+**2. Network access.** `*.supabase.co` must be in the environment's Network
+access allowlist (Custom + "include default package managers"), or the session
+cannot reach the database at all. `*.vercel.app` is **not** reachable from the
+agent sandbox and probably cannot be — so nothing an agent says about the
+deployed site is verified. Test the code locally against the real database;
+confirming production is the owner's step.
+
+**3. The password gate is live.** Every account carries
+`must_change_password = true` until its owner replaces the password. On first
+sign-in you land on `/change-password` and cannot leave it. This is expected, not
+a bug. `scripts/e2e.mjs` is unaffected — it creates and deletes its own QA
+accounts and needs no real credentials.
+
+**4. Prove the environment before building anything:**
+
+```bash
+npm install
+npm run verify:db          # expect 11/11
+npm run build && npm start &
+npm run e2e                # expect 149/149 — writes, then cleans up after itself
+```
+
+If `verify:db` fails, stop: it is credentials or network, not code.
+
+**5. Where things are.**
+
+| Want | Read |
+|---|---|
+| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N15) |
+| What to build next and in what order | `docs/eng-plan-admin-and-ux.md` |
+| Visual rules — locked, do not deviate | `DESIGN.md` |
+| Rollup arithmetic contract | `docs/rollup-spec.md` |
+
+**6. PR A2 — assignment (N7) is DONE.** `getOrCreateAssessment` is gone; an
+assessment exists only because an admin assigned it, from `/admin/people`. The
+completion denominator is now a count of assignments, and both crutches — the
+`Math.max(invitedCount, …)` fudge and the `assessee_is_pm` filter — are deleted
+rather than left to disagree quietly with it. `CompletionStats.invited` is
+renamed `assigned`, because that is what it counts. Withdrawing an assignment is
+allowed only while nothing has been scored. No migration was needed: `0003`
+already added `assigned_at` / `assigned_by`.
+
+**PR B — archive (N6) is DONE and migration `0004` is APPLIED** (2026-08-04). It
+replaced `unique (assessee_id, cycle)` with a partial unique index over live
+rows, so an archived record no longer holds the slot. Verified both directions
+against the live database: re-assigning after an archive succeeds, and two live
+assessments for one person and cycle are still refused.
+
+**N14 is DONE** — the owner approved the DESIGN.md amendment, which is applied
+(§Layout gains the interactive-panel exception; two rows in the decisions log).
+The self-assessment is prose-left / scoring-right and pinned above 1100px, one
+column with a fixed action bar below it. Save is on screen on load at every width
+tested, on the longest control in ICB4 as well as the shortest.
+
+**Next is the rest of PR C** (N10 mobile, N12 theme toggle, N5 controls filter,
+N4 scored-state emphasis — decide N5 before N4).
+
+**7. Two things blocked on the owner, not on code.**
+- **SMTP** — gates emailed invite links and self-service password reset. Needs
+  an IT/policy answer on whether a third-party sender is acceptable for a bank.
+- **Palette** — approved but deliberately deferred until the fixed reading
+  measure has been judged. See the `DESIGN.md` decisions log for the reasoning
+  and the recommended direction if it is still wanted.
+
+**8. Do not use the owner's account for testing.** Use a disposable
+`@example.test` account, as `scripts/e2e.mjs` does. Filling and then emptying
+the owner's live assessment mid-session is a mistake that has already been made
+once — see N13.
+
+---
 
 ## Why this exists (don't lose this framing)
 
@@ -61,15 +142,18 @@ the single seam; it queries Supabase instead of `data/seed/icb4-framework.json`.
 The seed JSON stays in the repo as the source `supabase/seed.sql` was generated
 from — it is no longer read at runtime.
 
-Verified 2026-08-03 against the live database:
+Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **92/92** through a real browser against the running app, then
-  checked in Postgres directly. Covers auth, role gates, target blinding,
-  score persistence, submit, review, accept-all, approve + snapshot, locking,
-  cross-user access, rollup arithmetic, the admin editor, the password gate and
-  the People screen.
+- `npm run e2e` — **149/149** through a real browser against the running app,
+  then checked in Postgres directly. Covers auth, assignment, role gates, target
+  blinding, score persistence, submit, review, accept-all, approve + snapshot,
+  locking, cross-user access, rollup arithmetic, the admin editor, the password
+  gate, the People screen, session-cookie flags, archive/restore, and the N14
+  layout guarantee (Save on screen without scrolling at three viewports on both
+  the shortest and longest controls, with the prose still capped at the reading
+  measure).
 
 ## What was built
 
@@ -91,14 +175,16 @@ Verified 2026-08-03 against the live database:
   that matches nothing is not an error and would otherwise report success.
 - **Completion instrumentation** — `started_at` on first save, `completed_at` on
   submit; the assessor's first screen leads with finished-count and median
-  time-to-complete. Only `assessee`-role people count, so the Head of PMO
-  opening the form cannot move the number.
+  time-to-complete. The denominator is the number of people an admin **assigned**
+  this cycle — a recorded fact, not an inference from who holds a login.
 
 ## Next step
 
-**Invite the nine PMs and run the cycle.** Deployment is done
-(`docs/deploy.md`); adding people no longer needs a terminal — sign in as an
-admin and use **People** in the nav.
+**Invite the nine PMs, assign them the cycle, and run it.** Deployment is done
+(`docs/deploy.md`); neither adding people nor assigning needs a terminal — sign
+in as an admin and use **People** in the nav. Adding someone does not start
+anything; assigning does, and that assignment is what the completion figure
+counts.
 
 Then:
 

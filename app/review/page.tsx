@@ -33,7 +33,11 @@ export default async function ReviewPage({
   const pending = fw.activeControls.filter(
     (c) => scores.get(c.code)?.assessor_level === null || scores.get(c.code) === undefined,
   ).length;
-  const open = assessment.state === "self_submitted";
+  // Archived records stay readable — that is the point of archiving rather than
+  // deleting — but nothing on them may be changed, and the screen has to say so
+  // or an assessor will wonder why the buttons vanished.
+  const isArchived = assessment.deleted_at != null;
+  const open = assessment.state === "self_submitted" && !isArchived;
 
   const byCe = fw.data.competence_elements
     .map((ce) => ({ ce, controls: fw.activeControls.filter((c) => c.ce_code === ce.code) }))
@@ -50,6 +54,17 @@ export default async function ReviewPage({
       </div>
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
+      {isArchived && (
+        <div className="banner banner-warn" role="status">
+          This assessment is <b>archived</b>
+          {assessment.deleted_at ? ` (${assessment.deleted_at.slice(0, 10)})` : ""}
+          {assessment.deleted_reason ? ` — “${assessment.deleted_reason}”` : ""}. It is
+          excluded from the overview and from every completion figure, and nothing on it
+          can be changed. Its scores and timings are kept, so the numbers reported for
+          this cycle can still be reconciled. Restore it from{" "}
+          <Link href="/admin/people">People</Link>.
+        </div>
+      )}
       {revised && (
         <div className="banner banner-ok" role="status">
           Saved {revised} revision{revised === "1" ? "" : "s"}.
@@ -201,9 +216,9 @@ async function Overview({ error }: { error?: string }) {
     completionStats(),
   ]);
   // Every assessment is listed and openable — including the Head of PMO's own,
-  // which is how you walk the loop solo. Only project managers are COUNTED in
-  // the completion tiles above, so the metric stays honest; such rows say so.
-  const uncounted = assessments.filter((a) => a.assessee_is_pm === false).length;
+  // which is how you walk the loop solo. Every row is also COUNTED: an
+  // assessment now exists only because an admin assigned it, so there is no
+  // longer such a thing as a row that appeared unbidden and has to be excluded.
   const activeCodes = new Set(fw.activeControls.map((c) => c.code));
 
   return (
@@ -222,15 +237,10 @@ async function Overview({ error }: { error?: string }) {
         <div className="cap" style={{ marginBottom: 10 }}>PEOPLE</div>
         {assessments.length === 0 && (
           <p className="note">
-            No assessments started yet. One is created the first time a PM opens their
-            self-assessment.
-          </p>
-        )}
-        {uncounted > 0 && (
-          <p className="note" style={{ marginBottom: 10 }}>
-            {uncounted} assessment{uncounted === 1 ? " belongs" : "s belong"} to someone
-            who is not a project manager — openable here, but deliberately left out of
-            the completion figures above so they measure only the people being assessed.
+            Nobody has been assigned this cycle yet.{" "}
+            <Link href="/admin/people">Assign it from People</Link> — an assessment exists
+            only once you do, which is what makes the completion figures above mean
+            something.
           </p>
         )}
         <div className="tablewrap">
@@ -247,9 +257,6 @@ async function Overview({ error }: { error?: string }) {
             </thead>
             <tbody>
               {assessments.map((a) => {
-                // Computed per row rather than read from `stats`, because stats
-                // only covers the PMs being measured — an uncounted row still
-                // needs honest numbers of its own.
                 const scored = a.scores.filter(
                   (s) => s.self_level !== null && activeCodes.has(s.control_code),
                 ).length;
@@ -260,14 +267,7 @@ async function Overview({ error }: { error?: string }) {
                 const row = { scored, finished: a.completed_at != null, hours };
                 return (
                   <tr key={a.id}>
-                    <td>
-                      {a.assessee_name}
-                      {a.assessee_is_pm === false && (
-                        <span className="tick tick-todo" style={{ marginLeft: 6 }}>
-                          not counted
-                        </span>
-                      )}
-                    </td>
+                    <td>{a.assessee_name}</td>
                     <td>
                       <StateChip a={a} />
                     </td>
@@ -319,7 +319,7 @@ function StateChip({ a }: { a: Assessment }) {
  * first, not buried in an export.
  */
 function Completion({ stats }: { stats: CompletionStats }) {
-  const rate = stats.invited === 0 ? 0 : Math.round((stats.finished / stats.invited) * 100);
+  const rate = stats.assigned === 0 ? 0 : Math.round((stats.finished / stats.assigned) * 100);
   return (
     <div className="card pad">
       <div className="cap" style={{ marginBottom: 10 }}>
@@ -330,10 +330,27 @@ function Completion({ stats }: { stats: CompletionStats }) {
           <div className="lbl">Finished</div>
           <div className="big tnum">
             {stats.finished}
-            <small> / {stats.invited}</small>
+            <small> / {stats.assigned}</small>
           </div>
           <div className="mini">
             <i style={{ width: `${rate}%`, background: "var(--accent)" }} />
+          </div>
+          <div className="note" style={{ marginTop: 8 }}>
+            Out of {stats.assigned} assigned this cycle
+            {stats.archived > 0 && (
+              <>
+                {" · "}
+                <b>
+                  {stats.archived} archived, excluded
+                </b>
+                {stats.archived_finished > 0 && (
+                  <>
+                    {" "}({stats.archived_finished} of them finished, so the median
+                    moved)
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
         <div className="tile">
