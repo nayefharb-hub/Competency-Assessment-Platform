@@ -37,7 +37,7 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # 139 checks; see item 6 about migration 0004
+npm run e2e                # 146 checks; see item 6 about migration 0004
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -68,7 +68,7 @@ archiving somebody's cycle would permanently prevent re-assigning it to them.
 Verified against the live database rather than assumed — re-assigning after an
 archive is refused today with `duplicate key value violates unique constraint`.
 
-**Until `0004` runs, `npm run e2e` is 138/139**, and the one failing check is
+**Until `0004` runs, `npm run e2e` is 145/146**, and the one failing check is
 named `re-assigning after an archive succeeds (needs migration 0004)`. That is
 deliberate: the earlier version of that test only counted a checkbox and passed
 while the feature was broken. Everything else is green and cleanup still runs.
@@ -153,12 +153,14 @@ Verified 2026-08-04 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **138/139** through a real browser against the running app,
+- `npm run e2e` — **145/146** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
-  gate, the People screen, session-cookie flags, and archive/restore. The single
-  failure is the migration-`0004` check described above.
+  gate, the People screen, session-cookie flags, archive/restore, and the N14
+  layout guarantee (Save on screen without scrolling at three viewports on both
+  the shortest and longest controls, with the prose still capped at the reading
+  measure). The single failure is the migration-`0004` check described above.
 
 ## What was built
 
