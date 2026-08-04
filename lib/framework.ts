@@ -19,7 +19,6 @@
  * server action or serialized prop.
  */
 import "server-only";
-import { unstable_cache, updateTag } from "next/cache";
 import { phase } from "./perf";
 import { db, unwrap } from "./supabase/server";
 import type {
@@ -98,36 +97,34 @@ const asLevel = (n: number | null | undefined): Level | null =>
 /* ------------------------------------------------------------------ load */
 
 /**
- * TWO caches, doing two different jobs.
+ * ONE cache: an in-process memo, held for the life of the serverless instance.
  *
- * The ROWS come from Next's data cache (`unstable_cache`, tagged). That is the
- * one that matters in production: a module-level cache lives and dies with one
- * serverless instance, so on Vercel a low-traffic app pays the full nine-query
- * framework load on almost every navigation. Measured against the running app:
- * one cold render made ~18 Supabase round trips, nine of them this. At
- * Vercel↔Supabase latency that is most of a second before anything else starts.
+ * It was briefly TWO — the rows also went through Next's `unstable_cache` — on
+ * the reasoning that a module-level cache dies with its instance and a
+ * low-traffic app would pay the nine-query load constantly. The Vercel logs say
+ * that reasoning was wrong on the fact it rested on: instances are reused
+ * heavily, serving 7 to 68 requests each. So the memo amortises well on its own,
+ * and `unstable_cache` was adding a NETWORK fetch of roughly a megabyte to the
+ * hot path in exchange for saving a load that rarely happened.
  *
- * The assembled API is then memoised per instance, because turning 133 controls
- * and 586 measures into the domain shape is pure CPU and worth not repeating.
+ * That is invisible locally, which is why it survived two rounds of
+ * investigation: on disk the same cache reads in 2ms.
  *
- * Writes call invalidateFramework(), which clears both. The TTL on the module
- * memo is the backstop for the multi-instance case; the tag handles the data
- * cache properly. Scores are never cached here.
+ * The TTL is now long. An instance loads the framework once and keeps it, which
+ * is the right shape for data that changes only when an admin edits it.
+ *
+ * THE TRADE, stated plainly: an admin edit is visible immediately on the
+ * instance that made it (invalidateFramework clears the memo), and within
+ * TTL_MS elsewhere. Ten minutes of a stale kib_note on another instance is
+ * acceptable; a megabyte over the network on every render is not.
  */
-const TTL_MS = 60_000;
-const FRAMEWORK_TAG = "framework";
+const TTL_MS = 10 * 60_000;
 let cache: { at: number; api: FrameworkApi } | null = null;
 let inFlight: Promise<FrameworkApi> | null = null;
 
 export function invalidateFramework(): void {
   cache = null;
   inFlight = null;
-  // The row cache is shared across instances, so clearing the local memo alone
-  // would leave every OTHER instance serving the pre-edit framework.
-  // updateTag rather than revalidateTag: this is only ever called from the
-  // admin's save action, and read-your-own-writes is exactly what that needs —
-  // the admin must see their own edit on the very next render, not eventually.
-  updateTag(FRAMEWORK_TAG);
 }
 
 export async function getFramework(): Promise<FrameworkApi> {
@@ -151,13 +148,9 @@ async function getFrameworkUncached(): Promise<FrameworkApi> {
   return inFlight;
 }
 
-/**
- * Every row the framework is built from, as plain JSON so it can live in the
- * data cache. Nothing here is per-user: it is identical for everyone, and only
- * an admin edit changes it.
- */
-const fetchFrameworkRows = unstable_cache(
-  async () => {
+/** Every row the framework is built from. */
+async function fetchFrameworkRows() {
+  {
     const sb = db();
 
     const fw = unwrap(
@@ -205,10 +198,8 @@ const fetchFrameworkRows = unstable_cache(
       fw, scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows,
       measureRows, targetRows,
     };
-  },
-  ["icb4-framework-rows"],
-  { tags: [FRAMEWORK_TAG], revalidate: 3600 },
-);
+  }
+}
 
 async function loadFramework(): Promise<FrameworkApi> {
   const {
