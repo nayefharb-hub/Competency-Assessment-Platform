@@ -160,6 +160,20 @@ console.log("\n[1] Invite-only auth");
 
 const pm = await session(PM.email, PM.password);
 check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
+
+// @supabase/ssr defaults to httpOnly: false so a browser-side client can read
+// the session. This app has no browser-side client, so the token has no
+// business being reachable from page JavaScript — assert the override took,
+// because nothing fails loudly if it silently stops applying.
+{
+  const authCookies = (await pm.ctx.cookies()).filter((c) => c.name.startsWith("sb-"));
+  check("the session cookie exists", authCookies.length > 0);
+  check("the session cookie is httpOnly", authCookies.every((c) => c.httpOnly),
+    authCookies.filter((c) => !c.httpOnly).map((c) => c.name).join(","));
+  const visible = await pm.page.evaluate(() =>
+    document.cookie.split("; ").filter((c) => c.startsWith("sb-")));
+  check("page JavaScript cannot read the session", visible.length === 0, visible.join(","));
+}
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 

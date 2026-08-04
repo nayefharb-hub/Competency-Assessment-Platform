@@ -60,22 +60,35 @@ Only invited accounts can get in; there is no public signup. If nobody has been
 invited yet, run `npm run invite add …` from a machine with the repo and
 `.env.local` (see `supabase/README.md`), or ask whoever set the project up.
 
-Then: sign in → **Start self-assessment** → open one control. That first visit is
-what creates your assessment record for the cycle.
+Then: sign in. Your first stop is **/change-password** — every account is
+created with a password somebody else chose, and the app refuses every other
+route until you replace it. That is the gate working, not a fault.
+
+After that, nothing is waiting for you until an admin **assigns** you the cycle
+from **People**. Signing in creates nothing.
 
 ## 5. Inviting the PMs
 
-One row per person, from a machine with the repo checked out:
+Do it in the app: sign in as an admin → **People** → *Add someone*. You set a
+starting password per person and hand it over out of band; they are made to
+replace it on first sign-in, so it is only ever valid once. Use a different one
+per person — a shared value lets anyone who learns it sign in as any colleague
+who has not logged in yet.
+
+The terminal path still exists for a machine with the repo checked out:
 
     npm run invite add someone@kib.com.kw "Full Name" assessee --title "Project Manager"
 
-Each prints a temporary password once. Hand them over out of band. There is no
-change-password screen yet — re-running `invite add` with `--password` resets an
-existing account rather than creating a second one.
+Give the Head of PMO `admin` (which carries assessor rights).
 
-Give the Head of PMO `admin` (which carries assessor rights). Only `assessee`
-accounts count toward the completion metric, so the assessor's own trial run
-cannot distort the number the pilot exists to measure.
+## 6. Assigning the cycle
+
+Adding somebody does not start anything. On the same **People** screen, tick who
+should take this cycle and press *Assign selected*. Only then does an assessment
+exist for them, and the completion figure counts assignments — so the
+denominator is the number of people you actually asked, not the number who hold
+a login. An assignment nobody has started can be withdrawn; once anything is
+scored it cannot, because that would destroy the scores.
 
 ## Notes
 
@@ -86,3 +99,22 @@ cannot distort the number the pilot exists to measure.
   re-reading now that it is real rather than hypothetical, and worth the
   informal IT sign-off that document suggests.
 - **Rotate the secret key when the pilot ends** (`docs/STATUS.md` open items).
+- **Session lifetime is long, deliberately unbounded, and worth a decision.**
+  The session cookie is a *persistent* one: `@supabase/ssr` sets a 400-day
+  max-age, so closing the browser does not sign you out, and the proxy refreshes
+  it on every request. Two knobs, neither of them set today:
+  - **Supabase → Authentication → Sessions** — "time-box user sessions" (an
+    absolute cap) and "inactivity timeout". Both are unset, so a session in
+    regular use renews indefinitely.
+  - `SESSION_COOKIE.maxAge` in `lib/supabase/cookies.ts` — a browser-side bound,
+    independent of the server setting.
+
+  For a bank's internal tool this should probably be bounded rather than left at
+  the library default. It is a policy call, not a code one, which is why it is
+  written down here instead of guessed at.
+
+  What *is* set in code: the session cookie is `httpOnly` and `Secure` in
+  production. `@supabase/ssr` defaults `httpOnly` to `false` so a browser-side
+  Supabase client can read the token — this app has none, so that default bought
+  nothing and exposed the session to any script on the page. `scripts/e2e.mjs`
+  asserts both flags and that page JavaScript cannot see the cookie.
