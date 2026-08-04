@@ -20,6 +20,7 @@
  */
 import "server-only";
 import { unstable_cache, updateTag } from "next/cache";
+import { phase } from "./perf";
 import { db, unwrap } from "./supabase/server";
 import type {
   Area, AreaName, Benchmark, CeTarget, CompetenceElement, Control, Framework,
@@ -130,7 +131,13 @@ export function invalidateFramework(): void {
 }
 
 export async function getFramework(): Promise<FrameworkApi> {
+  // A hit on the in-memory memo is free and is NOT logged; only the expensive
+  // path is, so a quiet log means the memo is doing its job.
   if (cache && Date.now() - cache.at < TTL_MS) return cache.api;
+  return phase("framework: data cache + assemble 133 controls, 586 measures", getFrameworkUncached);
+}
+
+async function getFrameworkUncached(): Promise<FrameworkApi> {
   if (!inFlight) {
     inFlight = loadFramework()
       .then((api) => {

@@ -17,6 +17,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import { db, supabaseAnonKey, supabaseUrl, timedSupabaseFetch } from "./supabase/server";
+import { phase } from "./perf";
 import { SESSION_COOKIE } from "./supabase/cookies";
 import type { AppUser, UserRole } from "./types";
 
@@ -74,6 +75,7 @@ type Viewer =
   | { status: "ok"; user: AppUser };
 
 const viewer = cache(async function viewer(): Promise<Viewer> {
+  return phase("auth: validate token + load app_user", async () => {
   const auth = await authClient();
   const { data, error } = await auth.auth.getUser();
   if (error || !data.user) return { status: "anon" };
@@ -87,6 +89,7 @@ const viewer = cache(async function viewer(): Promise<Viewer> {
   // A session without an app_user row is an uninvited account: deny.
   if (row.error || !row.data) return { status: "uninvited" };
   return { status: "ok", user: row.data as AppUser };
+  });
 });
 
 /** The signed-in, invited user — or null. Never throws for "not logged in". */
