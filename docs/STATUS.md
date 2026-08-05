@@ -463,9 +463,39 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
      immediately: the next crash (a dead server) purged all three and reported
      `2 passed, 1 failed` instead of a bare Node stack.
 
-   Still open: 8 clean runs is not the 12 the sequence was meant to give, and
-   the abort itself is uncharacterised. The next sequence runs on the hardened
-   harness, which will now survive a crash and say what died.
+   **Named on 2026-08-05: chromium dies. It is the harness, not the app.**
+   The diagnostic added that morning fired on the next crash:
+
+   ```
+   ⚠ chromium DISCONNECTED UNEXPECTEDLY at 12:26:35 (N21)
+   ✗ SUITE CRASHED — page.goto: Target page, context or browser has been closed
+   ```
+
+   The disconnect precedes the navigation failure, so **the browser process
+   dying is the cause and the `goto` error is the consequence** — which also
+   ties the two crash signatures together (`ERR_ABORTED; maybe frame was
+   detached?` is what an in-flight navigation reports when the browser goes;
+   `Target … has been closed` is what the next one reports). Nothing here
+   implicates the application.
+
+   **Unclaimed, but recorded: both sequences died on run 10.** Three sequences
+   so far — one died at run 9, two at run 10 — which is more consistent with
+   something accumulating across runs in the container than with chance. It is
+   NOT called a cause: three data points and a plausible story is exactly the
+   shape this arc has been wrong about three times. The scratchpad loop now
+   records free memory, disk and process count before each run, so the next
+   occurrence arrives with numbers rather than a hunch.
+
+   **Deliberately not being fixed.** The harness already fails safely: teardown
+   runs, the QA accounts are purged from the real database, and the run reports
+   which step died. The only casualty is that a 12-run sequence does not finish,
+   which costs confidence in the *measurement*, not correctness of the app or
+   the suite. Chasing container resource limits is test-infrastructure work, and
+   it ranks below N18 and the Results design. Revisit if it starts landing
+   before run 9, or if it ever appears in CI.
+
+   Best sequence to date: **9 clean runs at 186 passed, 0 failed**, then a
+   browser death.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other
