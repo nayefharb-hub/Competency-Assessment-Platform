@@ -84,35 +84,113 @@ lose an afternoon of scoring to a closed tab reintroduces the exact failure
 the tool exists to beat, in exchange for a speed win that approach 1 gets
 without the custody transfer.
 
-## Recommendation
+## The settled design (D7–D10, decided with the owner on the drawing board)
 
-**Approach 1.** It removes the felt wait (navigation decouples from the
-write and becomes prefetchable), keeps every decision durably committed,
-keeps progress live for the assessor, and confines the new complexity to one
-client component plus failure surfacing. Approach 2's only unique advantage
-— fewer round trips — stops mattering once the write is off the click path;
-its unique risk is losing a PM's work.
+Approach 1 won (D7), then three rounds of owner pushback made it sharper
+than the first draft. The final model:
 
-Explicitly NOT proposed: keeping a manual "Save" button alongside async
-saves as a comfort control. A button that does nothing the system isn't
-already doing trains users to distrust the auto-save; status ("saved ✓ /
-2 not saved") communicates more honestly than a button.
+### Commit model — Next is the sole point of truth (D9)
 
-## Scope of approach 1
+- **Picking a level or typing evidence is local selection only.** Nothing
+  leaves the page; change your mind freely; intermediate picks are never
+  written.
+- **Clicking Next is the commit.** The answer — level + evidence, one
+  atomic record — enters the outbox and flushes asynchronously. Navigation
+  happens instantly; nothing waits on the write.
+- **Previous, logout, or navigating anywhere else does NOT commit.** An
+  unconfirmed pick is abandoned, and returning to that control shows only
+  what the server holds — an abandoned pick is cleared, never silently
+  committed (owner's rule: no default selection committed by mistake).
+- Legibility without dialogs: while a pick is unconfirmed the status line
+  reads *"Selection not confirmed — Next confirms it."*
+- The last control's Next leads to the controls list (as today), so
+  finishing normally commits the final answer.
 
-- `app/assess/page.tsx` — extract the score panel into a client component;
-  Next/Prev become links.
-- `app/actions.ts` — a non-redirecting variant of the save action returning
-  success/failure.
-- The status surface (per-control + global unsaved counter) per DESIGN.md.
-- e2e: async save persists; failed save is visible and retryable; Submit
-  blocked while unsaved answers exist; round-trip budget re-asserted
-  (navigation GET carries no write).
-- The 4-round-trip save from PR #19 stays as-is underneath — it becomes the
-  *background* cost, and the save RPC follow-up loses its urgency entirely.
+### The outbox is an app-level service, not a page widget (from the owner's
+2-minute-outage scenario)
+
+- Lives in the app shell, mounted once above all routes. Queue, retry
+  timers, and the failure strip **survive navigation anywhere in the app**;
+  during a failure the strip is a slim app-wide banner — a PM on Results
+  still sees "4 answers not saved".
+- **Retry policy:** immediate attempt on commit; on failure 2s → 4s → 8s →
+  16s → then every 30s, indefinitely. No give-up state — these are
+  committed answers, and discarding them is never right. Instant flush on
+  three events regardless of countdown: the browser regaining connection,
+  any new commit (each Next retries the whole queue), and **Retry now**.
+- **Retry now ships (D10)** — inside the failure strip only, named for what
+  it does. Rationale: collapses the backoff wait (today ≤30s, and the owner
+  wants headroom to lengthen the ceiling later), covers browser-thinks-
+  it's-online cases, gives an anxious user agency.
+- **localStorage mirror ships (D8, decided by implication of the outage
+  scenario and confirmed):** hard exits (refresh, crash, closed tab) kill
+  JS memory, so surviving them requires the mirror. Namespaced per
+  user + assessment; restored and retried on next visit from any page;
+  cleared entry-by-entry as the server confirms. Flagged for a bank:
+  committed draft answers transiently cached on the PM's own machine.
+- **Sign-out with a non-empty outbox:** attempt a final flush; if it fails,
+  tell the user plainly and let them choose — stay, or leave with the
+  mirror kept for next sign-in. No silent loss, no silent lingering.
+
+### Why not approach 2, recorded
+
+Approach 2's only unique advantage — fewer round trips — stops mattering
+once the write is off the click path; its unique risk is losing a PM's
+work to browser custody. The final design keeps server custody of every
+*committed* answer and browser custody only of the failure buffer.
+
+## Scope
+
+- `app/assess/page.tsx` — score panel becomes a client component; Next
+  commits + navigates; Prev/other navigation abandons.
+- App shell — the outbox service (~100 lines: queue, backoff, online
+  listener, localStorage sync, subscribe) + the global failure banner.
+  Plain module-scope client store; no state library (boring tech).
+- `app/actions.ts` — non-redirecting save variant returning ok/error.
+- Status surfaces per DESIGN.md: unconfirmed line, saved tick, failure
+  strip/banner with count + Retry now.
+- Submit stays blocked while the outbox is non-empty (server re-validates
+  completeness regardless).
+- The 4-round-trip save from PR #19 becomes the background cost; the save
+  RPC follow-up loses its urgency entirely.
+
+## Tests (traced per codepath)
+
+- e2e: Next commits and persists; **Previous does not commit**; an
+  abandoned pick is cleared on return; simulated outage (route abort) →
+  strip appears, count grows, answers queue; outage + navigate to Results →
+  banner persists app-wide; outage + reload → queue restored from mirror
+  and retried; recovery → auto-flush, banner clears; Retry now flushes
+  immediately; Submit blocked while queue non-empty; round-trip budget
+  re-asserted (navigation GET carries no write; commit = 1 write).
+- Unit: backoff schedule; mirror namespacing; entry cleared only on ack.
 
 ## NOT in scope
 
 - Any change to scoring semantics, the scale module, submit/review flow, or
   the assessor side.
-- Offline editing. The app remains online-first; a failed save says so.
+- Offline editing as a feature. The app remains online-first; the outbox is
+  a failure buffer, not an offline mode.
+
+## GSTACK REVIEW REPORT
+
+| Run | Section | Status | Findings |
+|---|---|---|---|
+| 1 | Scope (Step 0) | PASS | Approach 1 touches ~6 files + one ~100-line client service; under thresholds. Approach 2 would have tripped the complexity gate (app-wide client state layer) — recorded as evidence, decided at D7. |
+| 2 | Architecture | 4 decisions | D7 approach 1 (owner); D9 **Next-only commit** — owner overturned the reviewer's save-on-pick twice, correctly: a pick is provisional, intermediate writes are wrong, abandoned picks must clear; D10 Retry now ships with the stated backoff policy; outbox promoted to an **app-level service** by the owner's 2-min-outage scenario, which also decided D8 (localStorage mirror) by implication. |
+| 3 | Code quality | PASS | No state library; one shared client store; DESIGN.md governs all surfaces; sign-out edge specified (flush → tell → choose). |
+| 4 | Tests | PASS (additions) | Full path trace in "Tests" — including the two behaviours unique to this model: Previous does not commit, and abandoned picks clear. |
+| 5 | Performance | PASS | Commit chatter *drops* vs today (no intermediate saves, one atomic write per control); navigation is a pure ~300ms GET; PR #19's 4-trip save becomes background cost. |
+| 6 | Outside voice | SKIPPED | codex unavailable in this environment; the owner served as the adversarial reviewer and materially changed the design three times — recorded rather than pretended. |
+
+VERDICT: SOUND — the design is the owner's commit model implemented with
+server custody of committed answers and a bounded, argued failure buffer.
+An interactive mock of every state was built to DESIGN.md and reviewed by
+the owner before this report; their corrections (commit trigger, Retry
+now semantics, outbox survival) are folded into the body above.
+
+Build ordering: implement AFTER PR #19 merges, as its own PR. /cso pass
+on the implementation should look at the localStorage mirror (draft
+answers at rest on the PM's machine) and the sign-out flush path.
+
+NO UNRESOLVED DECISIONS
