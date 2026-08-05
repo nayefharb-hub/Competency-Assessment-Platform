@@ -235,7 +235,9 @@ export default async function PeoplePage({
                             one who stopped three weeks ago. No email, no
                             nagging — it is an invitation to look. */}
                         <div className="note">
-                          {p.last_scored
+                          {p.assessment_state !== "draft"
+                            ? null
+                            : p.last_scored
                             ? <>last scored {daysSince(p.last_scored, now) === 0
                                 ? "today"
                                 : `${daysSince(p.last_scored, now)}d ago`}</>

@@ -390,6 +390,36 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
 }
 
 /*
+ * N23 — a failed sign-in keeps what was typed.
+ *
+ * The bug was never that the app replaced the address: it redirected to a
+ * fresh page with an empty field, and the browser's autofill supplied the
+ * saved one. The person then saw an address they had not typed and could not
+ * see their own typo. The fix returns the typed value instead of redirecting,
+ * so this asserts the value SURVIVES rather than asserting anything about
+ * autofill, which the suite cannot simulate.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  const typo = "qa..pm@example.test";          // doubled dot: passes type="email"
+  await page.fill("#email", typo);
+  await page.fill("#password", "wrong-on-purpose");
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+
+  check("a failed sign-in still refuses", (await page.locator(".banner-error").count()) === 1);
+  check("and keeps the address that was actually typed",
+    (await page.inputValue("#email")) === typo, await page.inputValue("#email"));
+  check("the refusal says nothing about which part was wrong",
+    /not recognised, or that account has not been invited/.test(
+      await page.locator(".banner-error").innerText()));
+  check("and nothing is written into the URL",
+    !page.url().includes("error=") && !page.url().includes("email="), page.url());
+  await ctx.close();
+}
+
+/*
  * A1 (eng-plan-save-latency): tokens are verified LOCALLY by signature, so
  * prove the signature is actually checked — a tampered token must bounce.
  * The session cookie is base64url JSON holding access_token; corrupt the
@@ -704,9 +734,16 @@ console.log("\n[4] Self-scoring persists to Postgres");
     await pm.page.waitForSelector(".ce-row", { timeout: 10_000 }).catch(() => {});
     const rows = await pm.page.locator(".ce-row").count();
     check("an area opens its competencies", rows >= 5, `${rows}`);
+    const firstRow = await pm.page.locator(".ce-row").first().innerText();
     check("each competency states its own size and duration",
-      /\d+\s+controls\s+·\s+about/i.test(await pm.page.locator(".ce-row").first().innerText()),
-      await pm.page.locator(".ce-row").first().innerText());
+      /\d+\s+controls\s+·\s+about/i.test(firstRow), firstRow);
+    /* The NAME, not just the shape. The first version of this check asserted
+       "N controls · about M min" and passed while every row read "4.3.1 4.3.1"
+       — shapeOf was looking the competence element up by control code, so the
+       name was always undefined and fell back to the code. A test that only
+       checks the furniture cannot see the missing content. */
+    check("and names the competency rather than repeating its code",
+      /^\s*[\d.]+\s+[A-Za-z]/.test(firstRow.split("\n")[0]), firstRow.split("\n")[0]);
 
     /* THE BLINDING GUARD (D24). These screens are the first assessee-facing UI
        where a competence element appears, which makes them the natural place

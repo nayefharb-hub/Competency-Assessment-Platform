@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
-import { signIn } from "./actions";
+import SignInForm from "./form";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +15,9 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; denied?: string; next?: string }>;
+  searchParams: Promise<{ denied?: string; next?: string }>;
 }) {
-  const { error, denied, next } = await searchParams;
+  const { denied, next } = await searchParams;
 
   /*
    * Already signed in? Go where they were headed (N22).
@@ -54,44 +54,7 @@ export default async function LoginPage({
             invite you.
           </div>
         )}
-        {error && (
-          <div className="banner banner-error" role="alert">
-            {error}
-          </div>
-        )}
-
-        <form action={signIn}>
-          <input type="hidden" name="next" value={next ?? "/"} />
-          <div className="field" style={{ marginBottom: 12 }}>
-            <label htmlFor="email">Work email</label>
-            <input
-              className="input"
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="username"
-              required
-              // No domain hint: there is no domain restriction anywhere in the
-              // code, and suggesting one implied a rule that does not exist.
-              // The allowlist is the app_user table, not an email suffix.
-              placeholder="Your email address"
-            />
-          </div>
-          <div className="field" style={{ marginBottom: 18 }}>
-            <label htmlFor="password">Password</label>
-            <input
-              className="input"
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </div>
-          <button className="btn btn-primary" type="submit" style={{ width: "100%" }}>
-            Sign in
-          </button>
-        </form>
+        <SignInForm next={next} />
       </div>
     </div>
   );

@@ -78,7 +78,8 @@ export default async function AssessPage({
      finishing is a moment, and continuing is a choice. The last CE of an area
      steps up one further. shapeOf() derives this in memory from data already
      fetched; no extra round trip on the path two PRs were spent making fast. */
-  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, scoredCodes(scores));
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
+    fw.data.areas.map((a) => a.name));
   const boundary = nextAfter(areas, control);
 
   const score = scores.find((s) => s.control_code === code);

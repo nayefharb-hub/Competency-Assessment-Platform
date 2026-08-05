@@ -27,7 +27,10 @@ export default async function AreaPage({
   params: Promise<{ name: string }>;
 }) {
   const { name } = await params;
-  const areaName = decodeURIComponent(name);
+  // Next already percent-decodes dynamic segments. Decoding again mangles any
+  // name containing a literal % and throws URIError on a hand-typed /%zz,
+  // turning an intended notFound() into a 500.
+  const areaName = name;
   const user = await requireUser();
   const [fw, mine] = await Promise.all([getAssesseeFramework(), findAssessmentWithScores(user)]);
   if (!mine) {
@@ -36,7 +39,8 @@ export default async function AreaPage({
   }
 
   const done = scoredCodes(mine.scores);
-  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, done);
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, done,
+    fw.data.areas.map((a) => a.name));
   const area = areas.find((a) => a.name === areaName);
   if (!area) notFound();
 

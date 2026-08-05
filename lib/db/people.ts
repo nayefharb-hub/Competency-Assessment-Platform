@@ -26,6 +26,12 @@ export interface PersonRow extends AppUser {
    * When this person last scored anything, or null if never. Completion alone
    * cannot tell a person who is 40% through and moving from one who stopped
    * three weeks ago — this is what separates them (D16).
+   *
+   * ONLY MEANINGFUL WHILE THE ASSESSMENT IS A DRAFT. `score.updated_at` is
+   * bumped by any upsert, and three assessor-side paths write score rows — the
+   * submit prefill, saveRevisions and accept-all. After submission this would
+   * report the ASSESSOR's activity under the PM's name, so the screen shows it
+   * only for drafts, which is also the only state that can stall.
    */
   last_scored: string | null;
   /**
@@ -56,14 +62,14 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       .eq("cycle", cycle)
       .is("deleted_at", null)
       .in("assessee_id", people.map((p) => p.id))
-      .then((r) => (r.data ?? []) as { id: string; assessee_id: string; state: string }[]),
+      .then((r) => unwrap("assignment lookup", r) as { id: string; assessee_id: string; state: string }[]),
     sb.from("assessment")
       .select("id, assessee_id, deleted_at, deleted_reason")
       .eq("cycle", cycle)
       .not("deleted_at", "is", null)
       .order("deleted_at", { ascending: false })
       .in("assessee_id", people.map((p) => p.id))
-      .then((r) => (r.data ?? []) as {
+      .then((r) => unwrap("archive lookup", r) as {
         id: string; assessee_id: string; deleted_at: string; deleted_reason: string | null;
       }[]),
   ]);
@@ -75,8 +81,14 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
     if (!archivedByPerson.has(a.assessee_id)) archivedByPerson.set(a.assessee_id, a);
   }
 
-  const scores = (
-    await sb
+  /* A failed read here used to render as zeroes: everyone "0 scored", everyone
+     "not started", and hasStalled silently false for the whole team — a
+     plausible, entirely wrong page with nothing to say it had failed. That is
+     the N19 mistake in a different table, so it throws now.
+     Also skipped entirely when nothing is assigned, which is the normal state
+     at the start of a cycle and was costing an `.in(…, [])` round trip. */
+  const scores = assessments.length === 0 ? [] : (
+    unwrap("score tally", await sb
       .from("score")
       // updated_at rides along with the rows already being counted, so the
       // last-activity column costs no extra query — deliberately not one
@@ -84,15 +96,19 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       .select("assessment_id, self_level, updated_at")
       .in("assessment_id", assessments.map((a) => a.id))
       .not("self_level", "is", null)
-      .limit(20000)
-  ).data as { assessment_id: string; updated_at: string | null }[] | null;
+      .limit(20000))
+  ) as { assessment_id: string; updated_at: string | null }[];
 
   const scoredCount = new Map<string, number>();
   const lastScored = new Map<string, string>();
-  for (const s of scores ?? []) {
+  for (const s of scores) {
     scoredCount.set(s.assessment_id, (scoredCount.get(s.assessment_id) ?? 0) + 1);
     const at = s.updated_at;
-    if (at && (!lastScored.has(s.assessment_id) || at > lastScored.get(s.assessment_id)!)) {
+    const held = lastScored.get(s.assessment_id);
+    // Compare instants rather than strings: lexicographic ISO ordering holds
+    // only while every row carries the same UTC offset, which is a property of
+    // the connection, not of the data.
+    if (at && (!held || Date.parse(at) > Date.parse(held))) {
       lastScored.set(s.assessment_id, at);
     }
   }

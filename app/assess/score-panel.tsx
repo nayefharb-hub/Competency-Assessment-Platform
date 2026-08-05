@@ -43,7 +43,9 @@ export default function ScorePanel({
   savedEvidence: string;
   locked: boolean;
   /** Set when this control ends a competency or an area (D25). */
-  boundary?: { href: string; done: "ce" | "area" | "assessment"; label: string } | null;
+  boundary?: {
+    href: string; done: "ce" | "area" | "assessment"; complete: boolean; label: string;
+  } | null;
 }) {
   const router = useRouter();
   const [level, setLevel] = useState<number | null>(savedLevel);
@@ -165,7 +167,9 @@ export default function ScorePanel({
             {level === null
               ? "Skip for now →"
               : boundary
-                ? (boundary.done === "assessment" ? "Review before submitting →" : "Finish this competency →")
+                ? (boundary.done === "assessment"
+                    ? (boundary.complete ? "Review before submitting →" : "Back to the list →")
+                    : (boundary.complete ? "Finish this competency →" : "Back to the list →"))
                 : "Next control →"}
           </button>
         )}

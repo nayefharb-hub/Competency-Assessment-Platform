@@ -17,7 +17,10 @@ export function daysSince(iso: string | null, now: number): number | null {
   if (!iso) return null;
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return null;
-  return Math.floor((now - then) / 86_400_000);
+  // Clamped and truncated, not floored: the writer and the reader are
+  // different instances with different clocks, so a score written 200ms in the
+  // future turned Math.floor(-0.0000023) into -1 and rendered "-1d ago".
+  return Math.max(0, Math.trunc((now - then) / 86_400_000));
 }
 
 export function hasStalled(

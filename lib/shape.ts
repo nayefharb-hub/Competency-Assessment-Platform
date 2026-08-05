@@ -1,5 +1,5 @@
 import type { Control, Measure, Score } from "./types.ts";
-import { estimateMinutes, type Estimate } from "./duration.ts";
+import { estimateMinutes, measureIndex, type Estimate } from "./duration.ts";
 
 /**
  * The shape of the work: areas → competence elements → controls.
@@ -51,9 +51,12 @@ export function scoredCodes(scores: Score[]): Set<string> {
  */
 export function shapeOf(
   activeControls: Control[],
-  ceOf: (code: string) => { code: string; name: string } | undefined,
+  ceOf: (ceCode: string) => { code: string; name: string } | undefined,
   measures: Measure[],
   scored: Set<string>,
+  /** Authoritative area order (framework sort_order). Falls back to the order
+   *  controls happen to arrive in, which is only accidentally the same. */
+  areaOrder?: string[],
 ): AreaShape[] {
   const areas: AreaShape[] = [];
   const areaByName = new Map<string, AreaShape>();
@@ -70,7 +73,10 @@ export function shapeOf(
     const ceKey = `${control.area}/${control.ce_code}`;
     let ce = ceByCode.get(ceKey);
     if (!ce) {
-      const meta = ceOf(control.code);
+      // ceOf is keyed by COMPETENCE ELEMENT code ("4.3.1"), not control code
+      // ("4.3.1.1"). Passing the control code returned undefined every time,
+      // so every row rendered "4.3.1 4.3.1" instead of "4.3.1 Strategy".
+      const meta = ceOf(control.ce_code);
       ce = {
         code: control.ce_code,
         name: meta?.name ?? control.ce_code,
@@ -93,9 +99,17 @@ export function shapeOf(
     }
   }
 
+  const index = measureIndex(measures);
   for (const area of areas) {
-    for (const ce of area.ces) ce.estimate = estimateMinutes(ce.controls, measures);
-    area.estimate = estimateMinutes(area.ces.flatMap((c) => c.controls), measures);
+    for (const ce of area.ces) ce.estimate = estimateMinutes(ce.controls, index);
+    area.estimate = estimateMinutes(area.ces.flatMap((c) => c.controls), index);
+  }
+
+  // Framework order, not encounter order. They agree today; they stop agreeing
+  // the moment an admin edits one control's sort_order, and the divergence
+  // would be invisible.
+  if (areaOrder) {
+    areas.sort((a, b) => areaOrder.indexOf(a.name) - areaOrder.indexOf(b.name));
   }
   return areas;
 }
@@ -110,13 +124,19 @@ export function shapeOf(
 export function nextAfter(
   areas: AreaShape[],
   control: Control,
-): { href: string; done: "ce" | "area" | "assessment"; label: string } | null {
+): { href: string; done: "ce" | "area" | "assessment"; complete: boolean; label: string } | null {
   const area = areas.find((a) => a.name === control.area);
   const ce = area?.ces.find((c) => c.code === control.ce_code);
   if (!area || !ce) return null;
 
   const isLastInCe = ce.controls[ce.controls.length - 1]?.code === control.code;
   if (!isLastInCe) return null;                       // ordinary next control
+
+  // "Complete" has to be true. Positional was not enough: a PM who skipped
+  // four of five controls and scored the last one was told "Finish this
+  // competency" and shown 1/5, and at the end of the assessment was pointed
+  // at a Submit the server would refuse.
+  const ceComplete = ce.scored === ce.controls.length;
 
   const ceIndex = area.ces.indexOf(ce);
   const isLastInArea = ceIndex === area.ces.length - 1;
@@ -125,14 +145,29 @@ export function nextAfter(
     return {
       href: `/assess/area/${encodeURIComponent(area.name)}`,
       done: "ce",
-      label: `${ce.name} complete — next: ${area.ces[ceIndex + 1].name}`,
+      complete: ceComplete,
+      label: ceComplete
+        ? `${ce.name} complete — next: ${area.ces[ceIndex + 1].name}`
+        : `${ce.name} — ${ce.scored} of ${ce.controls.length} scored`,
     };
   }
 
   const areaIndex = areas.indexOf(area);
   const nextArea = areas[areaIndex + 1];
+  const areaComplete = area.scored === area.controls;
   if (nextArea) {
-    return { href: "/assess/areas", done: "area", label: `${area.name} complete — next: ${nextArea.name}` };
+    return {
+      href: "/assess/areas", done: "area", complete: areaComplete,
+      label: areaComplete
+        ? `${area.name} complete — next: ${nextArea.name}`
+        : `${area.name} — ${area.scored} of ${area.controls} scored`,
+    };
   }
-  return { href: "/assess/controls", done: "assessment", label: "Every competency scored" };
+  // ?saved=1 is what raises the save confirmation on the controls list. The
+  // boundary branch pre-empts the panel's fallback, so it has to carry it —
+  // otherwise the 132nd answer lands silently, right before Submit.
+  return {
+    href: "/assess/controls?saved=1", done: "assessment",
+    complete: areaComplete, label: "Every competency scored",
+  };
 }

@@ -1,4 +1,5 @@
 import Link from "@/app/link";
+import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
@@ -30,10 +31,20 @@ export default async function AreasPage() {
   const { scores } = mine;
 
   const done = scoredCodes(scores);
-  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, done);
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, done,
+    fw.data.areas.map((a) => a.name));
   const totalCes = areas.reduce((s, a) => s + a.ces.length, 0);
   const doneCes = areas.reduce((s, a) => s + a.ces.filter((c) => c.scored === c.controls.length).length, 0);
   const nextUp = areas.find((a) => a.firstUnscored);
+  /* "Continue where you left off" has to mean the same thing as the menu
+     (D12), which resumes from cap.last. Sending it to the first UNSCORED
+     control instead gave two buttons one promise and two destinations — and
+     because it passes ?c=, it would then overwrite the cookie with the wrong
+     answer. First-unscored stays as the fallback, exactly as on /assess. */
+  const remembered = (await cookies()).get("cap.last")?.value;
+  const resume = (remembered && fw.controlByCode(remembered)?.active
+    ? remembered
+    : nextUp?.firstUnscored?.code) ?? null;
 
   return (
     <div className="section">
@@ -48,8 +59,8 @@ export default async function AreasPage() {
             {nextUp && <> · next: <b>{nextUp.name}</b></>}
           </p>
         </div>
-        {nextUp?.firstUnscored && (
-          <Link className="btn btn-primary" href={`/assess?c=${nextUp.firstUnscored.code}`}>
+        {resume && (
+          <Link className="btn btn-primary" href={`/assess?c=${resume}`}>
             Continue where you left off
           </Link>
         )}
