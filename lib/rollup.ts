@@ -68,7 +68,7 @@ export function rollupCe(
       : undefined;
 
   const scored: { code: string; level: Level }[] = [];
-  let severe = false;
+  const escalated: CeResult["escalated_by"] = [];
 
   for (const c of controls) {
     const lv = scores.get(c.code);
@@ -76,8 +76,18 @@ export function rollupCe(
     scored.push({ code: c.code, level: lv });
     // single-control escalation: 2+ levels below its OWN target
     const target = controlTarget(c, snapshot);
-    if (target !== null && target - lv >= 2) severe = true;
+    if (target !== null && target - lv >= 2) {
+      escalated.push({ control_code: c.code, level: lv, target });
+    }
   }
+  // Worst shortfall first, ties by control code. The results row names only the
+  // first, and "which control forced this" is a question about severity, not
+  // alphabetical order — naming a 2-level gap while a 4-level one sits behind it
+  // would point the reader at the wrong control.
+  escalated.sort(
+    (a, b) => (b.target - b.level) - (a.target - a.level) || (a.control_code < b.control_code ? -1 : 1),
+  );
+  const severe = escalated.length > 0;
 
   const actual =
     scored.length === 0
@@ -97,6 +107,12 @@ export function rollupCe(
   }
 
   const target = ceTarget?.target ?? null;
+  const health = healthOf(actual, target, severe);
+  // Ask the SAME function what the verdict would have been without escalation,
+  // rather than re-deriving the thresholds here — the health rule stays in one
+  // place (rollup-spec.md §4) and cannot drift between engine and screen.
+  const withoutEscalation = healthOf(actual, target, false);
+
   return {
     ce_code: ceCode,
     ce_name: ce?.name ?? ceTarget?.ce_name ?? ceCode,
@@ -104,8 +120,10 @@ export function rollupCe(
     target,
     actual,
     gap: actual === null || target === null ? null : target - actual,
-    health: healthOf(actual, target, severe),
+    health,
     weakest,
+    escalated_by: escalated,
+    escalation_drove_health: health === "deficit" && withoutEscalation !== "deficit",
     scored_controls: scored.length,
     active_controls: controls.length,
   };

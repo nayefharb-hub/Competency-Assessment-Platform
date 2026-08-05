@@ -122,9 +122,94 @@ await ensure(OTHER);
 await ensure(BOSS);
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
+browser.on("disconnected", () =>
+  console.log(`    ⚠ chromium DISCONNECTED at ${new Date().toISOString()} (N21)`));
+
+/**
+ * Cleanup has to run even when the suite dies mid-flight.
+ *
+ * This is the N21 lesson, and it cost three rounds. The suite is top-level
+ * sequential code, so a throw at any one of the 68 `page.goto` calls skipped
+ * the entire cleanup block at the bottom of this file: the three QA accounts
+ * stayed in the REAL database — on the allowlist, inside the completion
+ * denominator — and the browser stayed open. The run printed a bare Node
+ * stack: no summary, no failing group, no clue which section died. A crash
+ * must leave the database as clean as a pass does, and must SAY what broke.
+ */
+let tornDown = false;
+async function teardown() {
+  if (tornDown) return;
+  tornDown = true;
+  console.log("\nCleaning up QA data and accounts…");
+  await purge(PM.email);
+  await purge(OTHER.email);
+  await purge(BOSS.email);
+  const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
+  check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
+    (leftovers ?? []).map((u) => u.email).join(","));
+  const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
+  check("no QA sign-in accounts left behind either", strays.length === 0,
+    strays.map((u) => u.email).join(","));
+  await browser.close().catch(() => {});
+}
+
+process.on("uncaughtException", (err) => {
+  fail++;
+  console.log(`\n  ✗ SUITE CRASHED — ${String(err?.message ?? err).split("\n")[0]}`);
+  const where = String(err?.stack ?? "").split("\n").find((l) => l.includes("e2e.mjs"));
+  if (where) console.log(`    ${where.trim()}`);
+  teardown()
+    .catch((e) => console.log(`  ✗ cleanup after the crash ALSO failed — ${e.message}`))
+    .finally(() => {
+      console.log(`\n${pass} passed, ${fail} failed`);
+      process.exit(1);
+    });
+});
+
+/**
+ * Chromium intermittently aborts a main-frame navigation with
+ * `net::ERR_ABORTED; maybe frame was detached?` — seen once in 9 runs, at the
+ * theme-survives-navigation step. The mechanism is NOT known: it is a
+ * navigation the renderer cancelled, and this arc has already lost three
+ * confidently-argued mechanisms, so this does not pretend to be a diagnosis.
+ * It retries once and SAYS SO in the output, so the retry can never quietly
+ * become the reason the suite looks green.
+ */
+async function gotoStable(page, url) {
+  try {
+    return await page.goto(url);
+  } catch (e) {
+    if (!String(e.message).includes("ERR_ABORTED")) throw e;
+    console.log(`    ↻ navigation to ${url} aborted; retrying once (N21)`);
+    return await page.goto(url);
+  }
+}
+
+/**
+ * N21 diagnostics, not a fix.
+ *
+ * Two crashes, two different messages, same shape — a navigation that dies
+ * abruptly: `net::ERR_ABORTED; maybe frame was detached?` on one run, and
+ * `Target page, context or browser has been closed` on another, the latter
+ * with the PM's context provably never closed by the suite (contexts are
+ * closed 10 times against 4 opened, and `pm.ctx` is not among them). Both are
+ * consistent with chromium dying underneath the run, but this arc has already
+ * buried three confident mechanisms, so nothing is concluded. These listeners
+ * make the next occurrence SAY whether the browser dropped or a renderer
+ * crashed, with a timestamp to line up against the run log.
+ */
+function watchForDeath(page, label) {
+  // "crash" only. A `close` listener would fire on all 10 deliberate
+  // ctx.close() calls and drown the signal it is meant to carry.
+  page.on("crash", () =>
+    console.log(`    ⚠ renderer CRASHED on ${label} at ${new Date().toISOString()} (N21)`));
+}
+
 async function session(email, password) {
   const ctx = await browser.newContext({ baseURL: BASE });
   const page = await ctx.newPage();
+  watchForDeath(page, email);
   await page.goto("/login");
   await page.fill("#email", email);
   await page.fill("#password", password);
@@ -635,6 +720,111 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   }
   check("every CE mean on the page equals mean(assessor_level over active controls)",
     matched === byCe.size, `${matched}/${byCe.size}`);
+
+  /*
+   * The escalation case, constructed on purpose (STATUS.md open item 3).
+   *
+   * A CE whose mean sits ABOVE its target can still read "Capability Deficit"
+   * because one control is 2+ levels below its own target. On screen that looks
+   * like the number and the verdict disagree, and until now nothing on the page
+   * named the control responsible. Waiting for the seeded spread to produce this
+   * shape would be a test that passes for an accidental reason — the exact trap
+   * N21 caught — so it is built rather than hoped for.
+   */
+  const { data: ceRows } = await db.from("competence_element")
+    .select("id, code, target_level, control(id, code, active, target_level)")
+    .limit(200);
+  const fat = (ceRows ?? [])
+    .map((ce) => ({ ...ce, actives: (ce.control ?? []).filter((c) => c.active && c.target_level !== null) }))
+    .filter((ce) => ce.target_level !== null && ce.actives.length >= 5)
+    .sort((a, b) => b.actives.length - a.actives.length)[0];
+
+  if (!fat) {
+    check("a CE with 5+ active targeted controls exists to test escalation", false);
+  } else {
+    const victim = fat.actives[0];
+    const low = Math.max(0, victim.target_level - 2);
+    const restore = new Map();
+    const { data: before } = await db.from("score")
+      .select("control_id, assessor_level").eq("assessment_id", assessmentId)
+      .in("control_id", fat.actives.map((c) => c.id));
+    for (const r of before ?? []) restore.set(r.control_id, r.assessor_level);
+
+    // everything at the ceiling except the victim, so the MEAN clears the target
+    // and escalation is unambiguously the only thing producing the verdict
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: c.id === victim.id ? low : 5,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+
+    const mean = (5 * (fat.actives.length - 1) + low) / fat.actives.length;
+    check("constructed mean clears the CE target, so the badge looks contradictory",
+      mean >= fat.target_level, `mean ${mean.toFixed(2)} vs target ${fat.target_level}`);
+
+    await boss.page.goto(`/results?a=${assessmentId}`);
+    // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of
+    // control 4.4.3.2, so includes() happily returns a DIFFERENT element's row —
+    // which is how the first version of this check reported a failure against a
+    // row that was in fact rendering correctly.
+    const rows = await boss.page.locator(".barrow").allInnerTexts();
+    const row = rows.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
+    const where = `ce ${fat.code} victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
+
+    check("escalated CE still reads Capability Deficit",
+      !!row && row.includes("Capability Deficit"), where);
+    check("the page names the control that forced it, not just the verdict",
+      !!row && row.includes(`deficit driven by ${victim.code}`), where);
+    check("and states what that control scored against its own target",
+      !!row && row.includes(`scored ${low} against target ${victim.target_level}`), where);
+
+    // The note must never appear on a row that is not a deficit — otherwise it
+    // is explaining a verdict that was never given.
+    const stray = (await boss.page.locator(".barrow").allInnerTexts())
+      .filter((t) => t.includes("deficit driven by") && !t.includes("Capability Deficit"));
+    check("the explanation never appears without the verdict it explains",
+      stray.length === 0, `${stray.length} stray`);
+
+    /*
+     * Two escalating controls, not one. The single-victim case above never
+     * reaches the `and N more` branch, so that string shipped unexercised —
+     * and a count that is off by one is exactly the kind of thing that reads
+     * as authoritative on a results page and is wrong.
+     */
+    const second = fat.actives[1];
+    const low2 = Math.max(0, second.target_level - 2);
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: c.id === victim.id ? low : c.id === second.id ? low2 : 5,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+
+    await boss.page.goto(`/results?a=${assessmentId}`);
+    const rows2 = await boss.page.locator(".barrow").allInnerTexts();
+    const row2 = rows2.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
+    const where2 = `ce ${fat.code}: ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
+
+    // Named + counted: one control is named, the rest are counted. With two
+    // escalating it must say "and 1 more" — not "1 more" of a total of two,
+    // and not "2 more" counting the one it already named.
+    check("a second escalating control is counted, not silently dropped",
+      !!row2 && row2.includes("and 1 more"), where2);
+    check("the named control is still one of the escalating ones",
+      !!row2 && (row2.includes(`driven by ${victim.code}`) || row2.includes(`driven by ${second.code}`)),
+      where2);
+
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: restore.get(c.id) ?? null,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+  }
 }
 
 /* ------------------------------------------------------ 10. framework admin */
@@ -1078,7 +1268,7 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     check("the pressed state says which theme is on",
       (await page.getAttribute('.themetoggle button:has-text("Light")', "aria-pressed")) === "true");
 
-    await page.goto("/assess/controls");
+    await gotoStable(page, "/assess/controls");
     check("the choice survives navigation",
       (await page.getAttribute("html", "data-theme")) === "light");
 
@@ -1160,18 +1350,7 @@ console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
 }
 
 /* ---------------------------------------------------------------- cleanup */
-console.log("\nCleaning up QA data and accounts…");
-await purge(PM.email);
-await purge(OTHER.email);
-await purge(BOSS.email);
-const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
-check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
-  (leftovers ?? []).map((u) => u.email).join(","));
-const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
-const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
-check("no QA sign-in accounts left behind either", strays.length === 0,
-  strays.map((u) => u.email).join(","));
+await teardown();
 
 console.log(`\n${pass} passed, ${fail} failed`);
-await browser.close();
 process.exit(fail === 0 ? 0 : 1);

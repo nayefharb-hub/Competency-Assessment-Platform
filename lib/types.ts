@@ -204,6 +204,22 @@ export interface CeResult {
   gap: number | null;
   health: Health | null;
   weakest: { control_code: string; level: Level } | null;
+  /**
+   * Active controls sitting 2+ levels below their OWN target — the single-control
+   * escalation rule. Recorded so the UI can say WHICH control forced a verdict,
+   * rather than showing a label the numbers beside it appear to contradict.
+   * Empty when nothing escalates. Worst shortfall first, ties by control code.
+   */
+  escalated_by: { control_code: string; level: Level; target: Level }[];
+  /**
+   * True when escalation is the ONLY reason health is "deficit" — i.e. the CE
+   * mean would have read Role Ready or Minor Gap on its own. This is the case
+   * that reads as a contradiction on screen (a CE at 3.0 against a target of 3
+   * labelled Capability Deficit), so it is the case that needs explaining.
+   * When the mean is ALSO more than half a level short, the label needs no
+   * defence and the explanation would be noise.
+   */
+  escalation_drove_health: boolean;
   scored_controls: number;
   active_controls: number;
 }
