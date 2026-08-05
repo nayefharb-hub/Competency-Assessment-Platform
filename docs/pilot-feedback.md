@@ -1046,6 +1046,64 @@ the move to direct Postgres (N16) both drop below:
    decision about how the assessment feels, not a performance fix — it belongs
    in `/office-hours`, before the pilot rather than after it.
 
+#### Step 1 done (2026-08-05): the unexplained time is gone
+
+The timers were deployed and the owner ran the test — sign in, score controls,
+export the runtime logs. Two saves, in production:
+
+```
+POST /assess -> 303
+    [phase] 145ms  auth: validate token + load app_user
+    [phase]  59ms  action: find assessment
+    [phase]  71ms  action: write the score
+    [phase]   0ms  action: revalidatePath
+    [phase] 276ms  action: save score (whole action)
+```
+
+145 + 59 + 71 + 0 ≈ **276**. The second save: 229ms total against 110 + 63 + 56.
+**The action fully accounts for itself.** The 253–986ms that was neither queries
+nor rendering is not present. `revalidatePath` remains 0ms, confirming it dead
+as a suspect rather than merely unproven.
+
+**What the owner feels — 1–1.5s to move between controls — is now structural.**
+
+| | |
+|---|---|
+| POST server work | ~276ms |
+| GET server work | ~130–210ms |
+| Kuwait → Frankfurt, **twice** | ~500ms |
+| browser render | the remainder |
+
+No query tuning touches the two-round-trips-per-control multiplier, which is
+exactly what this entry predicted. **Step 3 is now the only large lever.**
+
+**Step 2 is confirmed worth its afternoon.** `auth: validate token + load
+app_user` costs **83–174ms on every request** — the largest single server-side
+item in the export. Removing the `/auth/v1/user` round trip takes ~20–70ms off
+each of ~264 trips, which is the ≈17 seconds this entry estimated.
+
+**A correction, because it sent the owner on an errand.** Reviewing an earlier
+export, the author flagged Supabase calls at 107–136ms as anomalous against an
+expected ~35ms (Supabase's 31ms overhead plus co-located network) and asked for
+the project region to be re-checked — which `docs/regions.md` had already
+settled as `eu-central-1`. The full export shows why the flag was wrong:
+
+- **First call on a fresh instance costs 105–306ms** — connection setup, paid
+  once per instance.
+- **Steady state is 55–90ms**, which matches the median per-call cost of **66ms**
+  this very entry records. The ~35ms figure was an ideal the project has never
+  measured, so there was no discrepancy to explain.
+
+Region was confirmed correct incidentally: every function ran in `fra1`. The
+`cdg1` and `sfo1` rows are edge middleware and a redirect, which run near the
+user by design and are not the function.
+
+**One incidental finding, logged not fixed.** `/results` issues **7 sequential
+Supabase calls totalling ~753ms** (56, 62, 89, 92, 131, 137, 148ms, plus auth) —
+`app/results/page.tsx` uses sequential `await`s with no `Promise.all`. It is
+nobody's bottleneck today because the page is viewed once rather than 132 times,
+but several of those are independent and could overlap.
+
 ### N19 — a slow database logged the admin out and said they were never invited
 
 **Status:** Fixed.
