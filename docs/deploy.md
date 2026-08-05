@@ -159,8 +159,30 @@ only an immutable `PUBLIC_PATHS`. That leaves three, all safe:
 | `lib/framework.ts:137` | `inFlight` — single-flight dedupe | **Improves** under concurrency: it stops two simultaneous loads both hitting the database, which it could never do when an instance served one request at a time. |
 
 Viewer resolution (`lib/auth.ts`) uses React's `cache()` — request-scoped, and
-therefore correct when requests interleave. **No user-specific state at module
-scope.**
+therefore correct when requests interleave.
+
+**One argued exception exists (2026-08-05): `viewerMemo` in `lib/auth.ts`.**
+The rule's original wording was "none exists"; it is now "one exists, and here
+is why it cannot leak". A server action and the render of its redirect target
+are two passes of ONE request that `cache()` does not span, so every save
+authenticated twice. `viewerMemo` is a `TTLMap` keyed by the **full access
+token** — two users share an entry only by sharing a token, which is theft,
+not a collision. TTL 2s (spans action→render, not two human interactions),
+LRU-capped at 200, stores only `status: "ok"` (a transient DB failure is
+never replayed — the N19 rule), purged by `signOut()`. Full reasoning in
+`docs/eng-plan-save-latency.md`.
+
+**Sign-out and the token window (decision D5, 2026-08-05).** Session tokens
+are verified **locally** (`getClaims()`, ES256 + cached JWKS) rather than by a
+per-request call to Supabase Auth. Measured consequence: Supabase's
+`getUser()` refuses a replayed token immediately after sign-out; local
+verification cannot see that revocation, so a **captured** token now outlives
+logout by up to the access-token lifetime. Decided: accept, and **shorten the
+access-token lifetime to 15 minutes** — Supabase → Authentication → Sessions →
+JWT expiry `3600 → 900` (owner step). Capturing a token at all requires a
+compromised browser or TLS: the cookie is httpOnly + Secure. Off-boarding is
+unaffected — removing someone from `app_user` still locks them out on their
+next request, because the allowlist select runs on every request either way.
 
 **One known race, small and pre-existing.** In `getFrameworkUncached`, if
 `invalidateFramework()` runs while a load is in flight, that load's `.then()`

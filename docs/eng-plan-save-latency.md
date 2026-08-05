@@ -1,7 +1,8 @@
 # Eng plan: cut the save round trips (N18 step 2, measured)
 
-Status: REVIEWED — /plan-eng-review passed 2026-08-05 (report at bottom).
-Awaiting the owner's A/B/C decision (D1) before any code is written.
+Status: OPTION A CHOSEN (D1) and implemented 2026-08-05. Three deviations from
+the reviewed text, each discovered during implementation and decided rather
+than slid past — see "What implementation changed" at the bottom.
 
 ## Problem, measured
 
@@ -224,3 +225,33 @@ replay after logout, cross-user memo bleed, cached-failure amplification.
 assert) folded into A1 above. The decisive property: every getClaims failure
 path degrades to server-side validation, never to trust, and both options
 preserve the allowlist select — the gate that actually governs access.
+
+## What implementation changed (2026-08-05)
+
+Three findings from building it, each a correction to the reviewed text:
+
+1. **The A1 precondition was already met.** The project signs sessions with
+   ES256 (`kid` present — verified by decoding a live token). No dashboard
+   key migration needed; local verification works from the first deploy.
+
+2. **The assessment half of A2 is designed-infeasible as written.** The render
+   does not call `findAssessment` — it calls `findAssessmentWithScores`, a
+   different query whose payload includes the score the action just wrote.
+   Memoizing it would serve stale scores; memoizing the bare row buys the
+   render nothing. A2 therefore ships as the viewer memo only, and the honest
+   round-trip count is **4, not 3** (app_user, find, write, render's
+   scores query). The save RPC follow-up remains the only path to 3.
+
+3. **A1 changes what Sign out means, and the review under-called it.**
+   Measured, not assumed: after `signOut()`, Supabase's `getUser()` refuses a
+   replayed access token immediately ("Auth session missing") — the server
+   tracks sessions. Local verification cannot see that revocation, so with A1
+   a captured token outlives logout by up to the token lifetime. The CSO
+   scenario table's "no privilege beyond the documented window" was wrong on
+   this point. Decided as **D5: accept, and shorten the access-token lifetime
+   to 15 minutes** (owner dashboard step: Supabase → Auth → JWT expiry
+   3600 → 900), shrinking any replay window 4×. Capturing the token at all
+   requires a compromised browser or TLS (cookie is httpOnly + Secure).
+   Consequences: the D3 logout-replay e2e is unobservable under this decision
+   (replay legitimately recomputes to valid) and is dropped; the D3 memo purge
+   ships anyway as defense-in-depth and costs one line.

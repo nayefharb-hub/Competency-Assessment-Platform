@@ -11,7 +11,9 @@
     "invite": "node --env-file=.env.local scripts/invite.mjs",
     "verify:db": "node --env-file=.env.local scripts/verify-db.mjs",
     "e2e": "node --env-file=.env.local scripts/e2e.mjs --write",
-    "demo": "node --env-file=.env.local scripts/demo.mjs"
+    "demo": "node --env-file=.env.local scripts/demo.mjs",
+    "test:unit": "node --experimental-strip-types --test scripts/ttl-map.test.mjs",
+    "perf:save": "node --env-file=.env.local scripts/perf-save.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
