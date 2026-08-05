@@ -103,7 +103,9 @@ type Viewer =
  *   a transient DB failure must stay transient), `anon`/`uninvited` are
  *   cheap to recompute and dangerous to cache;
  * - 2s TTL spans action→render of one request, not two human interactions;
- *   LRU cap 200. signOut() deletes the entry (review D3).
+ *   LRU cap 200. signOut() deletes the entry (review D3) — in THIS instance
+ *   only: under Fluid a sibling instance that resolved the same token seconds
+ *   earlier still answers from its own map until the 2s expires.
  * - staleness bound: a role or must_change_password flip lands within 2s.
  */
 const viewerMemo = new TTLMap<string, Viewer>(2_000, 200);

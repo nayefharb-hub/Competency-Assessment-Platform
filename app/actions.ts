@@ -1,6 +1,6 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole, requireUser } from "@/lib/auth";
 import { getFramework, invalidateFramework } from "@/lib/framework";
@@ -25,52 +25,16 @@ function fail(path: string, message: string): never {
 
 /* ---------------------------------------------------------------- assessee */
 
-/** Save one control's self-score and move on. Assessment is derived from the
- *  session, never from the form — a posted id would be a way to score someone
- *  else's sheet.
- *
- *  INSTRUMENTED (N18). This POST carries 253-986ms that is neither database nor
- *  rendering: the queries account for 190-436ms of it, and the response is a 303
- *  redirect, so no page is built here. The timers below split the remainder into
- *  the three things it can be — the reads, the write, and revalidatePath — so
- *  the next change is aimed rather than guessed. Remove them once it is. */
-export async function saveSelfScoreAction(formData: FormData): Promise<void> {
-  return phase("action: save score (whole action)", async () => {
-    const user = await requireUser();
-    const assessment = await phase("action: find assessment", () => findAssessment(user.id));
-    if (!assessment) fail("/assess", "No assessment has been assigned to you for this cycle.");
-    const code = String(formData.get("control") ?? "");
-    const level = levelOf(formData.get("level"));
-    const evidence = String(formData.get("evidence") ?? "").trim() || null;
-    const next = String(formData.get("next") ?? "");
-
-    if (level === null) fail(`/assess?c=${code}`, "Pick a level before moving on.");
-
-    try {
-      await phase("action: write the score", () =>
-        saveSelfScore(user, assessment, code, level, evidence));
-    } catch (e) {
-      fail(`/assess?c=${code}`, e instanceof Error ? e.message : "Saving failed.");
-    }
-
-    // Kept, not removed. On a force-dynamic route there is no server cache to
-    // invalidate, which is what made this look like dead weight — but it also
-    // clears the CLIENT's router cache, and without that a client-side
-    // navigation back to a scored control could show the pre-save payload.
-    // So: measure it before touching it.
-    phaseSync("action: revalidatePath", () => revalidatePath("/assess"));
-    redirect(next ? `/assess?c=${next}` : "/assess/controls?saved=1");
-  });
-}
-
 /**
- * The same save, for the outbox: no redirect, no thrown redirect, an answer
- * instead of a navigation.
+ * Save one control's self-score. The assessment is derived from the SESSION,
+ * never from the client — a posted id would be a way to score someone else's
+ * sheet.
  *
- * `saveSelfScoreAction` above ends in `redirect()`, which works by throwing —
- * fine when a form POST owns the response, useless to a caller that wants to
- * know whether the write landed. This variant returns `{ ok }` so the outbox
- * can decide: drop the entry, or keep it and retry.
+ * Returns `{ ok }` rather than redirecting, because the outbox needs to know
+ * whether the write landed: drop the entry, or keep it and retry. (The former
+ * form-based action that ended in `redirect()` was removed with the save-UX
+ * change — nothing posts a form here any more, and its instrumentation
+ * described a measurement two rounds out of date.)
  *
  * No `revalidatePath`: the PM has already navigated by the time this runs, and
  * the destination fetched its own data. Invalidating here would refetch a page
@@ -80,9 +44,26 @@ export async function commitSelfScoreAction(
   control: string,
   level: number,
   evidence: string | null,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  /** The account that CONFIRMED this answer — see below. */
+  committedBy: string,
+): Promise<{ ok: true } | { ok: false; error: string; reject?: boolean }> {
   try {
     const user = await requireUser();
+
+    // The queue outlives the page, and a server action posts with whatever
+    // session cookie the browser holds NOW. Those are not always the same
+    // person: leave a tab open with a failed save, let a colleague sign in on
+    // the same machine, and the stale tab's retry timer would write one PM's
+    // answer into the other's assessment — authoritative input to an
+    // assessor's sheet, from someone who never gave it.
+    //
+    // `reject` rather than a retry: the mismatch cannot resolve itself, and
+    // retrying it every 30 seconds only widens the window. The answer stays
+    // in its owner's own mirror, under their own key, for when they return.
+    if (user.id !== committedBy) {
+      console.warn(`[commit] refused ${control}: queued by ${committedBy}, session is ${user.id}`);
+      return { ok: false, reject: true, error: "That answer belongs to a different account." };
+    }
     const assessment = await findAssessment(user.id);
     if (!assessment) return { ok: false, error: "No assessment is assigned to you." };
     const lvl = levelOf(level);
@@ -90,10 +71,20 @@ export async function commitSelfScoreAction(
     await saveSelfScore(user, assessment, control, lvl, evidence);
     return { ok: true };
   } catch (e) {
-    // Every failure is retryable from the outbox's point of view — a network
-    // blip and a rejected write look the same to it, and the answer is the
-    // same either way: keep the entry, say so, try again.
-    return { ok: false, error: e instanceof Error ? e.message : "Saving failed." };
+    // requireUser() answers "not signed in", "not on the allowlist" and "must
+    // change password" by CALLING redirect(), which works by throwing. Catching
+    // that turns a navigation into a permanent, silent failure: the outbox
+    // would keep an expired session's answers queued and retry them every 30
+    // seconds forever, showing a count and never saying "sign in again".
+    // unstable_rethrow puts framework control-flow back where it belongs; it
+    // is Next's own supported way to do this inside a catch.
+    unstable_rethrow(e);
+
+    // Anything reaching here is a genuine failure. The detail goes to the
+    // server log, not to the browser: messages like "Supabase assessment
+    // lookup failed: <constraint>" describe our schema to whoever is looking.
+    console.error(`[commit] ${control}: ${e instanceof Error ? e.message : String(e)}`);
+    return { ok: false, error: "Saving failed. It will be retried." };
   }
 }
 

@@ -1615,3 +1615,84 @@ is acceptable for a bank.
 Plus one hazard worth fixing independently of all of the above: `invite remove`
 hard-deletes a live assessment today, silently, via `on delete cascade` from
 `app_user`. Verified against the live database.
+
+### N24 — the review pass the merges skipped, run afterwards
+
+`/review` and `/cso` were run against the merged save-latency and save-UX code
+on 2026-08-05, after the owner made them a standing gate (`CLAUDE.md`). Two
+independent adversarial passes plus a security pass. What they found is the
+argument for the gate.
+
+**Fixed here.**
+
+1. **Cross-account write.** Found independently by BOTH passes, by different
+   routes. A server action posts with whatever session cookie the browser holds
+   *now*, and the outbox outlives the page: leave a tab with a failed save, let
+   a colleague sign in on the same machine, and the stale tab's retry timer
+   writes one PM's answer into the other's assessment — authoritative input to
+   an assessor's sheet, from someone who never gave it. Entries now carry the
+   account that confirmed them and the server refuses a mismatch outright
+   (`reject`, not retry — the mismatch cannot resolve itself). The header
+   comment claiming safety was wrong: it protected the *restore* path, not the
+   live queue.
+2. **`redirect()` swallowed by the action's catch.** `requireUser()` answers
+   "signed out", "not on the allowlist" and "must change password" by throwing
+   a redirect. Catching it turned a navigation into a permanent silent failure:
+   an expired session's answers would requeue every 30s forever while the PM
+   was never sent to sign in, and the password gate became a string. Now
+   `unstable_rethrow`.
+3. **Submit was not gated on the queue** — specified in the plan, missing from
+   the build. Submitting copies `self_level` into `assessor_level` and leaves
+   draft; an answer still queued at that moment is either overwritten by the
+   prefill or rejected forever by the draft check. Both end with the assessor
+   reading a number the PM did not give.
+4. **A re-commit reset `tries` to zero**, unmounting the failure banner while
+   the network was still down and restarting the backoff. Bookkeeping also ran
+   by object identity while its own comment claimed control code, so a
+   re-commit mid-flush incremented a detached object and the mirror recorded a
+   failure that never happened.
+5. **The banner was blind for the whole of a first attempt.** `tries` only
+   rises *after* an attempt returns, and against a hung server that is minutes.
+   Age now counts too, and each attempt has a 15s timeout so one hung request
+   cannot swallow every wake-up including "the network is back".
+6. **A queued answer could silently overwrite a later choice.** The panel
+   rendered the server's older value; a PM could look at it, accept it, change
+   nothing — and the queued answer would land on top. The panel now seeds from
+   the outbox when it holds something.
+7. Smaller: `isEntry` accepted a mirror without `tries`, which made the backoff
+   `NaN` and `setTimeout` coerce it to 0 — a tight retry loop with the banner
+   permanently hidden. The countdown rendered against a frozen clock. The
+   offline banner promised "saved on this device" even when localStorage was
+   refusing writes. `cap.last` survived sign-out, resuming the next person on a
+   shared machine at the previous PM's control. `pageshow` was missing, so a
+   bfcache restore could leave the app stuck offline. Sign-out with a queue now
+   flushes, and says so plainly if it cannot.
+
+**A flaky test that was a flaky assertion.** "A signature-tampered token is
+refused" passed or failed run to run. The app was never at fault: the test
+flipped the LAST character of the ES256 signature, which carries 2 significant
+bits and 4 that decode to nothing — `A`↔`B` there changes a padding bit and the
+signature still verifies. It now flips the first character. Two consecutive
+clean runs.
+
+**Recorded, not fixed — these need an owner decision.**
+
+- **An assessor can approve their own assessment.** `approveAction` gates on
+  role only; there is no `assessee_id !== assessor.id` check, and the Head of
+  PMO holds both roles. If they are themselves assessed, they can self-score,
+  submit and approve with no second party in the trail. For a bank capability
+  record this is the question an auditor asks first.
+- **Raw PostgREST error text still reaches `?error=` URLs** from the admin and
+  review actions (constraint and column names, under the service-role key),
+  landing in browser history and access logs. The commit path was fixed; the
+  rest is pre-existing and wider than this diff.
+- **`?error=` is reflected into a styled alert banner.** React escapes it, so
+  this is phishing rather than XSS — an attacker-supplied sentence rendered in
+  the app's own error styling at the real origin.
+- **Two tabs clobber the localStorage mirror**: each writes its whole queue,
+  and an empty queue calls `removeItem`, so one tab can erase another's unsent
+  answers. Needs a merge-on-write or a `storage` listener; deliberately not
+  attempted late in a session, since a half-tested fix here loses answers.
+- **The mirror survives sign-out** with control codes, levels and free-text
+  evidence under a key naming the user's UUID. That is the accepted cost of
+  surviving a crash (D8); the sign-out warning is the mitigation.

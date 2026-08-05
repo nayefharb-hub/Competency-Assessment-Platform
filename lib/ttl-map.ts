@@ -9,8 +9,14 @@
  * This is per-user state at module scope, which the Fluid Compute rule
  * (docs/deploy.md) forbids by default. The argued exception lives where the
  * maps are declared; the properties that make it safe live here:
- * - every entry expires after `ttlMs` (checked on read, no timers);
- * - the map is capped: inserting past `max` evicts the oldest entry;
+ * - a served entry is never older than `ttlMs`, because expiry is checked on
+ *   READ. Note what that does NOT mean: an entry nobody asks for again is not
+ *   erased on a timer, so it stays resident until evicted. On a 9-user
+ *   deployment a Fluid instance may never reach the cap, so assume the last
+ *   few tokens it saw are still in its memory;
+ * - the map is capped: inserting past `max` evicts the OLDEST INSERTED entry.
+ *   This is FIFO, not LRU — `get` does not refresh recency. Fine for a 2s
+ *   window, and worth knowing before reusing this class somewhere it matters;
  * - keys are never enumerated or logged by this class.
  */
 export class TTLMap<K, V> {

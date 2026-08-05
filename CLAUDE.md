@@ -124,6 +124,21 @@ written tests.
 | **Merging anything containing code** | `/review` on the diff |
 | A diff touching **auth, sessions, storage, or the allowlist** | `/cso` as well |
 | A **user-visible** change reaching production | `/qa` after it deploys |
+| **Any push containing code** | Read the **SonarCloud** findings for it |
+
+**SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
+one of two answers, and the answer is written down: *fix it*, or *why it is a
+false positive here*. A finding left un-triaged is the same as an unread
+warning — it trains the next reader to skip the list.
+
+**Access, as of 2026-08-05:** `sonarcloud.io` is **not reachable from the
+Claude Code environment** — the network policy blocks it and there is no
+`SONAR_TOKEN`, so findings cannot be fetched here. Until that changes the
+owner pastes them in, the same way Vercel log exports have been handled all
+along. To close the gap properly: allow `sonarcloud.io` in the environment's
+network policy and set `SONAR_TOKEN`, after which
+`GET /api/issues/search?componentKeys=<project>&resolved=false` can be read
+directly.
 
 Deliberately **not** "before every push". Most pushes here are documentation,
 and a full adversarial pass on a `STATUS.md` edit teaches everyone to skim the

@@ -7,6 +7,7 @@ import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
 import OutboxBanner from "./outbox-banner";
 import OfflineBanner from "./offline-banner";
+import SignOutLink from "./sign-out-link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -67,7 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
               <span className="whoami-right">
                 <ThemeToggle current={theme} />
-                <a href="/logout">Sign out</a>
+                <SignOutLink />
               </span>
             </div>
           )}

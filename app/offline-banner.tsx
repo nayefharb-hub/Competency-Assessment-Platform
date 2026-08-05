@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { mirrorWorks } from "@/lib/outbox";
 
 /**
  * "You are offline" — one statement, app-wide.
@@ -19,16 +20,22 @@ export default function OfflineBanner() {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    // Read once on mount too: the tab may have gone offline before this
-    // component existed, e.g. a page restored from the back/forward cache.
-    setOffline(navigator.onLine === false);
+    const read = () => setOffline(navigator.onLine === false);
+    read();
     const down = () => setOffline(true);
     const up = () => setOffline(false);
     window.addEventListener("offline", down);
     window.addEventListener("online", up);
+    // A page restored from the back/forward cache does NOT remount React or
+    // re-run effects, so the mount-time read above cannot cover it — the tab
+    // could have gone offline while frozen, or come back while frozen and be
+    // stuck showing a warning that blocks every link. `pageshow` is the event
+    // that actually fires on restore.
+    window.addEventListener("pageshow", read);
     return () => {
       window.removeEventListener("offline", down);
       window.removeEventListener("online", up);
+      window.removeEventListener("pageshow", read);
     };
   }, []);
 
@@ -36,9 +43,11 @@ export default function OfflineBanner() {
 
   return (
     <div className="banner banner-warn" role="status" aria-live="polite">
-      <b>You are offline.</b> Answers you have already confirmed are saved on
-      this device and will sync when you reconnect. Moving between controls is
-      paused until then.
+      <b>You are offline.</b>{" "}
+      {mirrorWorks()
+        ? "Answers you have already confirmed are saved on this device and will sync when you reconnect."
+        : "This browser will not let the app store anything, so answers you have already confirmed are only held in this tab — keep it open until you reconnect."}{" "}
+      Moving between controls is paused until then.
     </div>
   );
 }
