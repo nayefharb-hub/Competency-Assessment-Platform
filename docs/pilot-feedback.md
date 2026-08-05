@@ -1095,15 +1095,41 @@ network latency), and the first three were each wrong. The rule this arc wrote
 for itself — **measure first, explain second** — applies to arithmetic filler
 exactly as much as to code.
 
-**What would settle it**, and it takes a minute: DevTools → Network, save one
-control, and read the POST and the follow-up GET. `TTFB` minus our measured
-server time is the real network cost; `Content Download` plus rendering is the
-rest. That splits the unexplained remainder into named parts instead of one
-label.
+**Settled (2026-08-05), by measurement rather than DevTools.** Ten real saves
+driven against **localhost** — where network is ~0 — with per-request timing in
+the browser and `PERF_LOG` phases on the server (`/investigate`, disposable
+`qa.perf@example.test` account, deleted after):
 
-Until then: no query tuning touches the two-round-trips-per-control multiplier,
-which is what this entry predicted and still holds. Whether **step 3** is the
-*only* large lever depends on where that remainder actually is.
+| | median |
+|---|---|
+| wall, click → next control on screen | **1327ms** |
+| the POST (action + rendering the next control) | **1250ms** |
+| separate follow-up GET | **0 — there isn't one**; the redirect target streams in the POST response |
+| client (wall − POST) | **~55ms** |
+
+**The full felt delay reproduces with zero network.** Not Kuwait, not the
+browser. The server log names where it lives — one repeating block per save:
+
+```
+auth: validate token + load app_user   ~330ms   (2 Supabase calls)  ← the action
+action: find assessment                ~185ms   (1 call)
+action: write the score                ~180ms   (1 call)
+auth: validate token + load app_user   ~330ms   (2 calls)   ← rendering the next control
+find assessment (render)               ~180ms   (1 call)
+```
+
+**Root cause: seven sequential Supabase round trips per save, two of which are
+a complete second authentication.** The action validates the token and loads
+`app_user`; the render of the next control then does identical work again —
+`authClient` is wrapped in React `cache()`, but the action pass and the render
+pass are separate scopes, so the dedupe never fires between them. Every round
+trip pays the regional RTT (~180ms sandbox→Frankfurt; ~30–150ms
+Vercel→Frankfurt) and they run strictly in series.
+
+So the earlier framing inverts one more time: "structural, only the step 3
+design change helps" was wrong in the useful direction. Round-trip **count** is
+the lever, and it is very tunable — halving the calls roughly halves the felt
+save time before any design change is discussed.
 
 **Step 2 is confirmed worth its afternoon.** `auth: validate token + load
 app_user` costs **83–174ms on every request** — the largest single server-side
