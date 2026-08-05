@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import { currentUser } from "@/lib/auth";
 import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -72,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
           <main>{children}</main>
         </div>
+        <Analytics />
       </body>
     </html>
   );
