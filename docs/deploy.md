@@ -53,8 +53,27 @@ renders fine, because it touches no database, and then sign-in dies with a bare
 `db()`. The Runtime Logs for that deployment name the missing variable outright,
 because `required()` in `lib/supabase/server.ts` says which one it wanted.
 
+**These are TEAM-level (shared) variables, not project-level ones.** That is why
+the environment picker on the project's own Environment Variables screen is
+greyed out and will not open: a shared variable overrides the project one, so the
+project row is read-only by design. Nothing is broken and nothing needs
+unlocking — edit them at **Team Settings → Environment Variables** instead.
+
+Two consequences of them being shared, both worth checking before ticking
+`Preview`:
+- A shared variable applies to **every project linked to it**, so the grant is
+  not scoped to this app.
+- **Deployment Protection is per-project.** The service-role key on a preview URL
+  is only defensible because Vercel Authentication guards *this* project (see
+  Notes). Another project sharing the same variable without that protection would
+  be an unguarded URL holding RLS-bypassing access to real employee data.
+
 Changing a variable does **not** affect existing deployments. Redeploy after
 editing (Deployments → `⋯` → Redeploy), the same way Fluid Compute needs one.
+
+Worth setting while you are there: mark `SUPABASE_SERVICE_ROLE_KEY` **Sensitive**.
+It stops the value being read back out through the API or CLI by anyone with
+project access, and has no effect on how the app reads it.
 
 ## 3. Deploy
 
