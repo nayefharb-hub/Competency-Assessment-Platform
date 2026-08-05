@@ -1,6 +1,10 @@
 # Eng plan: how saving should feel — async saves vs. decoupled Save
 
-Status: DRAFT — under /plan-eng-review. Written after PR #19: server work per
+Status: REVIEWED — SOUND (report at bottom). Sections "Approach 1/2" below
+are the original proposals kept as history; the binding design is
+"The settled design (D7–D10)" — note that D9 replaced approach 1's
+save-on-pick trigger with a Next-only commit. Build after PR #19 merges,
+as its own PR. Written after PR #19: server work per
 save is measured at ~280ms, the felt time at ~0.7–0.8s, and the owner's
 verdict on the preview was "couldn't feel it much". The remaining cost is
 structural — two Kuwait→Frankfurt round trips and a full page navigation per
