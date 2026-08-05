@@ -1696,3 +1696,60 @@ clean runs.
 - **The mirror survives sign-out** with control codes, levels and free-text
   evidence under a key naming the user's UUID. That is the accepted cost of
   surviving a crash (D8); the sign-out warning is the mitigation.
+
+### N25 — one person can assess themselves, end to end
+
+**Found by** the `/cso` pass on 2026-08-05 (recorded in N24), **scoped by the
+owner** immediately after. Logged, deliberately not fixed: the fix is a change
+to the role model, and the owner has asked for `/plan-design-review` before any
+code is written.
+
+**The gap.** `UserRole` is a single value per person — `assessee | assessor |
+admin` (`lib/types.ts:104`) — and the authorisation checks ask only which role
+someone holds, never whether the record in front of them is their own:
+
+- `approveAction` / `approveAssessment` — `requireRole("assessor","admin")` and
+  then an assessment id taken from the form. No `assessee_id !== approver.id`.
+- `saveRevisionsAction` / `setAssessorLevels`, `acceptAllAction` /
+  `acceptAllRemaining` — same shape.
+- `assignAssessment` — an admin may include their own id in the list.
+
+The assessee direction *is* guarded (`saveSelfScore`, `submitSelfAssessment`
+both check `row.assessee_id !== user.id`), so the hole is one-way: nobody can
+score someone else's sheet, but the reviewer can be the person reviewed.
+
+Today the Head of PMO holds `admin`, which carries assessor rights, and is
+also a plausible assessee. The whole path is available to one account:
+assign to self → self-score 132 controls → submit → revise own scores →
+approve. `assessor_id` is then stamped as themselves, and the record is locked
+and published to the dashboard with no second party anywhere in the trail.
+
+**The owner's position (2026-08-05):** *"separation needs to be there — I am
+either an assessor or taking the assessment. Both roles should be independent.
+If I need to score myself then I need to add myself as a project manager, or
+add that role as someone who takes assessments."* Note the wrinkle they raised:
+people are identified by email, so "add myself as a PM" cannot mean a second
+account — one human, one login, and the model has to express *which capacity
+they are acting in* rather than duplicating the person.
+
+**Why this is a design question, not a patch.** A one-line
+`if (row.assessee_id === user.id) throw` would close the approval path and
+leave the shape of the problem untouched. The real questions:
+
+- Is a role a single value, or a **set** (a person is a PM *and* the assessor)?
+- If one person legitimately holds both, who assesses *them*? A second
+  assessor, someone external, or is the Head of PMO's own assessment simply out
+  of scope for this cycle?
+- Does the rule belong in the **data** (a `deleted_at`-style column, an
+  `assessor_id` assigned at assignment time and enforced in the query) or in
+  the **actions**?
+- What does the UI say when the one thing you cannot do is approve the record
+  in front of you — and how does that read to a Head of PMO who is used to
+  having every button?
+- Does an audit trail need to record *who could have* approved, not only who
+  did?
+
+**Next step:** `/plan-design-review` on a written proposal before any code. The
+prototype ships to nine people with a single assessor, so this is not blocking
+the pilot — but it is the first question an auditor asks of a bank capability
+record, and it is cheaper to settle before the framework is multi-tenant.
