@@ -630,3 +630,23 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
    there for the wide-viewport case only. */
 .optlist .opt b { line-height: 1.35; }
 h1, h2, h3 { line-height: 1.25; }
+
+/* ---------- outbox banner (save UX) ----------
+   Sits above <main> on every signed-in page and renders only while answers
+   are queued. Uses the deficit tier because an unsaved answer is a problem
+   the PM must be able to act on — and per DESIGN.md the colour is never the
+   only signal: the count and "Retry now" carry it in words. */
+.outbox-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-left-width: 3px;
+  border-left-color: var(--deficit);
+  background: var(--deficit-bg); color: var(--deficit);
+  border-radius: var(--radius-in); padding: 10px 14px; margin-bottom: 14px;
+  font-size: 13.5px;
+}
+.outbox-banner .btn {
+  margin-left: auto; border-color: currentColor; color: inherit;
+  background: transparent; font-weight: 600;
+}
+.outbox-banner .btn:hover:not(:disabled) { background: var(--deficit); color: var(--surface); }
+.outbox-banner .btn:disabled { opacity: .6; cursor: default; }

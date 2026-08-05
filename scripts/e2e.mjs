@@ -279,6 +279,32 @@ async function submitAction(page, click, timeout = 20_000) {
   await page.waitForLoadState("networkidle");
 }
 
+/**
+ * Score one control and confirm it — the save UX change made these two
+ * separate acts, so the helper does both and waits for the answer to actually
+ * reach the server.
+ *
+ * "Next control" navigates immediately and the write happens in the
+ * background, so there is no response to await: instead this polls the outbox
+ * through the DOM. The banner is the app's own statement that answers are
+ * still queued, so waiting for it to disappear waits for exactly the thing the
+ * user waits for.
+ */
+async function scoreAndNext(page, level, evidence) {
+  await page.check(`input[name="level"][value="${level}"]`);
+  if (evidence !== undefined) await page.fill("#evidence", evidence);
+  // Wait for the COMMIT, which is the server-action POST. Waiting on the
+  // failure banner instead would be worse than useless: it only appears when
+  // something went wrong, so "no banner" is true the instant the click lands
+  // and the assertion would race the write it is meant to wait for. That is
+  // exactly how this helper was wrong the first time.
+  const committed = page.waitForResponse(
+    (r) => r.request().method() === "POST", { timeout: 20_000 });
+  await page.click('.assess-actions button:has-text("Next control"), .assess-actions button:has-text("Review before submitting")');
+  await committed;
+  await page.waitForLoadState("networkidle");
+}
+
 const idOf = async (email) =>
   (await db.from("app_user").select("id").eq("email", email).single()).data.id;
 /**
@@ -512,9 +538,7 @@ console.log("\n[3] Role gates and target blinding");
 console.log("\n[4] Self-scoring persists to Postgres");
 {
   await pm.page.goto("/assess?c=4.3.1.1");
-  await pm.page.check('input[name="level"][value="3"]');
-  await pm.page.fill("#evidence", "QA evidence line");
-  await submitAction(pm.page, () => pm.page.click('.assess-actions button[type="submit"]'));
+  await scoreAndNext(pm.page, 3, "QA evidence line");
 
   const a = await assessmentOf(PM.email);
   const control = activeControls.find((c) => c.code === "4.3.1.1");
@@ -580,36 +604,281 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
-   * Round-trip budget (eng-plan-save-latency). A warm, steady-state save is
-   * exactly FOUR Supabase calls: app_user, find assessment, write score, and
-   * the render's assessment+scores query. Asserted by counting the server's
-   * own `[supabase` log lines, so a regression that quietly re-adds a call —
-   * a second auth validation, a duplicated lookup — fails the suite instead
-   * of fading into "the app feels slower".
+   * THE COMMIT RULE (eng-plan-save-ux, D9). Next is the only thing that
+   * writes. Everything else — Previous, links, sign-out — leaves the pick
+   * unconfirmed, and an unconfirmed pick must not survive: the PM was still
+   * deciding, and a level that appears pre-selected on their return is an
+   * answer the record claims they gave.
    *
-   * Re-saves 4.3.1.1 with identical values so the fixture state the filter
-   * checks above depend on (exactly one scored control) is untouched.
-   * Sleeps past the 2s viewer-memo TTL first: within TTL a save costs 3
-   * (the preceding GET primed the memo), which is real but timing-dependent;
-   * the steady state — a human takes >2s per control — is what gets pinned.
-   * Requires E2E_SERVER_LOG pointing at the `next start` log; skips loudly
-   * when unset rather than passing vacuously.
+   * Uses 4.3.1.5, deliberately NOT the control the earlier checks depend on,
+   * and leaves it unscored — which is also what makes the assertion real.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.1.5");
+    await pm.page.check('input[name="level"][value="4"]');
+    check("an unconfirmed pick says so",
+      (await pm.page.locator('text=Not saved yet').count()) > 0);
+
+    await pm.page.click('.assess-actions a:has-text("Previous")');
+    await pm.page.waitForLoadState("networkidle");
+    await pm.page.goto("/assess?c=4.3.1.5");
+    check("Previous does not commit — the pick is cleared, not remembered",
+      !(await pm.page.isChecked('input[name="level"][value="4"]')));
+
+    const a = await assessmentOf(PM.email);
+    const c5 = activeControls.find((c) => c.code === "4.3.1.5");
+    const { data: row5 } = await db.from("score").select("self_level")
+      .eq("assessment_id", a.id).eq("control_id", c5.id).maybeSingle();
+    check("and nothing was written for it", !row5 || row5.self_level === null,
+      JSON.stringify(row5));
+  }
+
+  /*
+   * The banner is for FAILURES, not for work in progress. Every Next has a
+   * commit in flight for a moment; if that showed the red banner, the one
+   * signal that means "act on this" would fire on every click and stop
+   * meaning anything. Reported by the owner against the first build.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.1.2");
+    await pm.page.check('input[name="level"][value="2"]');
+    await pm.page.click('.assess-actions button:has-text("Next control")');
+    // Watch across the whole commit: it must never appear, not merely be
+    // absent once the commit is done.
+    let seen = false;
+    for (let i = 0; i < 25; i++) {
+      if (await pm.page.locator(".outbox-banner").count()) { seen = true; break; }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    check("a successful save shows no failure banner", !seen);
+    const a0 = await assessmentOf(PM.email);
+    const c2 = activeControls.find((c) => c.code === "4.3.1.2");
+    await db.from("score").delete().eq("assessment_id", a0.id).eq("control_id", c2.id);
+  }
+
+  /*
+   * SKIPPING (decision D11). Leaving a control unanswered is allowed — a PM
+   * should be able to come back to a hard one — but never by accident: the
+   * button says which of the two things the click will do.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.1.3");
+    check("with nothing picked, the button offers to skip",
+      (await pm.page.locator('.assess-actions button:has-text("Skip for now")').count()) === 1);
+    await pm.page.check('input[name="level"][value="1"]');
+    check("once an answer is picked, it offers to advance instead",
+      (await pm.page.locator('.assess-actions button:has-text("Next control")').count()) === 1);
+  }
+
+  /*
+   * RESUMING (decision D12, as revised). /assess with no control named comes
+   * back to the control the PM was last on — including one they went back to
+   * re-read, which "first unanswered" would have overruled. Falls back to the
+   * first unanswered control when there is no cookie yet.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.2.2");
+    await pm.page.waitForSelector(".optlist");
+    await pm.page.goto("/assess");                       // as the menu link does
+    await pm.page.waitForLoadState("networkidle");
+    check("the menu returns to the control the PM was last on",
+      (await pm.page.locator(".crumb").innerText()).includes("4.3.2.2"),
+      await pm.page.locator(".crumb").innerText());
+
+    // Re-reading an ANSWERED control is a deliberate act, so it must be
+    // remembered too — this is the case that separates this rule from
+    // "first unanswered", which would send them back to the work instead.
+    await pm.page.goto("/assess?c=4.3.1.1");
+    await pm.page.waitForSelector(".optlist");
+    await pm.page.goto("/assess");
+    await pm.page.waitForLoadState("networkidle");
+    check("even when that control is already answered",
+      (await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
+      await pm.page.locator(".crumb").innerText());
+
+    // No cookie (a new device) falls back to where the work is.
+    await pm.page.context().clearCookies({ name: "cap.last" });
+    await pm.page.goto("/assess");
+    await pm.page.waitForLoadState("networkidle");
+    check("with no remembered position, it opens the first unanswered control",
+      !(await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
+      await pm.page.locator(".crumb").innerText());
+  }
+
+  /*
+   * OFFLINE (decision D13). Measured before this was written: asking the
+   * browser to navigate with no connection lands the PM on Chrome's own error
+   * page, and the app — including the failure banner that would have
+   * reassured them — is gone. So the click commits, and then declines to
+   * navigate.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.2.4");
+    await pm.page.waitForSelector(".optlist");
+    await pm.page.context().setOffline(true);
+    await pm.page.check('input[name="level"][value="2"]');
+    await pm.page.click('.assess-actions button:has-text("Next control")');
+    await pm.page.waitForTimeout(1_500);
+
+    check("going offline does not take the PM out of the app",
+      (await pm.page.locator(".optlist").count()) > 0 && pm.page.url().includes("4.3.2.4"),
+      pm.page.url());
+    check("and it says so, app-wide",
+      (await pm.page.locator("text=You are offline").count()) > 0);
+
+    // EVERY navigation behaves the same way offline, not just Next. Guarding
+    // one button and leaving the links to fail would give the same situation
+    // two different outcomes depending on where the PM clicked.
+    await pm.page.click('.assess-actions a:has-text("Previous")');
+    await pm.page.waitForTimeout(1_000);
+    check("Previous is held back too, rather than breaking the page",
+      pm.page.url().includes("4.3.2.4") && (await pm.page.locator(".optlist").count()) > 0,
+      pm.page.url());
+
+    await pm.page.click('a:has-text("Back to controls")');
+    await pm.page.waitForTimeout(1_000);
+    check("and so is the rest of the app's navigation",
+      pm.page.url().includes("4.3.2.4"), pm.page.url());
+
+    await pm.page.context().setOffline(false);
+    await pm.page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await pm.page.waitForTimeout(2_000);
+    check("the notice clears once the connection is back",
+      (await pm.page.locator("text=You are offline").count()) === 0);
+    await pm.page.click('.assess-actions a:has-text("Previous")');
+    // A client-side navigation completes without a load event, so networkidle
+    // can return while the router is still working — wait for the URL itself.
+    await pm.page.waitForURL((u) => !u.href.includes("4.3.2.4"), { timeout: 10_000 })
+      .catch(() => {});
+    check("and navigation works again",
+      !pm.page.url().includes("4.3.2.4"), pm.page.url());
+
+    // Tidy: this test scored a control the later fixture assumptions do not expect.
+    const aOff = await assessmentOf(PM.email);
+    const c24 = activeControls.find((c) => c.code === "4.3.2.4");
+    await db.from("score").delete().eq("assessment_id", aOff.id).eq("control_id", c24.id);
+  }
+
+  /*
+   * THE OUTAGE (eng-plan-save-ux). The point of the outbox is that a PM can
+   * keep working through a network failure and lose nothing. Simulated by
+   * aborting the server-action POST — indistinguishable, from the browser's
+   * side, from the network being gone.
+   *
+   * Asserts the three properties the design exists for: the failure is
+   * VISIBLE, it FOLLOWS the PM off the page that caused it, and the answer
+   * still LANDS once the network returns.
+   */
+  {
+    // Intercept POSTs to ANY path, not just /assess: a server action posts to
+    // whatever URL the browser is currently on, so once the PM walks to
+    // /results the retry posts to /results. A pattern scoped to /assess let
+    // that retry through, the queue drained on its own, and the test then
+    // clicked a button that had correctly disappeared.
+    let offline = true;
+    await pm.page.route("**/*", (route) => {
+      if (offline && route.request().method() === "POST") return route.abort();
+      return route.continue();
+    });
+
+    await pm.page.goto("/assess?c=4.3.1.4");
+    await pm.page.check('input[name="level"][value="5"]');
+    await pm.page.click('.assess-actions button:has-text("Next control")');
+
+    await pm.page.waitForSelector(".outbox-banner", { timeout: 10_000 });
+    check("a failed save is stated, with a count",
+      /1 answer/.test(await pm.page.locator(".outbox-banner").innerText()),
+      await pm.page.locator(".outbox-banner").innerText());
+
+    // The navigation is a client-side push that runs BESIDE the failing write,
+    // so it lands on its own schedule — wait for it rather than assuming it
+    // beat the banner. What is being asserted is that it happens at all: a
+    // failed save must not strand the PM on the control they just answered.
+    await pm.page.waitForURL(/c=4\.3\.1\.5/, { timeout: 10_000 }).catch(() => {});
+    check("and navigation still happened — the PM was not held up",
+      pm.page.url().includes("c=4.3.1.5"), pm.page.url());
+
+    // The failure must outlive the page that produced it: this is the whole
+    // reason the outbox lives in the layout rather than the assess page.
+    await pm.page.goto("/results");
+    await pm.page.waitForSelector(".outbox-banner", { timeout: 10_000 });
+    check("the warning follows the PM to another page",
+      (await pm.page.locator(".outbox-banner").count()) === 1);
+
+    offline = false;
+    await pm.page.click('.outbox-banner button:has-text("Retry now")');
+    await pm.page.waitForFunction(() => !document.querySelector(".outbox-banner"),
+      null, { timeout: 20_000 });
+
+    const a = await assessmentOf(PM.email);
+    const c4 = activeControls.find((c) => c.code === "4.3.1.4");
+    const { data: row4 } = await db.from("score").select("self_level")
+      .eq("assessment_id", a.id).eq("control_id", c4.id).maybeSingle();
+    check("the queued answer reaches the database once the outage ends",
+      row4?.self_level === 5, JSON.stringify(row4));
+
+    await pm.page.unroute("**/*");
+    // Put the fixture back: the filter checks above assume exactly one scored
+    // control, and this test just added a second.
+    await db.from("score").delete().eq("assessment_id", a.id).eq("control_id", c4.id);
+  }
+
+  /*
+   * Round-trip budget (eng-plan-save-latency + save-ux). The commit is now a
+   * server action fired from the client with navigation running beside it, so
+   * the budget is counted differently but still counted: a warm commit costs
+   * THREE Supabase calls (app_user, find assessment, write) and the
+   * navigation GET costs its own two — no write rides along with it.
+   *
+   * Re-commits 4.3.1.1 with identical values so the fixture state the filter
+   * checks above depend on is untouched. Sleeps past the 2s viewer-memo TTL
+   * first: within TTL a commit costs fewer, which is real but timing-
+   * dependent; the steady state — a human takes >2s per control — is what
+   * gets pinned. Requires E2E_SERVER_LOG; skips loudly when unset.
    */
   {
     const LOG = process.env.E2E_SERVER_LOG;
     if (LOG) {
       const { readFileSync } = await import("node:fs");
       await pm.page.goto("/assess?c=4.3.1.1");
+      // A CHANGED value, deliberately: re-entering what is already saved is not
+      // dirty and correctly commits nothing, which measures the navigation
+      // alone. (That no-op behaviour is asserted on its own below.)
       await pm.page.check('input[name="level"][value="3"]');
-      await pm.page.fill("#evidence", "QA evidence line");
+      await pm.page.fill("#evidence", "QA evidence line, revised");
       await new Promise((r) => setTimeout(r, 2_200)); // past the viewer-memo TTL
       const mark = readFileSync(LOG, "utf8").length;
-      await submitAction(pm.page, () => pm.page.click('.assess-actions button[type="submit"]'));
+      const committed = pm.page.waitForResponse(
+        (r) => r.request().method() === "POST", { timeout: 20_000 });
+      await pm.page.click('.assess-actions button:has-text("Next control")');
+      await committed;
+      await pm.page.waitForLoadState("networkidle");
       await new Promise((r) => setTimeout(r, 500)); // let the server log flush
       const lines = readFileSync(LOG, "utf8").slice(mark)
         .split("\n").filter((l) => l.includes("[supabase "));
-      check("a warm save costs exactly 4 supabase round trips",
-        lines.length === 4, `${lines.length}: ${lines.join(" | ")}`);
+      const writes = lines.filter((l) => l.includes("/rest/v1/score"));
+      check("a warm commit + navigation costs 5 supabase round trips",
+        lines.length === 5, `${lines.length}: ${lines.join(" | ")}`);
+      check("exactly one of them is the write",
+        writes.length === 1, `${writes.length}`);
+
+      // Re-confirming an unchanged answer must not write. A PM paging back
+      // through 132 controls to check their work would otherwise re-save
+      // every one of them.
+      await pm.page.goto("/assess?c=4.3.1.1");
+      await new Promise((r) => setTimeout(r, 2_200));
+      const mark2 = readFileSync(LOG, "utf8").length;
+      await pm.page.click('.assess-actions button:has-text("Next control")');
+      // No POST to await here — that IS the assertion. Wait for the navigation
+      // instead, then give a write, if one wrongly fired, time to show up.
+      await pm.page.waitForURL(/c=4\.3\.1\.2/, { timeout: 10_000 }).catch(() => {});
+      await pm.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 500));
+      const after = readFileSync(LOG, "utf8").slice(mark2)
+        .split("\n").filter((l) => l.includes("/rest/v1/score"));
+      check("re-confirming an unchanged answer writes nothing",
+        after.length === 0, `${after.length}`);
     } else {
       console.log("  – round-trip budget not asserted: set E2E_SERVER_LOG to the next-start log path");
     }
@@ -624,7 +893,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
     for (const code of ["4.3.1.1", "4.5.1.1"]) {
       await pm.page.goto(`/assess?c=${code}`);
       const onScreen = await pm.page.evaluate(() => {
-        const r = document.querySelector('button[type="submit"]').getBoundingClientRect();
+        const r = document.querySelector('.assess-actions button').getBoundingClientRect();
         return r.top >= 0 && r.bottom <= window.innerHeight;
       });
       check(`Save is on screen without scrolling at ${w}x${h} (${code})`, onScreen);

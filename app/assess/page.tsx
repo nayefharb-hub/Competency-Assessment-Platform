@@ -1,11 +1,13 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
-import { saveSelfScoreAction } from "@/app/actions";
 import NotAssigned from "./not-assigned";
+import ScorePanel from "./score-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,29 @@ export default async function AssessPage({
   }
   const { row, scores } = mine;
 
-  const code = c && fw.controlByCode(c)?.active ? c : fw.activeControls[0].code;
+  /* Where an unaddressed /assess lands (decision D12, revised by the owner).
+     The menu used to open control 1 every time, so a PM sixty controls in had
+     to find their own place. It now returns them to the control they were last
+     on — including one they had gone back to re-read, which "first unanswered"
+     would have overruled.
+
+     The position is a cookie: a per-device convenience, not part of the
+     assessment record, and the same argument DESIGN.md makes for the theme.
+     Read here so the right control renders on the first pass — no flash, no
+     client redirect. First unanswered is the fallback when there is no cookie
+     (new device, cleared browser), which is also the sensible answer for
+     someone starting out. */
+  const scored = new Set(
+    scores.filter((s) => s.self_level !== null).map((s) => s.control_code),
+  );
+  const firstUnanswered = fw.activeControls.find((ac) => !scored.has(ac.code));
+  const remembered = (await cookies()).get("cap.last")?.value;
+  const resume = (remembered && fw.controlByCode(remembered)?.active ? remembered : null)
+    ?? firstUnanswered?.code;
+  if (!c && !resume && row.state === "draft") redirect("/assess/controls");
+  const code = c && fw.controlByCode(c)?.active
+    ? c
+    : (resume ?? fw.activeControls[0].code);
   const control = fw.controlByCode(code)!;
   const ce = fw.ceOf(control.ce_code);
   const measures = fw.measuresFor(code);
@@ -117,70 +141,24 @@ export default async function AssessPage({
           )}
         </div>
 
-        {/* ---- your answer: pinned, so it never scrolls out of reach ---- */}
+        {/* ---- your answer: pinned, so it never scrolls out of reach ----
+             A client component since the save UX change: the answer is held
+             locally until "Next control" commits it to the outbox, so the PM
+             never waits on a write (docs/eng-plan-save-ux.md). */}
         <div className="scorepanel">
-          <div className="card pad">
-            <form action={saveSelfScoreAction}>
-              <input type="hidden" name="control" value={code} />
-              <input type="hidden" name="next" value={next?.code ?? ""} />
-
-              <div className="mh" style={{ color: "var(--ink)", marginTop: 0 }}>
-                Your level{" "}
-                <span className="muted" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-                  🔒 target hidden while you self-score
-                </span>
-              </div>
-              <div className="optlist" role="radiogroup" aria-label="Proficiency level">
-                {fw.scaleLevels.map((s) => (
-                  <label className="opt" key={s.level}>
-                    <input
-                      type="radio"
-                      name="level"
-                      value={s.level}
-                      defaultChecked={score?.self_level === s.level}
-                      disabled={locked}
-                    />
-                    <span>
-                      <b>{s.label}</b>
-                      <span className="gloss">{fw.glossOf(s.level)}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="evidence">Evidence or example (optional, not scored)</label>
-                <input
-                  className="input"
-                  id="evidence"
-                  name="evidence"
-                  defaultValue={score?.evidence ?? ""}
-                  disabled={locked}
-                  placeholder="A short example of when you did this…"
-                />
-              </div>
-
-              {/* No inline styles here: the mobile rule turns this into a fixed
-                  bar, and an inline style would beat the media query. */}
-              <div className="assess-actions">
-                {!locked && (
-                  <button className="btn btn-primary" type="submit">
-                    {next ? "Save & next control" : "Save & review before submitting"}
-                  </button>
-                )}
-                {prev && (
-                  <Link className="btn btn-secondary" href={`/assess?c=${prev.code}`}>
-                    ← Previous
-                  </Link>
-                )}
-                {locked && next && (
-                  <Link className="btn btn-secondary" href={`/assess?c=${next.code}`}>
-                    Next →
-                  </Link>
-                )}
-              </div>
-            </form>
-          </div>
+          <ScorePanel
+            control={code}
+            nextControl={next?.code ?? null}
+            prevControl={prev?.code ?? null}
+            levels={fw.scaleLevels.map((s) => ({
+              level: s.level,
+              label: s.label,
+              gloss: fw.glossOf(s.level),
+            }))}
+            savedLevel={score?.self_level ?? null}
+            savedEvidence={score?.evidence ?? ""}
+            locked={locked}
+          />
         </div>
       </div>
     </div>
