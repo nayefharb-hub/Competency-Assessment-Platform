@@ -122,6 +122,8 @@ await ensure(OTHER);
 await ensure(BOSS);
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
+browser.on("disconnected", () =>
+  console.log(`    ⚠ chromium DISCONNECTED at ${new Date().toISOString()} (N21)`));
 
 /**
  * Cleanup has to run even when the suite dies mid-flight.
@@ -184,9 +186,30 @@ async function gotoStable(page, url) {
   }
 }
 
+/**
+ * N21 diagnostics, not a fix.
+ *
+ * Two crashes, two different messages, same shape — a navigation that dies
+ * abruptly: `net::ERR_ABORTED; maybe frame was detached?` on one run, and
+ * `Target page, context or browser has been closed` on another, the latter
+ * with the PM's context provably never closed by the suite (contexts are
+ * closed 10 times against 4 opened, and `pm.ctx` is not among them). Both are
+ * consistent with chromium dying underneath the run, but this arc has already
+ * buried three confident mechanisms, so nothing is concluded. These listeners
+ * make the next occurrence SAY whether the browser dropped or a renderer
+ * crashed, with a timestamp to line up against the run log.
+ */
+function watchForDeath(page, label) {
+  // "crash" only. A `close` listener would fire on all 10 deliberate
+  // ctx.close() calls and drown the signal it is meant to carry.
+  page.on("crash", () =>
+    console.log(`    ⚠ renderer CRASHED on ${label} at ${new Date().toISOString()} (N21)`));
+}
+
 async function session(email, password) {
   const ctx = await browser.newContext({ baseURL: BASE });
   const page = await ctx.newPage();
+  watchForDeath(page, email);
   await page.goto("/login");
   await page.fill("#email", email);
   await page.fill("#password", password);
