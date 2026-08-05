@@ -1115,6 +1115,46 @@ Two details that are load-bearing rather than tidy:
   a silent truncation would rebuild it in a form that only appears once the
   organisation is big.
 
+### N23 — a typo'd email is thrown away, and the browser refills the old one
+
+**Status:** Logged 2026-08-05, not yet fixed. Reported by the owner.
+
+Signing in as `nayef..harb@gmail.com` (a doubled dot) gives the generic refusal,
+and the email field then shows `nayef.a.harb@gmail.com` — the address the owner
+had used before. It reads as though the app silently replaced what was typed.
+
+**It does not.** `signIn` redirects to `/login?error=…` on failure, which is a
+fresh render with an empty `<input>`; the browser's own autofill then puts the
+saved address in. The app never writes that value. The distinction decides the
+fix: nothing needs *stopping*, the typed address needs *keeping*.
+
+The cost is small but lands on every mistyped sign-in: the person cannot see what
+they actually typed, so they cannot see their own typo. With `autoComplete
+="username"` on the field, autofill is guaranteed to be the thing that fills the
+gap, which makes the wrong value look authoritative.
+
+**What the fix may NOT do.** The message is deliberately identical for "wrong
+password", "no such account" and "not invited" (see the note in
+`app/login/page.tsx`) — distinguishing them would let an outsider enumerate the
+pilot's staff list. Any improvement here must keep all three indistinguishable.
+Rejecting a *malformed* address is safe on that count, because it is decidable
+from the string alone and reveals nothing about who exists — but `nayef..harb@`
+passes the HTML5 `type="email"` check, so the browser will not catch it either.
+
+Two ways to keep the typed value, both keeping the message generic:
+
+1. **Round-trip it in the query** — `/login?error=…&email=…`, rendered as the
+   input's `defaultValue`. Three lines. It also puts a real staff email address
+   into browser history and every server access log, which is the wrong default
+   for a bank's internal tool.
+2. **Return the error as form state instead of redirecting** — `useActionState`,
+   making the form a client component. The typed value survives naturally, no
+   redirect, and `?error=` leaves the URL entirely. It is the better shape and it
+   touches the auth path, so it wants a deliberate decision rather than a drive-by.
+
+Recommended: (2). Awaiting the owner's go-ahead — it is the sign-in path, and
+this is not urgent enough to justify changing it unannounced.
+
 ### N22 — "I am not logged in and the whole nav bar is showing"
 
 **Status:** Fixed. Reported 2026-08-05, with the repro supplied by the owner.
