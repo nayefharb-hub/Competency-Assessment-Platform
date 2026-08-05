@@ -1115,6 +1115,68 @@ Two details that are load-bearing rather than tidy:
   a silent truncation would rebuild it in a form that only appears once the
   organisation is big.
 
+### N21 — 98 of 101 prefetches render nothing, and may be causing the cold starts
+
+**Status:** Measured, not fixed. One-line change, deliberately left until it can
+be verified rather than assumed.
+
+The header renders five nav links on every signed-in page, all visible
+immediately, so every page load fires five or six `<Link>` prefetches at once.
+From one session's export:
+
+| route | `_rsc` requests | rendered nothing |
+|---|---|---|
+| `/assess/controls` | 17 | **16** |
+| `/assess` | 16 | **16** |
+| `/results` | 16 | **16** |
+| `/review` | 16 | **16** |
+| `/admin/people` | 16 | **16** |
+| `/admin` | 16 | **16** |
+| **total** | **101** | **98** |
+
+**Why they come back empty.** Every route is `force-dynamic`. Next will not
+render a dynamic page for a prefetch — it fetches down to the nearest
+`loading.tsx` boundary and stops. There are no `loading.tsx` files in this app.
+So there is nothing for a prefetch to return, and the zero-database-call count
+is that fact measured rather than inferred.
+
+**Why empty still costs.** Each is a real function invocation. Six arriving
+together means Vercel wants six instances at that instant; it has one warm and
+cold-starts the rest. The same session shows **12 instances for a single user**,
+four of which served exactly one request and were never used again. The
+prefetches do not slow the request they belong to — they degrade the *next* one,
+because cold is where 421–779ms of server-action overhead lives against 210ms
+warm (N18).
+
+**The fix:** `prefetch={false}` on the five nav links in `app/layout.tsx`.
+
+**The condition for putting it back, which is the part worth not losing.**
+Nothing measurable is given up today *because the prefetches are not delivering
+anything*. That is a statement about the app's current shape, not about
+prefetching. It stops being true the moment either of these changes:
+
+- **`loading.tsx` boundaries are added.** Then a prefetch has something real to
+  fetch and render instantly on click, and it earns its invocation.
+- **Any route stops being `force-dynamic`.** A static or partially-static route
+  prefetches its full payload, which is the case prefetching exists for.
+
+So this is not "prefetching is bad" — it is "prefetching is unpaid-for here,
+today." Whoever changes either condition should turn it back on and re-measure,
+and this note exists so that decision is made rather than inherited.
+
+**Honest caveat.** The 98 empty requests are a fact. The causal chain from
+prefetch burst → instance churn → cold start on the next click is a
+**hypothesis**: strongly consistent with six simultaneous requests, 12 instances
+and four singletons, but not proven. Two earlier rounds of this investigation
+went wrong by reasoning from mechanism (`unstable_cache`, then the function
+region), so it is recorded as a hypothesis with a cheap test rather than a
+conclusion.
+
+**How to verify:** make the change, re-run the same click-through, count distinct
+`instanceId` values in the log export. If instance count drops, the theory held.
+If it does not, 98 pointless invocations are still gone and the next place to
+look is elsewhere.
+
 ## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
