@@ -496,6 +496,15 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
 
    Best sequence to date: **9 clean runs at 186 passed, 0 failed**, then a
    browser death.
+
+   **One caveat on "fails safely", from checking rather than assuming.** After
+   the 11:55 crash the purges *did* complete — verified directly against the
+   database, no `@example.test` rows left — but the final `X passed, Y failed`
+   line never printed. So the database guarantee holds; the *reporting*
+   guarantee is only partial, and a crashed run can end without a count. Small,
+   and worth closing whenever this area is next touched: a run that dies
+   silently on the count is the same shape of missing signal that let the
+   original flake hide for three rounds.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other
