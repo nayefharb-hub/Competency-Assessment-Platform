@@ -29,16 +29,22 @@ export default function OutboxBanner({ userId }: { userId: string }) {
 
   // Only tick while there is a countdown to show. A timer that runs on every
   // page for the 99.9% of the time nothing is wrong is pure waste.
-  const counting = state.pending.length > 0 && !state.flushing && state.nextAttemptAt !== null;
+  const counting = state.pending.some((e) => e.tries > 0) && !state.flushing && state.nextAttemptAt !== null;
   useEffect(() => {
     if (!counting) return;
     const t = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(t);
   }, [counting]);
 
-  if (state.pending.length === 0) return null;
+  // Only speak up once something has actually FAILED. A commit in flight is
+  // the normal case — every Next has one for ~300ms — and announcing it turns
+  // the one banner that means "act on this" into wallpaper the PM learns to
+  // ignore. `tries` is incremented only on a failed attempt, so this is the
+  // difference between "in progress" and "went wrong".
+  const failed = state.pending.filter((e) => e.tries > 0);
+  if (failed.length === 0) return null;
 
-  const n = state.pending.length;
+  const n = failed.length;
   const answers = n === 1 ? "1 answer" : `${n} answers`;
   const secs = state.nextAttemptAt ? Math.max(0, Math.ceil((state.nextAttemptAt - now) / 1000)) : 0;
 

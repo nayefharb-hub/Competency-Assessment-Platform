@@ -116,8 +116,20 @@ export default function ScorePanel({
 
       <div className="assess-actions">
         {!locked && (
-          <button className="btn btn-primary" type="button" onClick={goNext}>
-            {nextControl ? "Next control →" : "Review before submitting →"}
+          /* The label changes with what the click will DO (decision D11).
+             Skipping is allowed — a PM who wants to think about a hard control
+             should not be trapped on it — but it is never accidental: the
+             button says which of the two is about to happen. The hole stays
+             visible in the progress count, the "not scored" filter and the
+             blocked Submit. */
+          <button
+            className={level === null ? "btn btn-secondary" : "btn btn-primary"}
+            type="button"
+            onClick={goNext}
+          >
+            {level === null
+              ? "Skip for now →"
+              : nextControl ? "Next control →" : "Review before submitting →"}
           </button>
         )}
         {prevControl && (

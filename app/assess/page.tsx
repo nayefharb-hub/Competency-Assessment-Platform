@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
@@ -41,7 +42,21 @@ export default async function AssessPage({
   }
   const { row, scores } = mine;
 
-  const code = c && fw.controlByCode(c)?.active ? c : fw.activeControls[0].code;
+  /* Where an unaddressed /assess lands (decision D12).
+     "Self-assessment" in the menu used to open control 1 every time, so a PM
+     sixty controls in had to go and find their own place. Resume at the first
+     control with no self_level instead — derived from the scores rather than
+     stored, so it is right on a second device and after a cleared browser.
+     When everything is scored there is no work left here, and the controls
+     list is the screen that can actually submit. */
+  const scored = new Set(
+    scores.filter((s) => s.self_level !== null).map((s) => s.control_code),
+  );
+  const firstUnanswered = fw.activeControls.find((ac) => !scored.has(ac.code));
+  if (!c && !firstUnanswered && row.state === "draft") redirect("/assess/controls");
+  const code = c && fw.controlByCode(c)?.active
+    ? c
+    : (firstUnanswered ?? fw.activeControls[0]).code;
   const control = fw.controlByCode(code)!;
   const ce = fw.ceOf(control.ce_code);
   const measures = fw.measuresFor(code);

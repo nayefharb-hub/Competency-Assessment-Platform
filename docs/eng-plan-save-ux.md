@@ -198,3 +198,37 @@ on the implementation should look at the localStorage mirror (draft
 answers at rest on the PM's machine) and the sign-out flush path.
 
 NO UNRESOLVED DECISIONS
+
+## Owner findings on the first build (2026-08-05, all fixed)
+
+Three things the owner caught on the PR #20 preview that the plan and the
+drawing board had both missed:
+
+1. **The failure banner fired on every Next.** It rendered whenever the queue
+   was non-empty, which includes the ~300ms a normal commit is in flight — so
+   the one signal meaning "act on this" appeared on all 132 clicks. Now it
+   renders only for entries that have actually FAILED an attempt
+   (`tries > 0`). The mock never showed this because it only rendered the
+   strip on a simulated failure; the real component drew it from queue length.
+   This also invalidated two e2e waits that used "banner gone" as a proxy for
+   "commit landed" — with the fix that condition is true instantly, so they
+   now wait on the server-action POST.
+
+2. **Next with nothing selected navigated on silently (D11).** The old
+   form-based screen refused this ("Pick a level before moving on"); the
+   rewrite lost it. Decided: skipping stays possible — a PM should be able to
+   leave a hard control and return — but never accidentally. With nothing
+   picked the button reads **"Skip for now →"** and is secondary-styled;
+   with an answer it reads "Next control →". Holes remain visible in the
+   progress count, the not-scored filter, and the blocked Submit.
+
+3. **The menu always opened control 1 (D12).** A PM sixty controls in had to
+   find their own place. `/assess` with no control named now resumes at the
+   **first unanswered control**, derived from the scores rather than stored,
+   so it is correct on another device and after a cleared browser. When
+   everything is scored it goes to the controls list, which is the screen
+   that can submit.
+
+Tests for all three: a successful save shows no failure banner (watched
+across the whole commit, not sampled after it); the button offers Skip with
+nothing picked and Next once picked; the menu resumes past control 1.

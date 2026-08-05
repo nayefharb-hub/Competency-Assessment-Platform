@@ -293,8 +293,15 @@ async function submitAction(page, click, timeout = 20_000) {
 async function scoreAndNext(page, level, evidence) {
   await page.check(`input[name="level"][value="${level}"]`);
   if (evidence !== undefined) await page.fill("#evidence", evidence);
+  // Wait for the COMMIT, which is the server-action POST. Waiting on the
+  // failure banner instead would be worse than useless: it only appears when
+  // something went wrong, so "no banner" is true the instant the click lands
+  // and the assertion would race the write it is meant to wait for. That is
+  // exactly how this helper was wrong the first time.
+  const committed = page.waitForResponse(
+    (r) => r.request().method() === "POST", { timeout: 20_000 });
   await page.click('.assess-actions button:has-text("Next control"), .assess-actions button:has-text("Review before submitting")');
-  await page.waitForFunction(() => !document.querySelector(".outbox-banner"), null, { timeout: 20_000 });
+  await committed;
   await page.waitForLoadState("networkidle");
 }
 
@@ -627,6 +634,56 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
+   * The banner is for FAILURES, not for work in progress. Every Next has a
+   * commit in flight for a moment; if that showed the red banner, the one
+   * signal that means "act on this" would fire on every click and stop
+   * meaning anything. Reported by the owner against the first build.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.1.2");
+    await pm.page.check('input[name="level"][value="2"]');
+    await pm.page.click('.assess-actions button:has-text("Next control")');
+    // Watch across the whole commit: it must never appear, not merely be
+    // absent once the commit is done.
+    let seen = false;
+    for (let i = 0; i < 25; i++) {
+      if (await pm.page.locator(".outbox-banner").count()) { seen = true; break; }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    check("a successful save shows no failure banner", !seen);
+    const a0 = await assessmentOf(PM.email);
+    const c2 = activeControls.find((c) => c.code === "4.3.1.2");
+    await db.from("score").delete().eq("assessment_id", a0.id).eq("control_id", c2.id);
+  }
+
+  /*
+   * SKIPPING (decision D11). Leaving a control unanswered is allowed — a PM
+   * should be able to come back to a hard one — but never by accident: the
+   * button says which of the two things the click will do.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.1.3");
+    check("with nothing picked, the button offers to skip",
+      (await pm.page.locator('.assess-actions button:has-text("Skip for now")').count()) === 1);
+    await pm.page.check('input[name="level"][value="1"]');
+    check("once an answer is picked, it offers to advance instead",
+      (await pm.page.locator('.assess-actions button:has-text("Next control")').count()) === 1);
+  }
+
+  /*
+   * RESUMING (decision D12). /assess with no control named opens where the
+   * work is, not at control 1. Derived from the scores, so it survives a
+   * different device and a cleared browser.
+   */
+  {
+    await pm.page.goto("/assess");
+    await pm.page.waitForLoadState("networkidle");
+    const crumb = await pm.page.locator(".crumb").innerText();
+    check("the menu resumes at the first unanswered control, not control 1",
+      !crumb.includes("4.3.1.1"), crumb);
+  }
+
+  /*
    * THE OUTAGE (eng-plan-save-ux). The point of the outbox is that a PM can
    * keep working through a network failure and lose nothing. Simulated by
    * aborting the server-action POST — indistinguishable, from the browser's
@@ -715,9 +772,10 @@ console.log("\n[4] Self-scoring persists to Postgres");
       await pm.page.fill("#evidence", "QA evidence line, revised");
       await new Promise((r) => setTimeout(r, 2_200)); // past the viewer-memo TTL
       const mark = readFileSync(LOG, "utf8").length;
+      const committed = pm.page.waitForResponse(
+        (r) => r.request().method() === "POST", { timeout: 20_000 });
       await pm.page.click('.assess-actions button:has-text("Next control")');
-      await pm.page.waitForFunction(() => !document.querySelector(".outbox-banner"),
-        null, { timeout: 20_000 });
+      await committed;
       await pm.page.waitForLoadState("networkidle");
       await new Promise((r) => setTimeout(r, 500)); // let the server log flush
       const lines = readFileSync(LOG, "utf8").slice(mark)
@@ -735,7 +793,11 @@ console.log("\n[4] Self-scoring persists to Postgres");
       await new Promise((r) => setTimeout(r, 2_200));
       const mark2 = readFileSync(LOG, "utf8").length;
       await pm.page.click('.assess-actions button:has-text("Next control")');
+      // No POST to await here — that IS the assertion. Wait for the navigation
+      // instead, then give a write, if one wrongly fired, time to show up.
+      await pm.page.waitForURL(/c=4\.3\.1\.2/, { timeout: 10_000 }).catch(() => {});
       await pm.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 800));
       await new Promise((r) => setTimeout(r, 500));
       const after = readFileSync(LOG, "utf8").slice(mark2)
         .split("\n").filter((l) => l.includes("/rest/v1/score"));
