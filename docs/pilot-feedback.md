@@ -1065,17 +1065,45 @@ POST /assess -> 303
 nor rendering is not present. `revalidatePath` remains 0ms, confirming it dead
 as a suspect rather than merely unproven.
 
-**What the owner feels — 1–1.5s to move between controls — is now structural.**
+**What the owner feels — 1–1.5s to move between controls — is only partly
+accounted for.**
 
 | | |
 |---|---|
-| POST server work | ~276ms |
-| GET server work | ~130–210ms |
-| Kuwait → Frankfurt, **twice** | ~500ms |
-| browser render | the remainder |
+| POST server work | ~276ms | *measured* |
+| GET server work | ~130–210ms | *measured* |
+| two round trips, Kuwait → Frankfurt | ~200–260ms | *owner's figure: 100–130ms RTT* |
+| **accounted for** | **~610–750ms** | |
+| **felt** | **1000–1500ms** | |
+| **unexplained** | **~300–750ms** | |
 
-No query tuning touches the two-round-trips-per-control multiplier, which is
-exactly what this entry predicted. **Step 3 is now the only large lever.**
+**Correction (2026-08-05), caught by the owner.** This table previously claimed
+`Kuwait → Frankfurt, twice — ~500ms`. That number was never measured: it was the
+remainder after subtracting server time from felt time, relabelled as network.
+The owner pointed out that Kuwait-to-Frankfurt is normally **100–130ms RTT**, so
+two round trips is ~200–260ms, less than half what was asserted.
+
+**This changes the conclusion, not just the figure.** With network at its real
+size, a third to a half of the delay is still unaccounted for, so
+"the delay is structural, and step 3 is the only lever" **is not established.**
+It may still be true — browser render and TLS setup are both real and both
+unmeasured here — but it is currently an assumption wearing a table's clothing.
+
+This is the fourth time this investigation has asserted a mechanism ahead of the
+measurement (`unstable_cache`, the function region, the concurrency model, now
+network latency), and the first three were each wrong. The rule this arc wrote
+for itself — **measure first, explain second** — applies to arithmetic filler
+exactly as much as to code.
+
+**What would settle it**, and it takes a minute: DevTools → Network, save one
+control, and read the POST and the follow-up GET. `TTFB` minus our measured
+server time is the real network cost; `Content Download` plus rendering is the
+rest. That splits the unexplained remainder into named parts instead of one
+label.
+
+Until then: no query tuning touches the two-round-trips-per-control multiplier,
+which is what this entry predicted and still holds. Whether **step 3** is the
+*only* large lever depends on where that remainder actually is.
 
 **Step 2 is confirmed worth its afternoon.** `auth: validate token + load
 app_user` costs **83–174ms on every request** — the largest single server-side
