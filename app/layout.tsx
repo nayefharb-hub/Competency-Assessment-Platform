@@ -6,6 +6,7 @@ import { currentUser } from "@/lib/auth";
 import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
 import OutboxBanner from "./outbox-banner";
+import OfflineBanner from "./offline-banner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -75,6 +76,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               visible after the PM navigates away from the control that made
               it (docs/eng-plan-save-ux.md). Renders nothing when the queue is
               empty, which is nearly always. */}
+          {user && <OfflineBanner />}
           {user && <OutboxBanner userId={user.id} />}
 
           <main>{children}</main>

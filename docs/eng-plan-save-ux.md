@@ -232,3 +232,42 @@ drawing board had both missed:
 Tests for all three: a successful save shows no failure banner (watched
 across the whole commit, not sampled after it); the button offers Skip with
 nothing picked and Next once picked; the menu resumes past control 1.
+
+## Offline, measured (2026-08-05) — and the consistency the owner caught
+
+**What actually happens with no connection.** Probed with a real offline
+browser context rather than reasoned about: clicking Next takes the PM to
+**Chrome's own error page**. The client-side navigation fails, Next falls back
+to a full page load, and that lands on the browser error screen — the app is
+gone, and with it the banner that would have told them their answers were
+safe. The answer itself survives, because the outbox writes to localStorage
+synchronously before navigating, but nothing on screen says so.
+
+Caveat on the measurement, stated rather than buried: Playwright's offline
+emulation did not block loopback, so in the probe the write still landed and
+the queue cleared. The page-destruction half is proven; the
+recovery-from-mirror half rests on reading the code.
+
+**D13: guard the navigation.** The click still commits, then declines to
+navigate when `navigator.onLine` is false.
+
+**The owner's correction — one seam, not one button.** Guarding only Next
+would have left Previous, "Back to controls" and every header link failing the
+old way, so the same situation would behave differently depending on which
+control the PM clicked. The check now lives in `app/link.tsx`, which every
+in-app navigation already passes through, and the score panel's Next matches
+it. Cost is nil: `navigator.onLine` is a property read, not a network call.
+Its limit is real though — a captive portal reports online, the navigation
+fails anyway, and the outbox retry is what covers that.
+
+**Two banners, deliberately not merged.** `OfflineBanner` answers "can I keep
+working?"; the outbox banner answers "is my work safe?". A PM who is offline
+with a queued answer needs both, and one sentence trying to be both would
+serve neither.
+
+**D12 revised by the owner: resume where they were, not where the work is.**
+The menu now returns to the control they were last on — including one they
+went back to re-read, which "first unanswered" would have overruled. Stored in
+a cookie, per device, read during the server render: the same argument
+DESIGN.md makes for the theme, and no database write on a navigation. First
+unanswered remains the fallback for a new device or a cleared browser.

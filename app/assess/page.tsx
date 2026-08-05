@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
@@ -42,21 +43,29 @@ export default async function AssessPage({
   }
   const { row, scores } = mine;
 
-  /* Where an unaddressed /assess lands (decision D12).
-     "Self-assessment" in the menu used to open control 1 every time, so a PM
-     sixty controls in had to go and find their own place. Resume at the first
-     control with no self_level instead — derived from the scores rather than
-     stored, so it is right on a second device and after a cleared browser.
-     When everything is scored there is no work left here, and the controls
-     list is the screen that can actually submit. */
+  /* Where an unaddressed /assess lands (decision D12, revised by the owner).
+     The menu used to open control 1 every time, so a PM sixty controls in had
+     to find their own place. It now returns them to the control they were last
+     on — including one they had gone back to re-read, which "first unanswered"
+     would have overruled.
+
+     The position is a cookie: a per-device convenience, not part of the
+     assessment record, and the same argument DESIGN.md makes for the theme.
+     Read here so the right control renders on the first pass — no flash, no
+     client redirect. First unanswered is the fallback when there is no cookie
+     (new device, cleared browser), which is also the sensible answer for
+     someone starting out. */
   const scored = new Set(
     scores.filter((s) => s.self_level !== null).map((s) => s.control_code),
   );
   const firstUnanswered = fw.activeControls.find((ac) => !scored.has(ac.code));
-  if (!c && !firstUnanswered && row.state === "draft") redirect("/assess/controls");
+  const remembered = (await cookies()).get("cap.last")?.value;
+  const resume = (remembered && fw.controlByCode(remembered)?.active ? remembered : null)
+    ?? firstUnanswered?.code;
+  if (!c && !resume && row.state === "draft") redirect("/assess/controls");
   const code = c && fw.controlByCode(c)?.active
     ? c
-    : (firstUnanswered ?? fw.activeControls[0]).code;
+    : (resume ?? fw.activeControls[0].code);
   const control = fw.controlByCode(code)!;
   const ce = fw.ceOf(control.ce_code);
   const measures = fw.measuresFor(code);

@@ -671,16 +671,92 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
-   * RESUMING (decision D12). /assess with no control named opens where the
-   * work is, not at control 1. Derived from the scores, so it survives a
-   * different device and a cleared browser.
+   * RESUMING (decision D12, as revised). /assess with no control named comes
+   * back to the control the PM was last on — including one they went back to
+   * re-read, which "first unanswered" would have overruled. Falls back to the
+   * first unanswered control when there is no cookie yet.
    */
   {
+    await pm.page.goto("/assess?c=4.3.2.2");
+    await pm.page.waitForSelector(".optlist");
+    await pm.page.goto("/assess");                       // as the menu link does
+    await pm.page.waitForLoadState("networkidle");
+    check("the menu returns to the control the PM was last on",
+      (await pm.page.locator(".crumb").innerText()).includes("4.3.2.2"),
+      await pm.page.locator(".crumb").innerText());
+
+    // Re-reading an ANSWERED control is a deliberate act, so it must be
+    // remembered too — this is the case that separates this rule from
+    // "first unanswered", which would send them back to the work instead.
+    await pm.page.goto("/assess?c=4.3.1.1");
+    await pm.page.waitForSelector(".optlist");
     await pm.page.goto("/assess");
     await pm.page.waitForLoadState("networkidle");
-    const crumb = await pm.page.locator(".crumb").innerText();
-    check("the menu resumes at the first unanswered control, not control 1",
-      !crumb.includes("4.3.1.1"), crumb);
+    check("even when that control is already answered",
+      (await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
+      await pm.page.locator(".crumb").innerText());
+
+    // No cookie (a new device) falls back to where the work is.
+    await pm.page.context().clearCookies({ name: "cap.last" });
+    await pm.page.goto("/assess");
+    await pm.page.waitForLoadState("networkidle");
+    check("with no remembered position, it opens the first unanswered control",
+      !(await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
+      await pm.page.locator(".crumb").innerText());
+  }
+
+  /*
+   * OFFLINE (decision D13). Measured before this was written: asking the
+   * browser to navigate with no connection lands the PM on Chrome's own error
+   * page, and the app — including the failure banner that would have
+   * reassured them — is gone. So the click commits, and then declines to
+   * navigate.
+   */
+  {
+    await pm.page.goto("/assess?c=4.3.2.4");
+    await pm.page.waitForSelector(".optlist");
+    await pm.page.context().setOffline(true);
+    await pm.page.check('input[name="level"][value="2"]');
+    await pm.page.click('.assess-actions button:has-text("Next control")');
+    await pm.page.waitForTimeout(1_500);
+
+    check("going offline does not take the PM out of the app",
+      (await pm.page.locator(".optlist").count()) > 0 && pm.page.url().includes("4.3.2.4"),
+      pm.page.url());
+    check("and it says so, app-wide",
+      (await pm.page.locator("text=You are offline").count()) > 0);
+
+    // EVERY navigation behaves the same way offline, not just Next. Guarding
+    // one button and leaving the links to fail would give the same situation
+    // two different outcomes depending on where the PM clicked.
+    await pm.page.click('.assess-actions a:has-text("Previous")');
+    await pm.page.waitForTimeout(1_000);
+    check("Previous is held back too, rather than breaking the page",
+      pm.page.url().includes("4.3.2.4") && (await pm.page.locator(".optlist").count()) > 0,
+      pm.page.url());
+
+    await pm.page.click('a:has-text("Back to controls")');
+    await pm.page.waitForTimeout(1_000);
+    check("and so is the rest of the app's navigation",
+      pm.page.url().includes("4.3.2.4"), pm.page.url());
+
+    await pm.page.context().setOffline(false);
+    await pm.page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await pm.page.waitForTimeout(2_000);
+    check("the notice clears once the connection is back",
+      (await pm.page.locator("text=You are offline").count()) === 0);
+    await pm.page.click('.assess-actions a:has-text("Previous")');
+    // A client-side navigation completes without a load event, so networkidle
+    // can return while the router is still working — wait for the URL itself.
+    await pm.page.waitForURL((u) => !u.href.includes("4.3.2.4"), { timeout: 10_000 })
+      .catch(() => {});
+    check("and navigation works again",
+      !pm.page.url().includes("4.3.2.4"), pm.page.url());
+
+    // Tidy: this test scored a control the later fixture assumptions do not expect.
+    const aOff = await assessmentOf(PM.email);
+    const c24 = activeControls.find((c) => c.code === "4.3.2.4");
+    await db.from("score").delete().eq("assessment_id", aOff.id).eq("control_id", c24.id);
   }
 
   /*

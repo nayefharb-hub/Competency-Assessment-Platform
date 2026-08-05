@@ -1,3 +1,5 @@
+"use client";
+
 import NextLink from "next/link";
 import type { ComponentProps } from "react";
 
@@ -45,5 +47,38 @@ import type { ComponentProps } from "react";
  * with an explicit `prefetch`.
  */
 export default function Link(props: ComponentProps<typeof NextLink>) {
-  return <NextLink prefetch={false} {...props} />;
+  return <NextLink prefetch={false} {...props} onClick={guardOffline(props.onClick)} />;
+}
+
+/**
+ * Every in-app navigation goes through here, which makes this the one place
+ * that can keep an offline click from destroying the app.
+ *
+ * MEASURED, not assumed: with no connection, a client-side navigation fails
+ * and Next falls back to a full page load, which lands on the browser's own
+ * error page. The app is gone — and with it the banner that would have told
+ * the PM their answers are safe.
+ *
+ * The score panel's "Next control" already refuses to navigate when offline,
+ * and guarding only that button would have made Previous and the header links
+ * behave differently in the same situation, which is worse than either
+ * behaviour on its own. So the check lives at the seam every link shares.
+ *
+ * `navigator.onLine` is a property read — no I/O, nothing to pay for on a
+ * click. It is also only as good as the browser's idea of connectivity: a
+ * captive portal reads as online, the navigation fails anyway, and the outbox
+ * retry is what covers that case.
+ */
+function guardOffline(
+  onClick: ComponentProps<typeof NextLink>["onClick"],
+): ComponentProps<typeof NextLink>["onClick"] {
+  return (e) => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      e.preventDefault();
+      // The app-wide offline banner is already on screen saying why, so this
+      // is deliberately silent rather than a second, competing message.
+      return;
+    }
+    onClick?.(e);
+  };
 }

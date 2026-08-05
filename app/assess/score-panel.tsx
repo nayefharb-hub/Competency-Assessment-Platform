@@ -55,12 +55,30 @@ export default function ScorePanel({
     setEvidence(savedEvidence);
   }, [control, savedLevel, savedEvidence]);
 
+  // Remember where they are, so "Self-assessment" in the menu comes back HERE
+  // (decision D12). A cookie rather than a database column: it is a per-device
+  // convenience, not part of the assessment record, and the same reasoning
+  // DESIGN.md gives for storing the theme per device applies — the server can
+  // read it during the render, so there is no flash and no extra round trip.
+  useEffect(() => {
+    document.cookie = `cap.last=${encodeURIComponent(control)}; path=/; max-age=${60 * 60 * 24 * 120}; SameSite=Lax`;
+  }, [control]);
+
   const dirty = level !== savedLevel || evidence !== savedEvidence;
 
   function goNext() {
     if (level !== null && dirty) {
       commit({ control, level, evidence: evidence.trim() || null });
     }
+    // Never ask the browser to navigate when it has told us it cannot
+    // (decision D13). Measured: router.push falls back to a hard navigation,
+    // which lands on Chrome's own error page — the app disappears, taking the
+    // failure banner with it, and the PM has no way to know their answer was
+    // kept. The answer is already in the outbox by this line, so staying put
+    // costs nothing and keeps them inside the app.
+    // The app-wide OfflineBanner explains this; app/link.tsx does the same for
+    // every other navigation, so all of them behave alike when offline.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     router.push(nextControl ? `/assess?c=${nextControl}` : "/assess/controls?saved=1");
   }
 
