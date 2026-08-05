@@ -1115,6 +1115,117 @@ Two details that are load-bearing rather than tidy:
   a silent truncation would rebuild it in a form that only appears once the
   organisation is big.
 
+### N21 — 98 of 101 prefetches render nothing, and may be causing the cold starts
+
+**Status:** Fixed. Prefetching is off, asserted by a permanent test. The
+production benefit (fewer instances) is **not yet verified** — that needs a
+click-through and a fresh log export.
+
+**How it was fixed.** Not `prefetch={false}` on five links, which was the
+original plan: `app/assess/controls/page.tsx` renders one `<Link>` per control,
+so the real count is closer to 140 call sites than five. Instead `app/link.tsx`
+wraps `next/link` with the default flipped, and every file imports that. The
+reasoning for the default — and the two conditions that should reverse it — live
+in that one file, so re-enabling is one edit rather than an archaeology exercise.
+
+Verified directly rather than assumed: on the heaviest page, scrolled to the
+bottom so every link enters the viewport, **zero** `_rsc` requests. Before the
+change the same page produced twelve. The suite asserts both that and that
+navigation still works, which also guards against someone importing `next/link`
+directly and quietly reinstating the cost.
+
+### What this broke, which was the more useful finding
+
+Removing the prefetches made **fourteen tests start failing intermittently**,
+across add-person, change-password, submit, approve and admin — areas with no
+connection to prefetching.
+
+They had all been passing for an accidental reason. The pattern was:
+
+```js
+await page.click(submit);
+await page.waitForLoadState("networkidle");
+```
+
+`networkidle` is 500ms of network silence, which is a *proxy* for "the server
+action finished" and not the thing itself. `click()` waits for nothing, so that
+500ms could elapse **before the POST had even started** — silence measured ahead
+of the work and read as silence after it. The prefetch requests were incidental
+noise that kept the network busy just long enough to paper over it.
+
+So the suite was not testing what it appeared to test, and deleting a pointless
+optimisation is what revealed it. Fixed with two helpers: `submitAction`, which
+arms `waitForResponse` **before** the click and only then measures idleness, and
+`actionLanded`, which waits for the specific outcome about to be asserted.
+Fourteen sites converted; zero `click`-then-`networkidle` pairs remain.
+
+**Worth generalising:** a test that passes because of unrelated traffic is
+indistinguishable from a test that passes, right up until the traffic changes.
+This suite had that property for weeks.
+
+**Still honest about:** an occasional single-check flake remains across long run
+sequences, not yet pinned to one cause. The add-person check now reports the
+error **banner** rather than the URL — twice the wrong diagnostic was chosen
+there, because `addPersonAction` renders failures in the page and the URL could
+only ever echo the page it was already on.
+
+The header renders five nav links on every signed-in page, all visible
+immediately, so every page load fires five or six `<Link>` prefetches at once.
+From one session's export:
+
+| route | `_rsc` requests | rendered nothing |
+|---|---|---|
+| `/assess/controls` | 17 | **16** |
+| `/assess` | 16 | **16** |
+| `/results` | 16 | **16** |
+| `/review` | 16 | **16** |
+| `/admin/people` | 16 | **16** |
+| `/admin` | 16 | **16** |
+| **total** | **101** | **98** |
+
+**Why they come back empty.** Every route is `force-dynamic`. Next will not
+render a dynamic page for a prefetch — it fetches down to the nearest
+`loading.tsx` boundary and stops. There are no `loading.tsx` files in this app.
+So there is nothing for a prefetch to return, and the zero-database-call count
+is that fact measured rather than inferred.
+
+**Why empty still costs.** Each is a real function invocation. Six arriving
+together means Vercel wants six instances at that instant; it has one warm and
+cold-starts the rest. The same session shows **12 instances for a single user**,
+four of which served exactly one request and were never used again. The
+prefetches do not slow the request they belong to — they degrade the *next* one,
+because cold is where 421–779ms of server-action overhead lives against 210ms
+warm (N18).
+
+**The fix:** `prefetch={false}` on the five nav links in `app/layout.tsx`.
+
+**The condition for putting it back, which is the part worth not losing.**
+Nothing measurable is given up today *because the prefetches are not delivering
+anything*. That is a statement about the app's current shape, not about
+prefetching. It stops being true the moment either of these changes:
+
+- **`loading.tsx` boundaries are added.** Then a prefetch has something real to
+  fetch and render instantly on click, and it earns its invocation.
+- **Any route stops being `force-dynamic`.** A static or partially-static route
+  prefetches its full payload, which is the case prefetching exists for.
+
+So this is not "prefetching is bad" — it is "prefetching is unpaid-for here,
+today." Whoever changes either condition should turn it back on and re-measure,
+and this note exists so that decision is made rather than inherited.
+
+**Honest caveat.** The 98 empty requests are a fact. The causal chain from
+prefetch burst → instance churn → cold start on the next click is a
+**hypothesis**: strongly consistent with six simultaneous requests, 12 instances
+and four singletons, but not proven. Two earlier rounds of this investigation
+went wrong by reasoning from mechanism (`unstable_cache`, then the function
+region), so it is recorded as a hypothesis with a cheap test rather than a
+conclusion.
+
+**How to verify:** make the change, re-run the same click-through, count distinct
+`instanceId` values in the log export. If instance count drops, the theory held.
+If it does not, 98 pointless invocations are still gone and the next place to
+look is elsewhere.
+
 ## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and

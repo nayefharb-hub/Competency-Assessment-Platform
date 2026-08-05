@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/app/link";
 import { canAdmin, canAssess, requireUser } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
 import {

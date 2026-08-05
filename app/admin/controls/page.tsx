@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
 

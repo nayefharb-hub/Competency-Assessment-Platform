@@ -132,10 +132,60 @@ async function session(email, password) {
   // whose buttons are also submits, and page.click() is not strict — it would
   // silently take the first match, which is a theme button on every signed-in
   // page. That mistake cost six passing tests when the toggle landed.
-  await page.click('form button[type="submit"]:has-text("Sign in")');
-  await page.waitForLoadState("networkidle");
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
   return { ctx, page };
 }
+/**
+ * Wait for a server action's effect, not for the network to go quiet.
+ *
+ * `networkidle` is 500ms of silence, which is a proxy for "the action finished"
+ * and not the thing itself. It was passing here for an accidental reason: the
+ * nav fired five link prefetches on every page, and that noise kept the network
+ * busy long enough for the POST to land. Turning prefetching off (N21) removed
+ * the noise and the add-person checks began failing about every run — the race
+ * had been there all along, propped up by requests that did nothing else.
+ *
+ * So wait for the OUTCOME. On success this returns as soon as the effect is
+ * visible; on genuine failure it times out and the checks below report what
+ * actually went wrong, instead of a timeout burying them.
+ *
+ * Third instance of this trap in this file — see also the withdraw button in
+ * section [2] and the score re-render in [14].
+ */
+async function actionLanded(page, text, timeout = 15_000) {
+  await page
+    .waitForFunction((t) => document.body.innerText.includes(t), text, { timeout })
+    .catch(() => {});
+}
+
+/**
+ * Submit a form and wait for the server to have actually finished.
+ *
+ * The generic form of the trap above. `click()` does not wait for anything, so
+ * `networkidle` straight afterwards can measure silence that exists because the
+ * POST has not STARTED yet — 500ms of quiet before the work, read as 500ms of
+ * quiet after it. Removing the prefetch noise (N21) turned that from a rare
+ * flake into a frequent one across the whole suite, which is how fourteen sites
+ * that had looked fine for weeks all became suspect at once.
+ *
+ * Arming waitForResponse BEFORE the click is the whole point: the listener has
+ * to exist before the request it is waiting for. Then networkidle is measured
+ * after a POST is known to have come back, so it settles the re-render rather
+ * than standing in for the action.
+ *
+ * `.catch(() => null)` so a submit that legitimately makes no POST — a client
+ * validation that never reaches the server — falls through to the check rather
+ * than dying in the helper.
+ */
+async function submitAction(page, click, timeout = 20_000) {
+  const posted = page
+    .waitForResponse((r) => r.request().method() === "POST", { timeout })
+    .catch(() => null);
+  await click();
+  await posted;
+  await page.waitForLoadState("networkidle");
+}
+
 const idOf = async (email) =>
   (await db.from("app_user").select("id").eq("email", email).single()).data.id;
 /**
@@ -161,8 +211,7 @@ console.log("\n[1] Invite-only auth");
   await page.goto("/login");
   await page.fill("#email", "not.invited@example.test");
   await page.fill("#password", "whatever123");
-  await page.click('button[type="submit"]');
-  await page.waitForLoadState("networkidle");
+  await submitAction(page, () => page.click('button[type="submit"]'));
   check("uninvited email is refused", page.url().includes("/login") && (await page.locator('[role="alert"]').count()) > 0);
   await page.goto("/results");
   check("no session cannot reach /results", page.url().includes("/login"));
@@ -215,8 +264,7 @@ console.log("\n[2] Assignment — an assessment exists only when an admin assign
   for (let i = 0; i < (await boxes.count()); i++) await boxes.nth(i).setChecked(false);
   await boss.page.check(`input[name="assignee"][value="${pmId}"]`);
   await boss.page.check(`input[name="assignee"][value="${otherId}"]`);
-  await boss.page.click('button:has-text("Assign selected")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Assign selected")'));
 
   const a = await assessmentOf(PM.email);
   check("assigning creates the assessment", a !== null);
@@ -296,8 +344,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
   await pm.page.goto("/assess?c=4.3.1.1");
   await pm.page.check('input[name="level"][value="3"]');
   await pm.page.fill("#evidence", "QA evidence line");
-  await pm.page.click('.assess-actions button[type="submit"]');
-  await pm.page.waitForLoadState("networkidle");
+  await submitAction(pm.page, () => pm.page.click('.assess-actions button[type="submit"]'));
 
   const a = await assessmentOf(PM.email);
   const control = activeControls.find((c) => c.code === "4.3.1.1");
@@ -397,8 +444,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
   // the button live and post anyway, the way a stale tab or a curl would.
   await pm.page.locator('button:has-text("Submit for review")')
     .evaluate((el) => { el.disabled = false; });
-  await pm.page.click('button:has-text("Submit for review")');
-  await pm.page.waitForLoadState("networkidle");
+  await submitAction(pm.page, () => pm.page.click('button:has-text("Submit for review")'));
   check("server refuses an incomplete submit, not just the button",
     (await pm.page.content()).includes("need a score before you can submit"),
     pm.page.url());
@@ -423,8 +469,7 @@ console.log("\n[5] Submit: draft -> self_submitted");
   check("submit is enabled once complete",
     !(await pm.page.isDisabled('button:has-text("Submit for review")')));
 
-  await pm.page.click('button:has-text("Submit for review")');
-  await pm.page.waitForLoadState("networkidle");
+  await submitAction(pm.page, () => pm.page.click('button:has-text("Submit for review")'));
 
   const after = await assessmentOf(PM.email);
   check("state = self_submitted", after.state === "self_submitted", after.state);
@@ -459,8 +504,7 @@ const assessmentId = (await assessmentOf(PM.email)).id;
   await boss.page.goto(`/review?a=${assessmentId}`);
   await boss.page.selectOption('select[name="level:4.3.1.1"]', "5");
   await boss.page.selectOption('select[name="level:4.3.1.2"]', "0");
-  await boss.page.click('button:has-text("Save revisions")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Save revisions")'));
 
   const ids = ["4.3.1.1", "4.3.1.2"].map((code) => activeControls.find((c) => c.code === code).id);
   const { data: revised } = await db.from("score")
@@ -481,8 +525,7 @@ const assessmentId = (await assessmentOf(PM.email)).id;
   // accept-all: clear two rows first so there is something to fill
   await db.from("score").update({ assessor_level: null }).eq("assessment_id", assessmentId).in("control_id", ids);
   await boss.page.goto(`/review?a=${assessmentId}`);
-  await boss.page.click('button:has-text("Accept all remaining")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Accept all remaining")'));
   const { data: filled } = await db.from("score")
     .select("self_level, assessor_level").eq("assessment_id", assessmentId).in("control_id", ids);
   check("accept-all fills gaps from the self-score",
@@ -504,8 +547,7 @@ console.log("\n[7] Approval snapshots targets and locks the record");
     await boss.page.isDisabled('button:has-text("Approve assessment")'));
   await boss.page.locator('button:has-text("Approve assessment")')
     .evaluate((el) => { el.disabled = false; });
-  await boss.page.click('button:has-text("Approve assessment")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Approve assessment")'));
   check("server refuses an incomplete approval, not just the button",
     (await boss.page.content()).includes("no assessor score"), boss.page.url());
   check("state unchanged after the refused approval",
@@ -518,8 +560,7 @@ console.log("\n[7] Approval snapshots targets and locks the record");
     .eq("assessment_id", assessmentId).eq("control_id", orphan);
 
   await boss.page.goto(`/review?a=${assessmentId}`);
-  await boss.page.click('button:has-text("Approve assessment")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Approve assessment")'));
 
   const a = await assessmentOf(PM.email);
   check("state = approved", a.state === "approved", a.state);
@@ -612,8 +653,7 @@ console.log("\n[10] Framework admin writes the tunable layer only");
     (await boss.page.locator('input[name="indicator"], textarea[name="indicator"]').count()) === 0);
 
   await boss.page.fill("#kib", stamp);
-  await boss.page.click('button:has-text("Save changes")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Save changes")'));
 
   const { data: c } = await db.from("control").select("kib_note, indicator").eq("code", "4.3.1.3").single();
   check("kib_note persisted", c.kib_note === stamp, c.kib_note);
@@ -625,8 +665,7 @@ console.log("\n[10] Framework admin writes the tunable layer only");
   await boss.page.goto("/admin?c=4.3.1.3");
   await boss.page.selectOption("#priority", "Low");
   await boss.page.fill("#reason", "");
-  await boss.page.click('button:has-text("Save changes")');
-  await boss.page.waitForLoadState("networkidle");
+  await submitAction(boss.page, () => boss.page.click('button:has-text("Save changes")'));
   check("a reason is required when a control is not Active/High",
     (await boss.page.content()).includes("reason is required"));
 
@@ -676,14 +715,14 @@ console.log("\n[11] Password gate (A1)");
     document.querySelectorAll("input").forEach((i) => i.removeAttribute("minLength"));
   });
   await gated.page.click('form:has(#password) button[type="submit"]');
-  await gated.page.waitForLoadState("networkidle");
+  await actionLanded(gated.page, "at least 10");
   check("a short password is refused", (await gated.page.content()).includes("at least 10"));
 
   await gated.page.goto("/change-password");
   await gated.page.fill("#password", "LongEnough1!aa");
   await gated.page.fill("#confirm", "DifferentOne1!a");
   await gated.page.click('form:has(#password) button[type="submit"]');
-  await gated.page.waitForLoadState("networkidle");
+  await actionLanded(gated.page, "do not match");
   check("mismatched passwords are refused", (await gated.page.content()).includes("do not match"));
 
   // the happy path clears the flag and releases the app
@@ -692,7 +731,10 @@ console.log("\n[11] Password gate (A1)");
   await gated.page.fill("#password", NEWPASS);
   await gated.page.fill("#confirm", NEWPASS);
   await gated.page.click('form:has(#password) button[type="submit"]');
-  await gated.page.waitForLoadState("networkidle");
+  // The success path REDIRECTS off /change-password, so the URL is the signal.
+  // There is no text to wait for — the page the user lands on is the evidence.
+  await gated.page.waitForURL((u) => !u.pathname.includes("change-password"),
+    { timeout: 15_000 }).catch(() => {});
 
   const { data: after } = await db.from("app_user")
     .select("must_change_password").eq("email", OTHER.email).single();
@@ -726,14 +768,19 @@ console.log("\n[12] People screen (A1)");
   await boss.page.selectOption("#role", "assessee");
   await boss.page.fill("#password", "AddedByAdmin1!");
   await boss.page.click('button:has-text("Add person")');
-  await boss.page.waitForLoadState("networkidle");
+  await actionLanded(boss.page, NEWMAIL);
 
   const { data: made } = await db.from("app_user")
     .select("id, role, must_change_password").eq("email", NEWMAIL).maybeSingle();
-  // The URL carries the action's error when this fails. Without it the failure
-  // reads as "the person is on the allowlist: false", which says nothing about
-  // WHY and sent one investigation down a wrong path.
-  check("the person is on the allowlist", made !== null, boss.page.url());
+  // Report the ERROR BANNER, not the URL. addPersonAction renders failures in
+  // the page rather than as a query parameter, so `boss.page.url()` was always
+  // going to read "/admin/people" whatever went wrong — a diagnostic that could
+  // only ever confirm the page it was already on. Second wrong guess at this
+  // one check; the banner is where the action actually says what happened.
+  const addError = await boss.page.locator(".banner-error").first()
+    .textContent().catch(() => null);
+  check("the person is on the allowlist", made !== null,
+    addError?.trim() || "(no error banner shown)");
   check("created flagged to set their own password", made?.must_change_password === true);
   check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
   check("a new person appears in the assign list, without an assessment",
@@ -752,7 +799,7 @@ console.log("\n[12] People screen (A1)");
   await boss.page.fill("#email", NEWMAIL);
   await boss.page.fill("#password", "AnotherOne1!aa");
   await boss.page.click('button:has-text("Add person")');
-  await boss.page.waitForLoadState("networkidle");
+  await actionLanded(boss.page, "already on the allowlist");
   check("a duplicate email is refused", (await boss.page.content()).includes("already on the allowlist"));
 
   /* An ORPHAN: a sign-in account with no allowlist row.
@@ -777,7 +824,7 @@ console.log("\n[12] People screen (A1)");
   await boss.page.selectOption("#role", "assessee");
   await boss.page.fill("#password", "OrphanNew1!aa");
   await boss.page.click('button:has-text("Add person")');
-  await boss.page.waitForLoadState("networkidle");
+  await actionLanded(boss.page, ORPHAN);
 
   const { data: adopted } = await db.from("app_user")
     .select("id, must_change_password").eq("email", ORPHAN).maybeSingle();
@@ -799,8 +846,8 @@ console.log("\n[12] People screen (A1)");
   await boss.page.goto("/admin/people");
   const row = boss.page.locator("tr", { hasText: NEWMAIL });
   await row.locator('input[name="password"]').fill("ResetByAdmin1!");
-  await row.locator('button:has-text("Reset")').click();
-  await boss.page.waitForLoadState("networkidle");
+  // The click is on a row locator, so the page has to be named explicitly.
+  await submitAction(boss.page, () => row.locator('button:has-text("Reset")').click());
   const { data: afterReset } = await db.from("app_user")
     .select("must_change_password").eq("email", NEWMAIL).single();
   check("an admin reset re-arms the must-change flag", afterReset.must_change_password === true);
@@ -998,8 +1045,7 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     await page.goto("/login");
     await page.fill("#email", PM.email);
     await page.fill("#password", PM.password);
-    await page.click('form button[type="submit"]:has-text("Sign in")');
-    await page.waitForLoadState("networkidle");
+    await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
 
     const state = () => page.evaluate(() => ({
       attr: document.documentElement.getAttribute("data-theme"),
@@ -1017,13 +1063,15 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     // that changing theme talks to no server at all. As a server action this
     // was a full re-render — measured at 3-4s in production, because the theme
     // lives on <html> and revalidatePath had to rebuild the whole tree.
-    let requests = 0;
-    const count = () => { requests++; };
+    // Record WHAT, not just how many. A bare count told us a request happened
+    // and nothing about which, and the first flake here cost a round of guessing.
+    const seen = [];
+    const count = (r) => { seen.push(`${r.resourceType()} ${new URL(r.url()).pathname}`); };
     page.on("request", count);
     await page.click('.themetoggle button:has-text("Light")');
     await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
     page.off("request", count);
-    check("changing theme makes no network request at all", requests === 0, `${requests} requests`);
+    check("changing theme makes no network request at all", seen.length === 0, seen.join(", "));
     const light = await state();
     check("Light overrides a dark OS rather than doing nothing",
       light.attr === "light" && light.bg === "rgb(244, 246, 249)", `${light.attr} / ${light.bg}`);
@@ -1053,6 +1101,61 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
 
     await ctx.close();
   }
+
+/* ------------------------------------------------- 15. prefetch cost (N21) */
+console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
+{
+  /* Every route is force-dynamic and there is no loading.tsx, so Next has
+     nothing it will render for a prefetch — measured in production, 98 of 101
+     _rsc requests came back having made zero database calls. They are not free:
+     each is a function invocation, and the nav fires five at once on every page
+     while the controls index carries one per control. Six landing together makes
+     Vercel cold-start instances to absorb them.
+
+     This asserts the requests are gone, not that the app got faster — the
+     cold-start link is a hypothesis (N21), the wasted invocations are a fact.
+     It also guards the wrapper: importing next/link directly somewhere would
+     quietly reintroduce them, and nothing else in the suite would notice. */
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", BOSS.email);
+  await page.fill("#password", BOSS.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+
+  const prefetches = [];
+  const watch = (req) => {
+    const u = new URL(req.url());
+    if (u.searchParams.has("_rsc")) prefetches.push(u.pathname);
+  };
+  page.on("request", watch);
+
+  // The controls index is the worst case: the five nav links plus one link per
+  // control, all rendered at once.
+  await page.goto("/assess/controls");
+  await page.waitForLoadState("networkidle");
+  // Scroll the whole list — prefetch fires on viewport entry, so a link that is
+  // never seen was never going to cost anything and would flatter the result.
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 400) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 30));
+    }
+  });
+  await page.waitForLoadState("networkidle");
+  page.off("request", watch);
+
+  check("no link prefetches on the heaviest page, even scrolled to the bottom",
+    prefetches.length === 0, `${prefetches.length}: ${[...new Set(prefetches)].join(", ")}`);
+
+  // The links must still WORK — prefetch={false} changes when the payload is
+  // fetched, never whether the navigation happens.
+  await page.click('.nav a:has-text("Results")');
+  await page.waitForURL(/\/results/);
+  check("navigation still works with prefetching off", page.url().includes("/results"));
+
+  await ctx.close();
+}
 
 }
 
