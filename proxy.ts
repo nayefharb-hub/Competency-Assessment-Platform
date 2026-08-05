@@ -4,9 +4,13 @@
  *
  * This is the COARSE gate only — it proves a session cookie exists, nothing
  * more. The real allowlist check (does this account have an app_user row?) and
- * every role check happen server-side in lib/auth.ts, which calls
- * `auth.getUser()` and therefore validates the token against Supabase on every
- * single page. Nothing is trusted on the strength of this file.
+ * every role check happen server-side in lib/auth.ts. Since the save-latency
+ * work that file verifies the token's SIGNATURE locally (getClaims, ES256)
+ * rather than asking Supabase per request — so a forged or expired token is
+ * still refused there, but a token revoked by signing out elsewhere stays
+ * valid until it expires. That trade, and the shortened token lifetime that
+ * bounds it, are recorded in docs/deploy.md. Nothing is trusted on the
+ * strength of THIS file either way.
  *
  * PERFORMANCE (why it no longer validates here itself): this runs on EVERY
  * request, and `getUser()` is a network round trip to Supabase Auth. The page

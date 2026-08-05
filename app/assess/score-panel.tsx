@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/app/link";
-import { commit } from "@/lib/outbox";
+import { commit, pendingFor } from "@/lib/outbox";
 
 interface Level {
   level: number;
@@ -51,8 +51,14 @@ export default function ScorePanel({
   // whenever the control does. This is also what makes an ABANDONED pick clear
   // itself: nothing was written, so the server's value is the truth.
   useEffect(() => {
-    setLevel(savedLevel);
-    setEvidence(savedEvidence);
+    // The OUTBOX holds newer truth than the server render while an answer is
+    // still queued. Without this the page would show the server's older value,
+    // the PM could look at it, accept it, and change nothing — and then the
+    // queued answer would land on top of the choice they just made, with
+    // nothing ever telling them. Seed from the queue when it has something.
+    const queued = pendingFor(control);
+    setLevel(queued ? queued.level : savedLevel);
+    setEvidence(queued ? (queued.evidence ?? "") : savedEvidence);
   }, [control, savedLevel, savedEvidence]);
 
   // Remember where they are, so "Self-assessment" in the menu comes back HERE
@@ -61,7 +67,12 @@ export default function ScorePanel({
   // DESIGN.md gives for storing the theme per device applies — the server can
   // read it during the render, so there is no flash and no extra round trip.
   useEffect(() => {
-    document.cookie = `cap.last=${encodeURIComponent(control)}; path=/; max-age=${60 * 60 * 24 * 120}; SameSite=Lax`;
+    // Secure is safe here and worth having: browsers treat localhost as a
+    // trustworthy origin, so this still works in development, and in
+    // production the position never travels over plain HTTP.
+    const secure = location.protocol === "https:" ? "; Secure" : "";
+    document.cookie =
+      `cap.last=${encodeURIComponent(control)}; path=/; max-age=${60 * 60 * 24 * 120}; SameSite=Lax${secure}`;
   }, [control]);
 
   const dirty = level !== savedLevel || evidence !== savedEvidence;

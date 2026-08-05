@@ -505,6 +505,16 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    and worth closing whenever this area is next touched: a run that dies
    silently on the count is the same shape of missing signal that let the
    original flake hide for three rounds.
+12. **Separation of duties: one person can assess themselves end to end.**
+   A role is a single value and the assessor-side checks never ask whose
+   record it is, so one account with `admin` can assign to self, self-score,
+   submit, revise and approve — no second party in the trail. The assessee
+   direction IS guarded, so the hole is one-way. Owner's position: the two
+   capacities must be independent; the wrinkle is that people are identified
+   by email, so it cannot be solved by giving someone a second account.
+   **Needs `/plan-design-review` on a written proposal before any code** —
+   see pilot-feedback N25. Not blocking the pilot (nine people, one assessor),
+   but it is the first question an auditor asks of a bank capability record.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other

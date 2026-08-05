@@ -417,8 +417,17 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
     const prefix = "base64-";
     const decoded = JSON.parse(Buffer.from(auth.value.slice(prefix.length), "base64url").toString());
     const [h, p, sig] = decoded.access_token.split(".");
-    // flip the last character of the signature — structurally valid, cryptographically not
-    const flipped = sig.slice(0, -1) + (sig.endsWith("A") ? "B" : "A");
+    // Flip the FIRST character of the signature, not the last.
+    //
+    // An ES256 signature is 64 bytes = 512 bits, written as 86 base64url
+    // characters = 516 bits. The final character therefore carries only 2
+    // significant bits and 4 that decode to nothing. Flipping 'A'↔'B' there
+    // changes a padding bit and NOTHING ELSE: the decoded signature bytes are
+    // identical and the token still verifies. This test did exactly that and
+    // passed or failed depending on what the real signature happened to end
+    // with — it looked like a flaky auth test and was a flaky assertion.
+    // The first character is fully significant, so this always alters the key.
+    const flipped = (sig[0] === "A" ? "B" : "A") + sig.slice(1);
     decoded.access_token = [h, p, flipped].join(".");
     const value = prefix + Buffer.from(JSON.stringify(decoded)).toString("base64url");
     await ctx.addCookies([{ ...auth, value }]);
@@ -760,6 +769,63 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
+   * CROSS-ACCOUNT WRITE (review finding, found by two independent passes).
+   *
+   * The queue outlives the page, and a server action posts with whatever
+   * session cookie the browser holds NOW. Leave a tab with a failed save,
+   * sign in as someone else on the same browser, and the stale tab's retry
+   * would write one PM's answer into the other's assessment — authoritative
+   * input to an assessor's sheet, from a person who never gave it.
+   *
+   * Driven directly against the action, because reproducing it through two
+   * tabs is exactly the timing that makes it hard to see: the point is that
+   * the SERVER refuses, whatever the client believes.
+   */
+  {
+    const bossId = await idOf(BOSS.email);
+    const a = await assessmentOf(PM.email);
+    const target = activeControls.find((c) => c.code === "4.3.3.1");
+    const before = await db.from("score").select("self_level")
+      .eq("assessment_id", a.id).eq("control_id", target.id).maybeSingle();
+
+    // Queue an entry stamped with the WRONG account, then let the outbox run.
+    await pm.page.goto("/assess?c=4.3.3.1");
+    await pm.page.waitForSelector(".optlist");
+    // The mirror key only exists once something has been queued, so write it
+    // directly: `cap.outbox.<userId>` is the documented shape.
+    const pmId = await idOf(PM.email);
+    await pm.page.evaluate(({ pm, bad }) => {
+      localStorage.setItem(`cap.outbox.${pm}`, JSON.stringify([{
+        control: "4.3.3.1", level: 5, evidence: null, tries: 0,
+        queuedAt: Date.now(), userId: bad,
+      }]));
+    }, { pm: pmId, bad: bossId });
+    await pm.page.reload();                 // configure() adopts the mirror and flushes
+    await pm.page.waitForTimeout(3_000);
+
+    const after = await db.from("score").select("self_level")
+      .eq("assessment_id", a.id).eq("control_id", target.id).maybeSingle();
+    check("an answer queued by another account is never written",
+      (after.data?.self_level ?? null) === (before.data?.self_level ?? null),
+      `before=${JSON.stringify(before.data)} after=${JSON.stringify(after.data)}`);
+    check("and it is dropped rather than retried forever",
+      (await pm.page.evaluate((pm) => localStorage.getItem(`cap.outbox.${pm}`), pmId)) === null);
+  }
+
+  /*
+   * SUBMIT IS GATED ON THE QUEUE (eng-plan-save-ux, restored after review).
+   * Submitting copies self_level into assessor_level and leaves draft. An
+   * answer still queued at that moment loses either way — overwritten by the
+   * prefill, or rejected forever by the draft-state check.
+   */
+  {
+    await pm.page.goto("/assess/controls");
+    await pm.page.waitForLoadState("networkidle");
+    const gated = await pm.page.evaluate(() => !!document.querySelector("form .note"));
+    check("with an empty queue the submit button is not gated by it", !gated);
+  }
+
+  /*
    * THE OUTAGE (eng-plan-save-ux). The point of the outbox is that a PM can
    * keep working through a network failure and lose nothing. Simulated by
    * aborting the server-action POST — indistinguishable, from the browser's
@@ -1098,7 +1164,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     byCe.set(c.competence_element.code, g);
   }
   check("28 competence elements roll up", byCe.size === 28, `${byCe.size}`);
-  check("inactive 4.3.2.6 excluded — 4.3.2 rolls up 6 controls, not 7",
+  check("inactive 4.3.3.1 excluded — 4.3.2 rolls up 6 controls, not 7",
     byCe.get("4.3.2").levels.length === 6, `${byCe.get("4.3.2").levels.length}`);
 
   await boss.page.goto(`/results?a=${assessmentId}`);

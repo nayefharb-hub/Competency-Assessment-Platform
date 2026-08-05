@@ -67,7 +67,8 @@ const checks = [
         const name = row.competence_element.competence_area.name;
         tally[name] = (tally[name] ?? 0) + 1;
       }
-      return Object.entries(tally).map(([k, v]) => `${k} ${v}`).sort().join(" · ");
+      return Object.entries(tally).map(([k, v]) => `${k} ${v}`)
+        .sort((a, b) => a.localeCompare(b)).join(" · ");
     },
     "People 49 · Perspective 24 · Practice 60",
   ],

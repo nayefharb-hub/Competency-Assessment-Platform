@@ -1,10 +1,10 @@
 import Link from "@/app/link";
+import SubmitButton from "../submit-button";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
-import { submitAssessmentAction } from "@/app/actions";
 import NotAssigned from "../not-assigned";
 
 export const dynamic = "force-dynamic";
@@ -98,13 +98,7 @@ export default async function ControlsIndex({
                 {done === 0 ? "Start" : "Continue"} — control {fw.controlPosition(firstUnscored.code)}
               </Link>
             )}
-            {draft && (
-              <form action={submitAssessmentAction}>
-                <button className="btn btn-accent" type="submit" disabled={!complete}>
-                  Submit for review
-                </button>
-              </form>
-            )}
+            {draft && <SubmitButton complete={complete} />}
           </div>
         </div>
         <div className="progress" aria-hidden="true">

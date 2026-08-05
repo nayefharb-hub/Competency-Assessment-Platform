@@ -145,7 +145,13 @@ body {
 
 a { color: var(--accent); }
 
-h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
+h1, h2, h3 {
+  margin: 0; text-wrap: balance; font-family: var(--font-display);
+  /* DESIGN.md: headings 1.25. Merged here from a second `h1, h2, h3` rule 480
+     lines further down — two rules for one selector is how a cascade quietly
+     starts fighting itself, and SonarCloud (S4666) flagged it. */
+  line-height: 1.25;
+}
 
 /* Data and tables use tabular figures so scores line up column-wise. */
 .tnum { font-variant-numeric: tabular-nums; }
@@ -629,7 +635,6 @@ h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 /* The gloss sits inside a radio row that already constrains it; the cap is
    there for the wide-viewport case only. */
 .optlist .opt b { line-height: 1.35; }
-h1, h2, h3 { line-height: 1.25; }
 
 /* ---------- outbox banner (save UX) ----------
    Sits above <main> on every signed-in page and renders only while answers

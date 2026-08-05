@@ -1615,3 +1615,189 @@ is acceptable for a bank.
 Plus one hazard worth fixing independently of all of the above: `invite remove`
 hard-deletes a live assessment today, silently, via `on delete cascade` from
 `app_user`. Verified against the live database.
+
+### N24 — the review pass the merges skipped, run afterwards
+
+`/review` and `/cso` were run against the merged save-latency and save-UX code
+on 2026-08-05, after the owner made them a standing gate (`CLAUDE.md`). Two
+independent adversarial passes plus a security pass. What they found is the
+argument for the gate.
+
+**Fixed here.**
+
+1. **Cross-account write.** Found independently by BOTH passes, by different
+   routes. A server action posts with whatever session cookie the browser holds
+   *now*, and the outbox outlives the page: leave a tab with a failed save, let
+   a colleague sign in on the same machine, and the stale tab's retry timer
+   writes one PM's answer into the other's assessment — authoritative input to
+   an assessor's sheet, from someone who never gave it. Entries now carry the
+   account that confirmed them and the server refuses a mismatch outright
+   (`reject`, not retry — the mismatch cannot resolve itself). The header
+   comment claiming safety was wrong: it protected the *restore* path, not the
+   live queue.
+2. **`redirect()` swallowed by the action's catch.** `requireUser()` answers
+   "signed out", "not on the allowlist" and "must change password" by throwing
+   a redirect. Catching it turned a navigation into a permanent silent failure:
+   an expired session's answers would requeue every 30s forever while the PM
+   was never sent to sign in, and the password gate became a string. Now
+   `unstable_rethrow`.
+3. **Submit was not gated on the queue** — specified in the plan, missing from
+   the build. Submitting copies `self_level` into `assessor_level` and leaves
+   draft; an answer still queued at that moment is either overwritten by the
+   prefill or rejected forever by the draft check. Both end with the assessor
+   reading a number the PM did not give.
+4. **A re-commit reset `tries` to zero**, unmounting the failure banner while
+   the network was still down and restarting the backoff. Bookkeeping also ran
+   by object identity while its own comment claimed control code, so a
+   re-commit mid-flush incremented a detached object and the mirror recorded a
+   failure that never happened.
+5. **The banner was blind for the whole of a first attempt.** `tries` only
+   rises *after* an attempt returns, and against a hung server that is minutes.
+   Age now counts too, and each attempt has a 15s timeout so one hung request
+   cannot swallow every wake-up including "the network is back".
+6. **A queued answer could silently overwrite a later choice.** The panel
+   rendered the server's older value; a PM could look at it, accept it, change
+   nothing — and the queued answer would land on top. The panel now seeds from
+   the outbox when it holds something.
+7. Smaller: `isEntry` accepted a mirror without `tries`, which made the backoff
+   `NaN` and `setTimeout` coerce it to 0 — a tight retry loop with the banner
+   permanently hidden. The countdown rendered against a frozen clock. The
+   offline banner promised "saved on this device" even when localStorage was
+   refusing writes. `cap.last` survived sign-out, resuming the next person on a
+   shared machine at the previous PM's control. `pageshow` was missing, so a
+   bfcache restore could leave the app stuck offline. Sign-out with a queue now
+   flushes, and says so plainly if it cannot.
+
+**A flaky test that was a flaky assertion.** "A signature-tampered token is
+refused" passed or failed run to run. The app was never at fault: the test
+flipped the LAST character of the ES256 signature, which carries 2 significant
+bits and 4 that decode to nothing — `A`↔`B` there changes a padding bit and the
+signature still verifies. It now flips the first character. Two consecutive
+clean runs.
+
+**Recorded, not fixed — these need an owner decision.**
+
+- **An assessor can approve their own assessment.** `approveAction` gates on
+  role only; there is no `assessee_id !== assessor.id` check, and the Head of
+  PMO holds both roles. If they are themselves assessed, they can self-score,
+  submit and approve with no second party in the trail. For a bank capability
+  record this is the question an auditor asks first.
+- **Raw PostgREST error text still reaches `?error=` URLs** from the admin and
+  review actions (constraint and column names, under the service-role key),
+  landing in browser history and access logs. The commit path was fixed; the
+  rest is pre-existing and wider than this diff.
+- **`?error=` is reflected into a styled alert banner.** React escapes it, so
+  this is phishing rather than XSS — an attacker-supplied sentence rendered in
+  the app's own error styling at the real origin.
+- **Two tabs clobber the localStorage mirror**: each writes its whole queue,
+  and an empty queue calls `removeItem`, so one tab can erase another's unsent
+  answers. Needs a merge-on-write or a `storage` listener; deliberately not
+  attempted late in a session, since a half-tested fix here loses answers.
+- **The mirror survives sign-out** with control codes, levels and free-text
+  evidence under a key naming the user's UUID. That is the accepted cost of
+  surviving a crash (D8); the sign-out warning is the mitigation.
+
+### N25 — one person can assess themselves, end to end
+
+**Found by** the `/cso` pass on 2026-08-05 (recorded in N24), **scoped by the
+owner** immediately after. Logged, deliberately not fixed: the fix is a change
+to the role model, and the owner has asked for `/plan-design-review` before any
+code is written.
+
+**The gap.** `UserRole` is a single value per person — `assessee | assessor |
+admin` (`lib/types.ts:104`) — and the authorisation checks ask only which role
+someone holds, never whether the record in front of them is their own:
+
+- `approveAction` / `approveAssessment` — `requireRole("assessor","admin")` and
+  then an assessment id taken from the form. No `assessee_id !== approver.id`.
+- `saveRevisionsAction` / `setAssessorLevels`, `acceptAllAction` /
+  `acceptAllRemaining` — same shape.
+- `assignAssessment` — an admin may include their own id in the list.
+
+The assessee direction *is* guarded (`saveSelfScore`, `submitSelfAssessment`
+both check `row.assessee_id !== user.id`), so the hole is one-way: nobody can
+score someone else's sheet, but the reviewer can be the person reviewed.
+
+Today the Head of PMO holds `admin`, which carries assessor rights, and is
+also a plausible assessee. The whole path is available to one account:
+assign to self → self-score 132 controls → submit → revise own scores →
+approve. `assessor_id` is then stamped as themselves, and the record is locked
+and published to the dashboard with no second party anywhere in the trail.
+
+**The owner's position (2026-08-05):** *"separation needs to be there — I am
+either an assessor or taking the assessment. Both roles should be independent.
+If I need to score myself then I need to add myself as a project manager, or
+add that role as someone who takes assessments."* Note the wrinkle they raised:
+people are identified by email, so "add myself as a PM" cannot mean a second
+account — one human, one login, and the model has to express *which capacity
+they are acting in* rather than duplicating the person.
+
+**Why this is a design question, not a patch.** A one-line
+`if (row.assessee_id === user.id) throw` would close the approval path and
+leave the shape of the problem untouched. The real questions:
+
+- Is a role a single value, or a **set** (a person is a PM *and* the assessor)?
+- If one person legitimately holds both, who assesses *them*? A second
+  assessor, someone external, or is the Head of PMO's own assessment simply out
+  of scope for this cycle?
+- Does the rule belong in the **data** (a `deleted_at`-style column, an
+  `assessor_id` assigned at assignment time and enforced in the query) or in
+  the **actions**?
+- What does the UI say when the one thing you cannot do is approve the record
+  in front of you — and how does that read to a Head of PMO who is used to
+  having every button?
+- Does an audit trail need to record *who could have* approved, not only who
+  did?
+
+**Next step:** `/plan-design-review` on a written proposal before any code. The
+prototype ships to nine people with a single assessor, so this is not blocking
+the pilot — but it is the first question an auditor asks of a bank capability
+record, and it is cheaper to settle before the framework is multi-tenant.
+
+### N26 — SonarCloud has not analysed anything since 2026-08-04
+
+Read via the API on 2026-08-05, once the owner allowed the host and supplied a
+token.
+
+**The finding that matters more than any individual issue: the analysis is
+stale.** SonarCloud's last run was `b898a19` — *"Pilot feedback, the readability
+fix, and the admin People screen (#6)"*, dated 2026-08-04. Since then main has
+taken the whole performance arc (#9–#13), plus #15, #16, #19 and #20. None of
+it has been scanned: `lib/outbox.ts`, `lib/ttl-map.ts`, `app/outbox-banner.tsx`
+and `app/assess/score-panel.tsx` are not files SonarCloud knows exist.
+
+So the gate the owner asked for — *check Sonar after every push containing
+code* — cannot function yet. There is no `.github/workflows`, so nothing runs
+the scanner in CI, and Automatic Analysis is evidently not running either.
+**Owner step:** SonarCloud → the project → Administration → Analysis Method →
+turn **Automatic Analysis** on (it covers TS/JS/CSS, which is this repo). Adding
+a `sonar-project.properties` file is NOT the move — SonarCloud reads that as a
+CI-based setup and disables Automatic Analysis.
+
+**The 325 open issues, triaged.**
+
+| Count | Rule | Verdict |
+|---|---|---|
+| 224 | `plsql:S1192` duplicated string literal | **False positive.** All but four are in `supabase/seed.sql`, and every one is the ICB4 framework's own seed data — 133 controls whose area names and level labels repeat by definition. Sonar is also reading Postgres as PL/SQL. |
+| 10 | `javascript:S1313` "hardcoded IP address" | **False positive, and a good one:** the "IP addresses" are ICB4 control codes. `4.3.1.1` is *Leadership*, not a host. |
+| 3 | `plsql:LiteralsNonPrintableCharacters` | **False positive.** ICB4 source text carries typographic quotes and dashes. That text is never edited — it is the standard's own wording. |
+| 24 | `typescript:S6551` implicit stringification | **Worth a look, not urgent.** `String(formData.get(x))` can yield `[object File]` if a form ever posts a file. None do today, so this is latent rather than live. |
+| 16 | `typescript:S6759` props not read-only | Style. Free to fix, changes nothing at runtime. |
+| 13 | `typescript:S6819` prefer `<output>` to `role="status"` | **Mostly false positive.** `<output>` is for a form's calculated result; these are status banners, and `role="status"` is the correct ARIA for them. |
+| 10 | nested ternaries, template literals, `Math.trunc` | Readability. Judgement, no defect. |
+| 2 | `css:S7924` contrast | **Unverifiable today** — the line numbers point at a file 480 lines shorter than the current one. Re-check after a fresh analysis. DESIGN.md's decisions log already records a contrast judgement, so this one deserves a real answer rather than a dismissal. |
+
+**Fixed here** (the two that survived verification against current code):
+
+- `css:S4666` — `h1, h2, h3` was declared twice, 480 lines apart, the second
+  adding only `line-height`. Merged into one rule. Two rules for one selector is
+  how a cascade quietly starts fighting itself.
+- `javascript:S2871` — the one issue Sonar types as a **bug**: `.sort()` with no
+  comparator in `verify-db.mjs`. Benign for these ASCII strings, but the intent
+  is alphabetical and `localeCompare` says so without leaning on UTF-16 order.
+  `verify:db` still passes 11/11.
+
+**The single change that would make this list usable:** exclude
+`supabase/seed.sql` from analysis (SonarCloud → Administration → General
+Settings → Analysis Scope). That removes 69% of everything and leaves a list
+worth reading — which is the whole point of the gate.
