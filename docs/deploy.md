@@ -45,6 +45,17 @@ Only the two `NEXT_PUBLIC_` values are ever sent to the browser. That naming is
 load-bearing: Next.js inlines any `NEXT_PUBLIC_*` variable into client
 JavaScript, so **never rename the service role key to start with it.**
 
+**Tick `Preview` as well as `Production` on all four.** Vercel scopes variables
+per environment, and a variable set for Production only does not exist in a
+preview deployment. The failure is confusing rather than obvious: `/login`
+renders fine, because it touches no database, and then sign-in dies with a bare
+*"A server error occurred"* — the sign-in action is the first code that calls
+`db()`. The Runtime Logs for that deployment name the missing variable outright,
+because `required()` in `lib/supabase/server.ts` says which one it wanted.
+
+Changing a variable does **not** affect existing deployments. Redeploy after
+editing (Deployments → `⋯` → Redeploy), the same way Fluid Compute needs one.
+
 ## 3. Deploy
 
 Click **Deploy** and wait ~2 minutes. You get a URL like
@@ -150,8 +161,33 @@ appeared. See N21 for how that changes the verification.
 
 ## Notes
 
-- **Preview deployments.** Once connected, every pushed branch gets its own URL,
-  so changes can be looked at before they reach the production one.
+- **Preview deployments, and why they share the production database.** Every
+  pushed branch gets its own URL, so a change can be looked at before it reaches
+  production — but only once the environment variables are scoped to `Preview`
+  as well as `Production` (see section 2). Until they are, the preview URL serves
+  a sign-in page that cannot sign anyone in, and the only way to see a change is
+  to merge it first. That happened twice: PR #14 and #15 were both reviewed after
+  landing rather than before.
+
+  **The decision (2026-08-05): reuse the production Supabase project for
+  previews, guarded by Vercel Authentication.** Preview URLs are shareable and
+  not secret, so putting the service-role key — full, RLS-bypassing access to
+  real KIB employee data — behind one would be indefensible on its own. What
+  makes it acceptable is *Project Settings → Deployment Protection → Vercel
+  Authentication*, set to **Standard Protection**: a visitor must be logged in to
+  Vercel and a member of the team before the deployment answers at all. **If that
+  is ever switched off, the preview scoping must come off with it.**
+
+  The consequence to keep in mind while using a preview: it is pointed at the
+  **live pilot database**. Approving an assessment or editing a person there is a
+  real change to real records, not a sandbox. `scripts/demo.mjs reset <email>`
+  undoes a self-assessment; nothing undoes an approval.
+
+  **If that stops being comfortable**, the alternative is a second Supabase
+  project for preview with its own keys and seeded fake people. It is proper
+  isolation, and it costs a seed script that has to be kept in step with the
+  migrations. Not worth it for a nine-person pilot; worth revisiting the moment
+  anyone outside the PMO gets a preview link, or the data stops being KIB's own.
 - **Data residency.** This puts KIB employee data on external cloud
   infrastructure. That was accepted for the pilot in the design doc — worth
   re-reading now that it is real rather than hypothetical, and worth the
