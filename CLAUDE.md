@@ -110,6 +110,26 @@ the skills carry checklists and quality gates. When in doubt, invoke the skill.
 | New product idea or scope question | `/office-hours` |
 | Save or resume working context | `/context-save`, `/context-restore` |
 
+### Gates that are not optional
+
+Standing rule, set by the owner on 2026-08-05 after two code PRs merged the
+same day having been checked only by their author and their tests. Four
+defects reached the owner's preview that a review pass exists to catch.
+`/review` is the staff-engineer pass — adversarial subagent, cross-model
+challenge, doc-staleness check — and it is not the same thing as having
+written tests.
+
+| Before this | Run |
+|---|---|
+| **Merging anything containing code** | `/review` on the diff |
+| A diff touching **auth, sessions, storage, or the allowlist** | `/cso` as well |
+| A **user-visible** change reaching production | `/qa` after it deploys |
+
+Deliberately **not** "before every push". Most pushes here are documentation,
+and a full adversarial pass on a `STATUS.md` edit teaches everyone to skim the
+output — the same failure mode as a banner that fires on every save. The
+trigger is the **merge**, not the push, and only when code is in it.
+
 **Most relevant next:** once the app is wired to Supabase, run `/review` on the
 diff, `/qa` against the running app, and `/design-review` to check the built UI
 against `DESIGN.md` — then `/ship`.
