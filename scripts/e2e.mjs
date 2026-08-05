@@ -755,6 +755,45 @@ console.log("\n[12] People screen (A1)");
   await boss.page.waitForLoadState("networkidle");
   check("a duplicate email is refused", (await boss.page.content()).includes("already on the allowlist"));
 
+  /* An ORPHAN: a sign-in account with no allowlist row.
+     The owner hit this in production — "A user with this email address has
+     already been registered" while the People list showed nobody by that name,
+     and no way out of the UI. It is also the likeliest cause of the add-person
+     tests failing about one run in four (N17): an interrupted run leaves
+     exactly this state behind. Built deliberately here rather than waited for. */
+  const ORPHAN = "qa.orphan@example.test";
+  await purge(ORPHAN);
+  const madeOrphan = await db.auth.admin.createUser({
+    email: ORPHAN, password: "OrphanOld1!aa", email_confirm: true,
+  });
+  check("fixture: an orphaned sign-in account exists", !madeOrphan.error, madeOrphan.error?.message);
+  const { data: noRow } = await db.from("app_user").select("id").eq("email", ORPHAN).maybeSingle();
+  check("fixture: and it is not on the allowlist", noRow === null);
+
+  await boss.page.goto("/admin/people");
+  await boss.page.fill("#full_name", "QA Orphan Person");
+  await boss.page.fill("#email", ORPHAN);
+  await boss.page.fill("#job_title", "Project Manager");
+  await boss.page.selectOption("#role", "assessee");
+  await boss.page.fill("#password", "OrphanNew1!aa");
+  await boss.page.click('button:has-text("Add person")');
+  await boss.page.waitForLoadState("networkidle");
+
+  const { data: adopted } = await db.from("app_user")
+    .select("id, must_change_password").eq("email", ORPHAN).maybeSingle();
+  check("an orphaned sign-in account is adopted, not refused", adopted !== null, boss.page.url());
+  check("adoption reuses the existing auth id rather than making a second identity",
+    adopted?.id === madeOrphan.data?.user?.id);
+  check("the adopted account still has to set its own password",
+    adopted?.must_change_password === true);
+  // The password the ADMIN just typed must be the one that works — otherwise
+  // the admin hands over a credential that silently is not the account's.
+  const orphanIn = await session(ORPHAN, "OrphanNew1!aa");
+  check("the password the admin typed is the one that works",
+    !orphanIn.page.url().includes("/login"), orphanIn.page.url());
+  await orphanIn.ctx.close();
+  await purge(ORPHAN);
+
   // admin reset re-arms the gate
   await db.from("app_user").update({ must_change_password: false }).eq("email", NEWMAIL);
   await boss.page.goto("/admin/people");

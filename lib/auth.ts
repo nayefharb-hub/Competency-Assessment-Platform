@@ -72,6 +72,19 @@ const APP_USER_COLUMNS =
 type Viewer =
   | { status: "anon" }
   | { status: "uninvited" }
+  /**
+   * The allowlist could not be READ. Distinct from "uninvited" because the
+   * answers are opposite: an uninvited account must be signed out, and a failed
+   * query must not be, or one slow moment on the database logs a legitimate
+   * user out and tells them they were never invited.
+   *
+   * That is not hypothetical. The owner hit exactly this refreshing the page
+   * after a deployment — signed in as the admin, on the allowlist, and shown
+   * "That account is not on the assessment allowlist." The session was gone.
+   * `row.error` and `!row.data` were the same branch, and on a t3a.nano under
+   * cold-start load a transient failure is an ordinary event.
+   */
+  | { status: "unavailable"; message: string }
   | { status: "ok"; user: AppUser };
 
 const viewer = cache(async function viewer(): Promise<Viewer> {
@@ -86,8 +99,16 @@ const viewer = cache(async function viewer(): Promise<Viewer> {
     .eq("id", data.user.id)
     .maybeSingle();
 
-  // A session without an app_user row is an uninvited account: deny.
-  if (row.error || !row.data) return { status: "uninvited" };
+  // The query FAILED — we do not know whether they are invited, so we must not
+  // act as though we do. Logged loudly: the original bug was undiagnosable
+  // precisely because this path was silent, and a log line is what turns the
+  // next occurrence into evidence instead of a screenshot.
+  if (row.error) {
+    console.error(`[auth] app_user lookup failed: ${row.error.message}`);
+    return { status: "unavailable", message: row.error.message };
+  }
+  // Queried successfully, and there is genuinely no row: an uninvited account.
+  if (!row.data) return { status: "uninvited" };
   return { status: "ok", user: row.data as AppUser };
   });
 });
@@ -97,6 +118,17 @@ export async function currentUser(): Promise<AppUser | null> {
   const v = await viewer();
   return v.status === "ok" ? v.user : null;
 }
+
+/**
+ * The message shown when the allowlist cannot be read.
+ *
+ * Deliberately says "try again": the session is intact, so a refresh genuinely
+ * is the fix. The old behaviour told the user the opposite — that they had
+ * never been invited — which is both wrong and unrecoverable, since it took
+ * their session with it.
+ */
+const UNAVAILABLE =
+  "Could not reach the database to confirm your account. Your session is still valid — please try again.";
 
 /**
  * A signed-in account that is NOT on the allowlist is sent to /logout, which
@@ -119,6 +151,11 @@ export async function requireUser(
   const v = await viewer();
   if (v.status === "anon") redirect("/login");
   if (v.status === "uninvited") redirect("/logout?denied=1");
+  // Throws rather than redirecting: every redirect target here either signs the
+  // user out or is itself a page that must resolve the viewer, so redirecting
+  // on a database failure would either destroy a good session or loop. An error
+  // page keeps the session and a refresh recovers.
+  if (v.status === "unavailable") throw new Error(UNAVAILABLE);
 
   const user = v.user;
 
