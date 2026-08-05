@@ -122,6 +122,68 @@ await ensure(OTHER);
 await ensure(BOSS);
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
+
+/**
+ * Cleanup has to run even when the suite dies mid-flight.
+ *
+ * This is the N21 lesson, and it cost three rounds. The suite is top-level
+ * sequential code, so a throw at any one of the 68 `page.goto` calls skipped
+ * the entire cleanup block at the bottom of this file: the three QA accounts
+ * stayed in the REAL database — on the allowlist, inside the completion
+ * denominator — and the browser stayed open. The run printed a bare Node
+ * stack: no summary, no failing group, no clue which section died. A crash
+ * must leave the database as clean as a pass does, and must SAY what broke.
+ */
+let tornDown = false;
+async function teardown() {
+  if (tornDown) return;
+  tornDown = true;
+  console.log("\nCleaning up QA data and accounts…");
+  await purge(PM.email);
+  await purge(OTHER.email);
+  await purge(BOSS.email);
+  const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
+  check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
+    (leftovers ?? []).map((u) => u.email).join(","));
+  const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
+  check("no QA sign-in accounts left behind either", strays.length === 0,
+    strays.map((u) => u.email).join(","));
+  await browser.close().catch(() => {});
+}
+
+process.on("uncaughtException", (err) => {
+  fail++;
+  console.log(`\n  ✗ SUITE CRASHED — ${String(err?.message ?? err).split("\n")[0]}`);
+  const where = String(err?.stack ?? "").split("\n").find((l) => l.includes("e2e.mjs"));
+  if (where) console.log(`    ${where.trim()}`);
+  teardown()
+    .catch((e) => console.log(`  ✗ cleanup after the crash ALSO failed — ${e.message}`))
+    .finally(() => {
+      console.log(`\n${pass} passed, ${fail} failed`);
+      process.exit(1);
+    });
+});
+
+/**
+ * Chromium intermittently aborts a main-frame navigation with
+ * `net::ERR_ABORTED; maybe frame was detached?` — seen once in 9 runs, at the
+ * theme-survives-navigation step. The mechanism is NOT known: it is a
+ * navigation the renderer cancelled, and this arc has already lost three
+ * confidently-argued mechanisms, so this does not pretend to be a diagnosis.
+ * It retries once and SAYS SO in the output, so the retry can never quietly
+ * become the reason the suite looks green.
+ */
+async function gotoStable(page, url) {
+  try {
+    return await page.goto(url);
+  } catch (e) {
+    if (!String(e.message).includes("ERR_ABORTED")) throw e;
+    console.log(`    ↻ navigation to ${url} aborted; retrying once (N21)`);
+    return await page.goto(url);
+  }
+}
+
 async function session(email, password) {
   const ctx = await browser.newContext({ baseURL: BASE });
   const page = await ctx.newPage();
@@ -702,6 +764,36 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     check("the explanation never appears without the verdict it explains",
       stray.length === 0, `${stray.length} stray`);
 
+    /*
+     * Two escalating controls, not one. The single-victim case above never
+     * reaches the `and N more` branch, so that string shipped unexercised —
+     * and a count that is off by one is exactly the kind of thing that reads
+     * as authoritative on a results page and is wrong.
+     */
+    const second = fat.actives[1];
+    const low2 = Math.max(0, second.target_level - 2);
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: c.id === victim.id ? low : c.id === second.id ? low2 : 5,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+
+    await boss.page.goto(`/results?a=${assessmentId}`);
+    const rows2 = await boss.page.locator(".barrow").allInnerTexts();
+    const row2 = rows2.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
+    const where2 = `ce ${fat.code}: ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
+
+    // Named + counted: one control is named, the rest are counted. With two
+    // escalating it must say "and 1 more" — not "1 more" of a total of two,
+    // and not "2 more" counting the one it already named.
+    check("a second escalating control is counted, not silently dropped",
+      !!row2 && row2.includes("and 1 more"), where2);
+    check("the named control is still one of the escalating ones",
+      !!row2 && (row2.includes(`driven by ${victim.code}`) || row2.includes(`driven by ${second.code}`)),
+      where2);
+
     await db.from("score").upsert(
       fat.actives.map((c) => ({
         assessment_id: assessmentId, control_id: c.id,
@@ -1153,7 +1245,7 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     check("the pressed state says which theme is on",
       (await page.getAttribute('.themetoggle button:has-text("Light")', "aria-pressed")) === "true");
 
-    await page.goto("/assess/controls");
+    await gotoStable(page, "/assess/controls");
     check("the choice survives navigation",
       (await page.getAttribute("html", "data-theme")) === "light");
 
@@ -1235,18 +1327,7 @@ console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
 }
 
 /* ---------------------------------------------------------------- cleanup */
-console.log("\nCleaning up QA data and accounts…");
-await purge(PM.email);
-await purge(OTHER.email);
-await purge(BOSS.email);
-const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
-check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
-  (leftovers ?? []).map((u) => u.email).join(","));
-const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
-const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
-check("no QA sign-in accounts left behind either", strays.length === 0,
-  strays.map((u) => u.email).join(","));
+await teardown();
 
 console.log(`\n${pass} passed, ${fail} failed`);
-await browser.close();
 process.exit(fail === 0 ? 0 : 1);

@@ -399,8 +399,37 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    remain unexplained** — the run was tailed rather than saved, so there is no
    record of which checks they were.
    The lesson is the cheap one: **always save the whole run, never tail it.**
-   Next step is a saved sequence of 10+ runs on the current build, keeping every
-   log, before this can be called anything other than open.
+
+   **Caught on 2026-08-05, saved this time.** A 12-run sequence went 8 clean,
+   then run 9 died:
+
+   ```
+   page.goto: net::ERR_ABORTED; maybe frame was detached?
+     - navigating to "http://127.0.0.1:3000/assess/controls"
+   ```
+
+   at the theme-survives-navigation step in group [14]. Two findings, and the
+   second matters more than the flake:
+
+   - **The mechanism is still unknown.** It is a main-frame navigation the
+     renderer cancelled. This arc has already lost three confidently-argued
+     mechanisms, so nothing is claimed beyond what the log says. `gotoStable`
+     retries that one navigation **once and prints `↻ … (N21)` when it does**,
+     so a retry can never quietly be the reason the suite looks green.
+   - **The crash was worse than the flake.** `scripts/e2e.mjs` is top-level
+     sequential code, so a throw at any of its 68 `page.goto` calls skipped the
+     whole cleanup block: it left `qa.pm1`, `qa.pm2` and `qa.admin` in the
+     **real database** — on the allowlist, inside the completion denominator —
+     printed no summary and no failing group, and wedged the run loop. Verified
+     by finding all three still there 34 minutes later. There is now a
+     `teardown()` both paths share and an `uncaughtException` handler that runs
+     it, names the failing step and prints a summary. It proved itself
+     immediately: the next crash (a dead server) purged all three and reported
+     `2 passed, 1 failed` instead of a bare Node stack.
+
+   Still open: 8 clean runs is not the 12 the sequence was meant to give, and
+   the abort itself is uncharacterised. The next sequence runs on the hardened
+   harness, which will now survive a crash and say what died.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other
