@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/app/link";
 import { commit, pendingFor } from "@/lib/outbox";
+import { createDwellClock, type DwellClock } from "@/lib/dwell";
 
 interface Level {
   level: number;
@@ -80,11 +81,76 @@ export default function ScorePanel({
       `cap.last=${encodeURIComponent(control)}; path=/; max-age=${60 * 60 * 24 * 120}; SameSite=Lax${secure}`;
   }, [control]);
 
+  /*
+   * How long this control was actually on screen (D28).
+   *
+   * Restarted whenever the CONTROL changes rather than on mount, because
+   * client-side navigation reuses this component — mounting once and timing
+   * from there would report the whole sitting as the last control's dwell.
+   *
+   * STARTED IN THE RENDER BODY, NOT IN AN EFFECT. A passive effect runs after
+   * hydration, and on any full page load — a bookmarked /assess?c=…, a reload,
+   * "Self-assessment" from the menu, the first control of every sitting — the
+   * server-rendered text is on screen and readable well before the bundle
+   * hydrates. Starting the clock there discarded that reading time, and the
+   * error ran in the accusing direction: it makes an answer look faster than
+   * it was, on the one screen where "too fast" is the finding.
+   *
+   * `performance.now()`, not `Date.now()`. It is monotonic, so an NTP step or
+   * a suspend/resume cannot make the clock run backwards — which a review pass
+   * found would otherwise have produced a 0ms reading, i.e. the most severe
+   * possible statement about a person, from a hardware event.
+   *
+   * Paused while the tab is hidden, so a meeting in the middle of a control
+   * does not read as four minutes of careful thought.
+   */
+  const clock = useRef<DwellClock | null>(null);
+  const clockFor = useRef<string | null>(null);
+  if (typeof window !== "undefined" && clockFor.current !== control) {
+    clockFor.current = control;
+    clock.current = createDwellClock(
+      performance.now(), document.visibilityState === "visible");
+  }
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") clock.current?.pause(performance.now());
+      else clock.current?.resume(performance.now());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
   const dirty = level !== savedLevel || evidence !== savedEvidence;
 
   function goNext() {
     if (level !== null && dirty) {
-      commit({ control, level, evidence: evidence.trim() || null });
+      /*
+       * DWELL MEANS TIME TO THE **FIRST** ANSWER, and only the first.
+       *
+       * A review pass found the original — send the current clock every time —
+       * reintroducing precisely the defect D28 rejected the timestamp method
+       * for. Read a 200-word control for 95 seconds and answer it; come back
+       * two days later, change your mind in 4 seconds, and the 95 became 4.
+       * The screen would then have listed that control under "answered faster
+       * than the text can be read" — a false accusation produced by the most
+       * normal thing a PM does here.
+       *
+       * The offline branch below has the same shape without any intent to
+       * revise: it commits without navigating, so a second click on the same
+       * control would otherwise overwrite a good reading with one that
+       * includes all the waiting.
+       *
+       * So: measure only when nothing is recorded for this control yet. A
+       * revision keeps the original reading (the server omits the column when
+       * this is null, and the outbox carries the earlier value forward).
+       */
+      const firstAnswer = savedLevel === null && pendingFor(control)?.dwellMs == null;
+      commit({
+        control,
+        level,
+        evidence: evidence.trim() || null,
+        dwellMs: firstAnswer ? clock.current?.read(performance.now()) ?? null : null,
+      });
     }
     // Never ask the browser to navigate when it has told us it cannot
     // (decision D13). Measured: router.push falls back to a hard navigation,

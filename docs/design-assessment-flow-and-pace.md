@@ -113,6 +113,63 @@ pilot and look at it afterwards. No flag, no nudge, no accusation on data that
 has never been validated — and the pilot answers whether the phenomenon is even
 real before anyone designs a response to it.
 
+**D28 — Measure dwell in the browser, not gaps between timestamps.** BUILT
+2026-08-05. The cheap option was to derive pace from consecutive
+`score.updated_at` values, which needs no migration and works on scores already
+collected. Rejected against what it has to detect:
+
+| Hole in the timestamp method | Why it matters here |
+|---|---|
+| The **first control of every sitting** has no predecessor | "Sat down, answered one, left" is the shape being looked for |
+| **Out-of-order scoring** attributes the gap to the wrong control | The area/competency navigation actively encourages jumping |
+| **Re-scoring** silently corrupts a neighbouring gap | Changing your mind is normal and must not create a false reading |
+| A gap **cannot tell thinking from lunch** | The signal is only as good as its worst measurement |
+
+So `score.dwell_ms` (migration 0005): the browser knows the control was
+rendered at T and Next was pressed at T+n. Time with the tab hidden does not
+count, and a reading over ten minutes is stored as NULL rather than clamped —
+a clamped value sits in a median looking exactly like a real measurement.
+
+**D28a — Pace is a flag; the content signals are the finding.** The owner
+raised the objection that decides the shape of this: *if PMs are told their
+pace is recorded, one could stall deliberately to look diligent.* True — and
+self-defeating, because padding costs them the entire two hours that rushing
+was meant to save, and it does not improve the answers. Someone who stalls
+without thinking still produces a flat sheet.
+
+**A review pass corrected that argument, and the correction matters.** "Padding
+costs them two hours" is true of a person clicking the UI, and false of anyone
+willing to POST the server action directly — the timing is a number the browser
+sends, so a script can claim a three-minute median in about a second. The build
+answers this as far as it can be answered: the server clamps any claimed dwell
+to the time since the assessment's `started_at` (free — the row is already in
+hand), which puts a forger back to having to keep the thing open for as long as
+they want to claim. It does **not** detect a plausible lie, and nothing can.
+
+Which is the real reason the screen never shows pace alone:
+
+| Signal | Catches | Fakeable by stalling? |
+|---|---|---|
+| Median time per control | Clicking through | Yes — at full time cost |
+| **Spread of levels used** | Straight-lining | **No** — needs real judgement |
+| **Evidence fill rate** | Absent effort | **No** — needs writing |
+
+*Fast* is a flag. *Fast **and** flat **and** empty* is a finding. The only way
+to clear all three is to have done the work, which is the objective — and note
+that the two content signals are also the two a forged `dwell_ms` cannot touch,
+which is what keeps the screen useful against a determined client and not only
+against a hurried one. The screen
+therefore never shows pace alone and states in its own words that it is where
+to look and not a verdict — consistent with the standing rule that the tool
+supports a decision and never gates one.
+
+**D28b — The disclosure is load-bearing, not a footnote.** Because the purpose
+is to judge whether an assessment was taken seriously, PMs are told before they
+start (on `/assess/areas`) that time per control is recorded and why, and can
+read their own figures on `/analysis`. Both facts are asserted by e2e. A
+measurement used for this and not disclosed is a trap rather than an
+instrument, and the distinction is one sentence away from being lost.
+
 ## What this does not settle
 
 - **Where the analysis screen lives** once an admin role exists — blocked on

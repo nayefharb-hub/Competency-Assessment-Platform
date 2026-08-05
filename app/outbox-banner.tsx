@@ -22,7 +22,8 @@ export default function OutboxBanner({ userId }: { userId: string }) {
   // must still see the warning and still have the queue retried. The e2e
   // outage test asserts exactly that.
   useEffect(() => {
-    configure(userId, (e) => commitSelfScoreAction(e.control, e.level, e.evidence, e.userId));
+    configure(userId, (e) =>
+      commitSelfScoreAction(e.control, e.level, e.evidence, e.userId, e.dwellMs ?? null));
     wireBrowserEvents();
   }, [userId]);
   const [now, setNow] = useState(() => Date.now());

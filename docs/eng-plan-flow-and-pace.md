@@ -1,7 +1,79 @@
 # Eng plan: the shape of the work, and pace
 
-Status: PARTS 1–3 BUILT (2026-08-05). Part 4 (pace) still to come, and D26
-still open. See the report at the bottom. **Scope reduced during review
+Status: **ALL FOUR PARTS BUILT (2026-08-05).** D26 (targets on `/review`) is
+still open and nothing here depends on it. See the report at the bottom.
+
+## Part 4 as built — what changed from the plan
+
+The review recommended option (b) and the owner settled it as **D28**, with one
+amendment that came out of the owner's own objection and reshaped the screen:
+**pace is never shown alone.** See D28a in the design doc. Concretely:
+
+- `supabase/migrations/0005_pace.sql` — `score.dwell_ms`, nullable, with a
+  sanity constraint. NULL means "not measured" and is a normal state.
+- `lib/dwell.ts` — the clock. Hidden time does not count; a reading over ten
+  minutes becomes NULL rather than being clamped into a median. `sanitiseDwell`
+  re-checks server-side, because the value arrives from a browser.
+- `lib/pace.ts` — median, first-half/second-half trend, answers given faster
+  than their own text can be read, **levels used / modal share**, **evidence
+  share**. The last two are the ones stalling cannot fake.
+- `/analysis` — assessor sees anyone, assessee sees their own **and only** their
+  own: `?a=` is ignored entirely for an assessee and the assessment is resolved
+  from the session. Asserted by e2e, unconditionally.
+- The disclosure on `/assess/areas` (D28b), also asserted.
+
+**Three things building it changed.**
+
+1. **The save path tolerates the migration not having run.** Migrations here
+   are applied by hand while code deploys on push, so there is always a window
+   where the build is ahead of the schema — and without a fallback that window
+   is a total scoring outage, retried by the outbox every 30 seconds. The
+   upsert now retries without the pace columns on exactly the two PostgREST
+   codes that mean "no such column", and self-heals with no restart. **Proved
+   rather than asserted:** the suite was run against a half-applied schema and
+   came back 234/234 with an honest "pace not measured" line.
+2. **An e2e security check that skipped itself was found and fixed.** The
+   cross-account check on `/analysis?a=` was written `if (otherAssessment)`,
+   and by that point in the suite that assessment has been withdrawn — so it
+   silently never ran. It is now unconditional, falling back to an id that
+   belongs to nobody.
+3. **`updated_at` turned out to be unusable for ordering**, which added a
+   second column to the migration. See finding 5 below.
+
+**Tests: 237 e2e passed, 0 failed** (was 221), plus **27 new unit tests** for
+the clock and the derivations — 50 unit tests in total.
+
+## What the review pass found
+
+Eleven findings across two adversarial passes, on code whose tests were already
+green. Full triage in `docs/pilot-feedback.md` N27. The five that mattered:
+
+1. **The route loaded the unredacted framework on a PM's render** — every
+   `target_level` and `kib_note` in scope on an assessee-facing screen, exactly
+   the "safe by what it renders, not by what it may touch" condition the last
+   pass called disqualifying on `/`. The e2e guard checks rendered output and
+   would have stayed green straight through a future leak.
+2. **`dwell_ms` was unfalsifiable** — a script could POST a three-minute dwell
+   on all 132 controls in about a second, which destroys the design's own
+   argument for recording pace. Now clamped server-side against the
+   assessment's `started_at` (free; the row is in hand).
+3. **A revision overwrote the original timing with the revisit's** — read a
+   control for 95 seconds, change your mind two days later in 4, and the screen
+   would have listed it under "answered faster than the text can be read". A
+   false accusation from the most ordinary thing a PM does, and the exact
+   failure this design rejected the timestamp method to avoid. `dwell_ms` now
+   means *time to the first answer* and is never overwritten.
+4. **A backwards clock read 0, not null** — `Math.max(0, …)` made the "discard
+   it" branch dead code, so an NTP step or a suspend/resume produced the most
+   severe possible statement about a person from a hardware event. The unit
+   test asserted the 0, and so enshrined it. Now `performance.now()` (monotonic)
+   plus a latching broken flag.
+5. **`updated_at` cannot order the readings.** A trigger rewrites it on every
+   UPDATE and Submit upserts all 132 rows — so the moment a PM submits, the
+   "getting faster?" trend is splitting an arbitrary heap order and can report
+   someone who sped up as having slowed down, in precisely the state an
+   assessor reads. `lib/db/people.ts` already documented this trigger; the
+   knowledge had not reached here. Hence `answered_at`. **Scope reduced during review
 (D23): Parts 1–3 ship first, Part 4 (pace) follows as its own PR.** One
 question was deliberately deferred rather than answered (D26, targets) and it
 gates one decision inside Part 1. Derived from

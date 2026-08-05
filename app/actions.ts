@@ -3,6 +3,7 @@
 import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole, requireUser } from "@/lib/auth";
+import { sanitiseDwell } from "@/lib/dwell";
 import { getFramework, invalidateFramework } from "@/lib/framework";
 import { phase, phaseSync } from "@/lib/perf";
 import { db } from "@/lib/supabase/server";
@@ -46,6 +47,14 @@ export async function commitSelfScoreAction(
   evidence: string | null,
   /** The account that CONFIRMED this answer — see below. */
   committedBy: string,
+  /**
+   * Milliseconds the control was on screen (D28). Client-supplied and
+   * therefore not trusted: `sanitiseDwell` drops anything out of range, and a
+   * missing or unbelievable value is stored as NULL. It never affects whether
+   * the score itself is saved — the answer is the thing that matters, and a
+   * broken clock must not cost a PM their answer.
+   */
+  dwellMs?: number | null,
 ): Promise<{ ok: true } | { ok: false; error: string; reject?: boolean }> {
   try {
     const user = await requireUser();
@@ -68,7 +77,7 @@ export async function commitSelfScoreAction(
     if (!assessment) return { ok: false, error: "No assessment is assigned to you." };
     const lvl = levelOf(level);
     if (lvl === null) return { ok: false, error: "That is not a valid level." };
-    await saveSelfScore(user, assessment, control, lvl, evidence);
+    await saveSelfScore(user, assessment, control, lvl, evidence, sanitiseDwell(dwellMs));
     return { ok: true };
   } catch (e) {
     // requireUser() answers "not signed in", "not on the allowlist" and "must

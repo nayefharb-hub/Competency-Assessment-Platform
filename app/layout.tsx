@@ -53,6 +53,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <nav className="nav" aria-label="Main">
                 <Link href="/assess">Self-assessment</Link>
                 <Link href="/results">Results</Link>
+                {/* Shown to everyone, on purpose (D21). This is where a PM
+                    reads their own pace, and a measurement of someone's
+                    working that they cannot look at is a trap rather than an
+                    instrument. The route resolves an assessee's assessment
+                    from the session, so the shared link is not a shared view. */}
+                <Link href="/analysis">Analysis</Link>
                 {isAssessor && <Link href="/review">Review</Link>}
                 {user.role === "admin" && <Link href="/admin/people">People</Link>}
                 {user.role === "admin" && <Link href="/admin">Framework</Link>}

@@ -1,10 +1,12 @@
 # Project status & handoff
 
-Last updated: 2026-08-05 (the performance arc: PRs #9–#13, N16–N21). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-05 (the shape-of-the-work arc: PRs #22–#24 — areas/competencies, durations, stalls, and pace). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
-**Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
-applied. Pilot feedback from using it is logged in
+**Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
+`0005` are applied (`0005` on 2026-08-05, by the owner, in the SQL Editor).
+Access-token lifetime was cut 60 min → 15 min the same day, and measured at
+900s rather than taken on trust. Pilot feedback from using it is logged in
 `docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
 `docs/eng-plan-admin-and-ux.md`.
 
@@ -37,7 +39,8 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # expect 176/176 — writes, then cleans up after itself
+npm run e2e                # expect 235/235 — writes, then cleans up after itself
+npm run test:unit          # expect 47/47 — pure logic, no database
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
@@ -173,12 +176,13 @@ Verified 2026-08-05 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **176/176** through a real browser against the running app,
+- `npm run e2e` — **235/235** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
-  gate, the People screen, session-cookie flags, archive/restore, and the N14
-  layout guarantee (Save on screen without scrolling at three viewports on both
+  gate, the People screen, session-cookie flags, archive/restore, the
+  area/competency navigation, the pace disclosure and `/analysis`
+  authorisation, and the N14 layout guarantee (Save on screen without scrolling at three viewports on both
   the shortest and longest controls, with the prose still capped at the reading
   measure).
 
@@ -265,7 +269,8 @@ Then:
 
 Project ref `gkqydskmnexhneqsvvvt`. Applied via the SQL Editor, in this order:
 `supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`,
-then `0003_assignment_and_archive.sql` (applied 2026-08-03).
+then `0003_assignment_and_archive.sql` (applied 2026-08-03),
+`0004_archive_frees_the_cycle.sql`, and `0005_pace.sql` (applied 2026-08-05).
 All three returned success; `seed.sql` self-verifies and rolls back on any
 count mismatch. See `supabase/README.md`.
 

@@ -54,6 +54,16 @@ export interface OutboxEntry {
    * the other's assessment. Carrying the id lets the server refuse that.
    */
   userId: string;
+  /**
+   * Milliseconds this control was on screen and VISIBLE before Next (D28).
+   *
+   * Optional, and it has to stay optional: entries mirrored to localStorage by
+   * the build before this one have no such field, and rejecting them would
+   * silently discard confirmed answers on the first deploy — the one failure
+   * this queue exists to prevent. Absent means "not measured", which is a real
+   * state the analysis reports rather than guesses at.
+   */
+  dwellMs?: number | null;
 }
 
 export interface OutboxState {
@@ -187,12 +197,21 @@ function isEntry(v: unknown): v is OutboxEntry {
  * is never blocked, and a new commit also retries everything already queued.
  */
 export function commit(entry: Omit<OutboxEntry, "tries" | "userId" | "queuedAt">) {
+  // Dwell survives a re-commit for the same reason `tries` and `queuedAt` do,
+  // though it took a review pass to see it. It measures the time taken to
+  // reach the FIRST answer for this control; a re-commit while the first is
+  // still queued — offline, or a server wobble — is the same answer being
+  // re-sent, not a new one being thought about. Taking the newer value there
+  // would overwrite a real reading with the few seconds it took to click Next
+  // again, and that control would then be reported as answered faster than its
+  // own text can be read.
   // Changing your mind about a control that is ALREADY failing must not reset
   // its history: zeroing `tries` would unmount the failure banner while the
   // network is still down, and restart the backoff at 2s. Carry both forward.
   const previous = queue.find((e) => e.control === entry.control);
   queue = [...queue.filter((e) => e.control !== entry.control), {
     ...entry,
+    dwellMs: entry.dwellMs ?? previous?.dwellMs ?? null,
     tries: previous?.tries ?? 0,
     queuedAt: previous?.queuedAt ?? Date.now(),
     userId: boundUserId,

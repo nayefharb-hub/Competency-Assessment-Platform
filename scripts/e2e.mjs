@@ -759,6 +759,111 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
+   * PACE (D21, D22, D28). How long each control took, why it is recorded, and
+   * — the part with teeth — who is allowed to read it.
+   */
+  {
+    await pm.page.goto("/assess/areas");
+    await pm.page.waitForLoadState("networkidle");
+    /* THE DISCLOSURE IS THE FEATURE, not a footnote to it. Pace is recorded to
+       judge whether an assessment was taken seriously; a measurement used for
+       that and not disclosed is a trap. If someone ever "tidies" this sentence
+       away, the ethics of the feature change and nothing else would notice. */
+    const areasText = await pm.page.locator(".section").innerText();
+    check("the PM is told their pace is recorded, before they start",
+      /time spent on each control is recorded/i.test(areasText));
+    check("and is told they are not scored on speed",
+      /nobody is scored on speed/i.test(areasText));
+
+    // Time on control actually reaches the database.
+    await pm.page.goto("/assess?c=4.3.1.4");
+    await pm.page.waitForSelector(".optlist");
+    await new Promise((r) => setTimeout(r, 1_200));      // spend visible time on it
+    await scoreAndNext(pm.page, 3, "pace probe");
+    const aP = await assessmentOf(PM.email);
+    const c4 = activeControls.find((c) => c.code === "4.3.1.4");
+    const { data: paced } = await db.from("score").select("dwell_ms")
+      .eq("assessment_id", aP.id).eq("control_id", c4.id).maybeSingle();
+    /* Skipped rather than failed when migration 0005 has not been applied: the
+       code deliberately falls back to saving the answer without the timing, so
+       "no column yet" is a known state, not a regression. It is reported so it
+       cannot be mistaken for a pass. */
+    /* Gate on a real READING, not on the column existing. `dwell_ms` can be
+       present while `answered_at` is not (0005 applied in two goes), and in
+       that state the code correctly saves the answer with no timing — so
+       "column exists" reported a pass condition the schema could not meet. */
+    if (typeof paced?.dwell_ms === "number") {
+      check("time on control reaches the database", paced.dwell_ms >= 1_000,
+        JSON.stringify(paced));
+
+      /* CHANGING YOUR MIND MUST NOT REWRITE THE READING.
+         The first build sent the current clock on every commit, so revisiting
+         a control and changing the answer in four seconds replaced a genuine
+         95-second reading with four — and that control would then be listed
+         under "answered faster than the text can be read". A false accusation
+         produced by the most ordinary thing a PM does on this screen, and
+         precisely the failure D28 rejected the timestamp method for. */
+      await pm.page.goto("/assess?c=4.3.1.4");
+      await pm.page.waitForSelector(".optlist");
+      // Level 2, NOT 5. The outage block further down re-answers this same
+      // control with 5 and needs the pick to be a CHANGE — leaving it on 5
+      // here made that commit a no-op, no answer queued, no failure banner,
+      // and the suite timed out waiting for one. Fixtures share state; a level
+      // is part of the fixture.
+      await scoreAndNext(pm.page, 2);                  // revise, quickly
+      const { data: revisedPace } = await db.from("score")
+        .select("self_level, dwell_ms")
+        .eq("assessment_id", aP.id).eq("control_id", c4.id).maybeSingle();
+      check("a revision changes the answer", revisedPace?.self_level === 2,
+        JSON.stringify(revisedPace));
+      check("but keeps the original timing rather than the revisit's",
+        revisedPace?.dwell_ms === paced.dwell_ms,
+        `was ${paced.dwell_ms}, now ${revisedPace?.dwell_ms}`);
+    } else {
+      console.log("  … pace not measured — migration 0005 not applied (answer still saved)");
+    }
+
+    /* AUTHORISATION, the check this block exists for. /analysis takes ?a=<id>,
+       so a PM who edits the query string is one guess from reading a
+       colleague's working. The route must resolve an assessee's assessment
+       from the SESSION and ignore the parameter entirely. */
+    /* Unconditional, deliberately. The first version of this check ran only
+       `if (otherAssessment)` — and by this point in the suite OTHER's
+       assessment has been withdrawn, so the one security assertion in the
+       block skipped itself on every run and printed nothing. A test that
+       quietly does not run is worse than no test: it occupies the space where
+       someone would otherwise notice the gap.
+
+       So: find SOMEONE ELSE's assessment, live or archived, and fall back to a
+       well-formed id that belongs to nobody. Either way the assertion is the
+       same and it is the one that matters — whatever `?a=` says, an assessee
+       gets their OWN analysis, because the route resolves it from the session
+       and never from the query string. */
+    const pmId = await idOf(PM.email);
+    const { data: notMine } = await db.from("assessment")
+      .select("id, assessee_id").neq("assessee_id", pmId).limit(1);
+    const foreignId = notMine?.[0]?.id ?? "00000000-0000-4000-8000-000000000000";
+    await pm.page.goto(`/analysis?a=${foreignId}`);
+    await pm.page.waitForLoadState("networkidle");
+    const spied = await pm.page.locator(".section").innerText();
+    check("a PM's analysis ignores ?a= entirely and shows their own",
+      /how your assessment is going/i.test(spied), spied.slice(0, 200));
+    check("and no other person's name reaches it",
+      !spied.includes(OTHER.name) && !spied.includes(BOSS.name), spied.slice(0, 200));
+
+    await pm.page.goto("/analysis");
+    await pm.page.waitForLoadState("networkidle");
+    const mine = await pm.page.locator(".section").innerText();
+    check("a PM can see their own pace — nothing is hidden from the person it describes",
+      /how your assessment is going/i.test(mine) && /typical time per control/i.test(mine),
+      mine.slice(0, 160));
+    check("the analysis reports how many answers it actually timed",
+      /timed answer/i.test(mine), mine.slice(0, 300));
+    check("no target reaches /analysis",
+      !/target_level|Target level|target level/i.test(await pm.page.content()));
+  }
+
+  /*
    * RESUMING (decision D12, as revised). /assess with no control named comes
    * back to the control the PM was last on — including one they went back to
    * re-read, which "first unanswered" would have overruled. Falls back to the
@@ -1120,6 +1225,23 @@ const assessmentId = (await assessmentOf(PM.email)).id;
   check("overview lists the submitted assessment", overview.includes(PM.name));
   check("completion panel is on the assessor's first screen",
     overview.includes("Median time to complete") && overview.includes("Finished"));
+
+  /* The assessor's side of pace (D28). They may read anyone's, which is the
+     whole point — but the screen has to say what the numbers are FOR, or a
+     median gets read as a grade and someone acts on it. */
+  await boss.page.goto("/analysis");
+  await boss.page.waitForLoadState("networkidle");
+  check("the assessor's analysis lists the people who have started",
+    (await boss.page.locator(".section").innerText()).includes(PM.name));
+  await boss.page.goto(`/analysis?a=${assessmentId}`);
+  await boss.page.waitForLoadState("networkidle");
+  const paceView = await boss.page.locator(".section").innerText();
+  check("and opens one person's pace", paceView.includes(PM.name)
+    && /typical time per control/i.test(paceView), paceView.slice(0, 160));
+  check("pace is framed as where to look, never as a verdict",
+    /not a verdict/i.test(paceView), paceView.slice(0, 300));
+  check("and it is shown beside the two signals stalling cannot fake",
+    /levels used/i.test(paceView) && /evidence written/i.test(paceView));
 
   await boss.page.goto(`/review?a=${assessmentId}`);
   await boss.page.selectOption('select[name="level:4.3.1.1"]', "5");
