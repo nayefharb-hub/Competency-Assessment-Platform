@@ -23,6 +23,12 @@ export interface PersonRow extends AppUser {
   assessment_state: string | null;
   scored: number;
   /**
+   * When this person last scored anything, or null if never. Completion alone
+   * cannot tell a person who is 40% through and moving from one who stopped
+   * three weeks ago — this is what separates them (D16).
+   */
+  last_scored: string | null;
+  /**
    * Most recent ARCHIVED assessment for the cycle. Carried separately rather
    * than folded into the fields above: this screen is the only place an
    * archived record is still visible, so it is also the only place it can be
@@ -72,15 +78,23 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
   const scores = (
     await sb
       .from("score")
-      .select("assessment_id, self_level")
+      // updated_at rides along with the rows already being counted, so the
+      // last-activity column costs no extra query — deliberately not one
+      // aggregate per person.
+      .select("assessment_id, self_level, updated_at")
       .in("assessment_id", assessments.map((a) => a.id))
       .not("self_level", "is", null)
       .limit(20000)
-  ).data as { assessment_id: string }[] | null;
+  ).data as { assessment_id: string; updated_at: string | null }[] | null;
 
   const scoredCount = new Map<string, number>();
+  const lastScored = new Map<string, string>();
   for (const s of scores ?? []) {
     scoredCount.set(s.assessment_id, (scoredCount.get(s.assessment_id) ?? 0) + 1);
+    const at = s.updated_at;
+    if (at && (!lastScored.has(s.assessment_id) || at > lastScored.get(s.assessment_id)!)) {
+      lastScored.set(s.assessment_id, at);
+    }
   }
 
   return people.map((p) => {
@@ -91,6 +105,7 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       assessment_id: a?.id ?? null,
       assessment_state: a?.state ?? null,
       scored: a ? scoredCount.get(a.id) ?? 0 : 0,
+      last_scored: a ? lastScored.get(a.id) ?? null : null,
       archived_id: gone?.id ?? null,
       archived_reason: gone?.deleted_reason ?? null,
       archived_at: gone?.deleted_at ?? null,

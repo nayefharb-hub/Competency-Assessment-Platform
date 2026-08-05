@@ -33,6 +33,7 @@ export default function ScorePanel({
   savedLevel,
   savedEvidence,
   locked,
+  boundary,
 }: {
   control: string;
   nextControl: string | null;
@@ -41,6 +42,8 @@ export default function ScorePanel({
   savedLevel: number | null;
   savedEvidence: string;
   locked: boolean;
+  /** Set when this control ends a competency or an area (D25). */
+  boundary?: { href: string; done: "ce" | "area" | "assessment"; label: string } | null;
 }) {
   const router = useRouter();
   const [level, setLevel] = useState<number | null>(savedLevel);
@@ -90,6 +93,9 @@ export default function ScorePanel({
     // The app-wide OfflineBanner explains this; app/link.tsx does the same for
     // every other navigation, so all of them behave alike when offline.
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    // A competency boundary sends the PM back to the list that names what they
+    // just finished, rather than into the next competency's first control.
+    if (boundary) { router.push(boundary.href); return; }
     router.push(nextControl ? `/assess?c=${nextControl}` : "/assess/controls?saved=1");
   }
 
@@ -158,7 +164,9 @@ export default function ScorePanel({
           >
             {level === null
               ? "Skip for now →"
-              : nextControl ? "Next control →" : "Review before submitting →"}
+              : boundary
+                ? (boundary.done === "assessment" ? "Review before submitting →" : "Finish this competency →")
+                : "Next control →"}
           </button>
         )}
         {prevControl && (

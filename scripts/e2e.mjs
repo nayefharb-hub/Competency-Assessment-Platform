@@ -680,6 +680,48 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
+   * THE SHAPE OF THE WORK (D14, D18, D25). Areas -> competencies -> controls,
+   * with the competence element as the unit of a sitting.
+   */
+  {
+    await pm.page.goto("/assess/areas");
+    await pm.page.waitForLoadState("networkidle");
+    const cards = await pm.page.locator(".area-card").count();
+    check("the way in shows the three ICB4 areas", cards === 3, `${cards}`);
+
+    const head = await pm.page.locator(".progress-head").innerText();
+    check("progress is counted in competencies, not 132 controls",
+      /of\s+28\s+competencies/i.test(head), JSON.stringify(head));
+    check("and it names what is next", /next:/i.test(head), JSON.stringify(head));
+
+    // A duration is a property of the WORK — a cook time, not a prediction
+    // about the reader (D15b). It answers "can I start this now?".
+    check("each area states how long it takes",
+      /about\s+\d+(–\d+)?\s*min/i.test(await pm.page.locator(".area-grid").innerText()));
+
+    await pm.page.locator(".area-card").first().click();
+    await pm.page.waitForURL(/\/assess\/area\//, { timeout: 10_000 }).catch(() => {});
+    await pm.page.waitForSelector(".ce-row", { timeout: 10_000 }).catch(() => {});
+    const rows = await pm.page.locator(".ce-row").count();
+    check("an area opens its competencies", rows >= 5, `${rows}`);
+    check("each competency states its own size and duration",
+      /\d+\s+controls\s+·\s+about/i.test(await pm.page.locator(".ce-row").first().innerText()),
+      await pm.page.locator(".ce-row").first().innerText());
+
+    /* THE BLINDING GUARD (D24). These screens are the first assessee-facing UI
+       where a competence element appears, which makes them the natural place
+       for someone to add a "helpful" target. Seeing the target anchors the
+       self-score, and the failure is silent — no crash, just quietly worse
+       data. So it is asserted, not trusted. */
+    for (const url of ["/assess/areas", pm.page.url()]) {
+      await pm.page.goto(url);
+      const html = await pm.page.content();
+      check(`no target reaches ${url.replace(BASE, "")}`,
+        !/target_level|Target level|target level/i.test(html), url);
+    }
+  }
+
+  /*
    * RESUMING (decision D12, as revised). /assess with no control named comes
    * back to the control the PM was last on — including one they went back to
    * re-read, which "first unanswered" would have overruled. Falls back to the
@@ -744,7 +786,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
       pm.page.url().includes("4.3.2.4") && (await pm.page.locator(".optlist").count()) > 0,
       pm.page.url());
 
-    await pm.page.click('a:has-text("Back to controls")');
+    await pm.page.click(".assess-nav a");
     await pm.page.waitForTimeout(1_000);
     check("and so is the rest of the app's navigation",
       pm.page.url().includes("4.3.2.4"), pm.page.url());
