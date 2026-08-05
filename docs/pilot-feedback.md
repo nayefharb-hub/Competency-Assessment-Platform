@@ -1046,6 +1046,118 @@ the move to direct Postgres (N16) both drop below:
    decision about how the assessment feels, not a performance fix — it belongs
    in `/office-hours`, before the pilot rather than after it.
 
+#### Step 1 done (2026-08-05): the unexplained time is gone
+
+The timers were deployed and the owner ran the test — sign in, score controls,
+export the runtime logs. Two saves, in production:
+
+```
+POST /assess -> 303
+    [phase] 145ms  auth: validate token + load app_user
+    [phase]  59ms  action: find assessment
+    [phase]  71ms  action: write the score
+    [phase]   0ms  action: revalidatePath
+    [phase] 276ms  action: save score (whole action)
+```
+
+145 + 59 + 71 + 0 ≈ **276**. The second save: 229ms total against 110 + 63 + 56.
+**The action fully accounts for itself.** The 253–986ms that was neither queries
+nor rendering is not present. `revalidatePath` remains 0ms, confirming it dead
+as a suspect rather than merely unproven.
+
+**What the owner feels — 1–1.5s to move between controls — is only partly
+accounted for.**
+
+| | |
+|---|---|
+| POST server work | ~276ms | *measured* |
+| GET server work | ~130–210ms | *measured* |
+| two round trips, Kuwait → Frankfurt | ~200–260ms | *owner's figure: 100–130ms RTT* |
+| **accounted for** | **~610–750ms** | |
+| **felt** | **1000–1500ms** | |
+| **unexplained** | **~300–750ms** | |
+
+**Correction (2026-08-05), caught by the owner.** This table previously claimed
+`Kuwait → Frankfurt, twice — ~500ms`. That number was never measured: it was the
+remainder after subtracting server time from felt time, relabelled as network.
+The owner pointed out that Kuwait-to-Frankfurt is normally **100–130ms RTT**, so
+two round trips is ~200–260ms, less than half what was asserted.
+
+**This changes the conclusion, not just the figure.** With network at its real
+size, a third to a half of the delay is still unaccounted for, so
+"the delay is structural, and step 3 is the only lever" **is not established.**
+It may still be true — browser render and TLS setup are both real and both
+unmeasured here — but it is currently an assumption wearing a table's clothing.
+
+This is the fourth time this investigation has asserted a mechanism ahead of the
+measurement (`unstable_cache`, the function region, the concurrency model, now
+network latency), and the first three were each wrong. The rule this arc wrote
+for itself — **measure first, explain second** — applies to arithmetic filler
+exactly as much as to code.
+
+**Settled (2026-08-05), by measurement rather than DevTools.** Ten real saves
+driven against **localhost** — where network is ~0 — with per-request timing in
+the browser and `PERF_LOG` phases on the server (`/investigate`, disposable
+`qa.perf@example.test` account, deleted after):
+
+| | median |
+|---|---|
+| wall, click → next control on screen | **1327ms** |
+| the POST (action + rendering the next control) | **1250ms** |
+| separate follow-up GET | **0 — there isn't one**; the redirect target streams in the POST response |
+| client (wall − POST) | **~55ms** |
+
+**The full felt delay reproduces with zero network.** Not Kuwait, not the
+browser. The server log names where it lives — one repeating block per save:
+
+```
+auth: validate token + load app_user   ~330ms   (2 Supabase calls)  ← the action
+action: find assessment                ~185ms   (1 call)
+action: write the score                ~180ms   (1 call)
+auth: validate token + load app_user   ~330ms   (2 calls)   ← rendering the next control
+find assessment (render)               ~180ms   (1 call)
+```
+
+**Root cause: seven sequential Supabase round trips per save, two of which are
+a complete second authentication.** The action validates the token and loads
+`app_user`; the render of the next control then does identical work again —
+`authClient` is wrapped in React `cache()`, but the action pass and the render
+pass are separate scopes, so the dedupe never fires between them. Every round
+trip pays the regional RTT (~180ms sandbox→Frankfurt; ~30–150ms
+Vercel→Frankfurt) and they run strictly in series.
+
+So the earlier framing inverts one more time: "structural, only the step 3
+design change helps" was wrong in the useful direction. Round-trip **count** is
+the lever, and it is very tunable — halving the calls roughly halves the felt
+save time before any design change is discussed.
+
+**Step 2 is confirmed worth its afternoon.** `auth: validate token + load
+app_user` costs **83–174ms on every request** — the largest single server-side
+item in the export. Removing the `/auth/v1/user` round trip takes ~20–70ms off
+each of ~264 trips, which is the ≈17 seconds this entry estimated.
+
+**A correction, because it sent the owner on an errand.** Reviewing an earlier
+export, the author flagged Supabase calls at 107–136ms as anomalous against an
+expected ~35ms (Supabase's 31ms overhead plus co-located network) and asked for
+the project region to be re-checked — which `docs/regions.md` had already
+settled as `eu-central-1`. The full export shows why the flag was wrong:
+
+- **First call on a fresh instance costs 105–306ms** — connection setup, paid
+  once per instance.
+- **Steady state is 55–90ms**, which matches the median per-call cost of **66ms**
+  this very entry records. The ~35ms figure was an ideal the project has never
+  measured, so there was no discrepancy to explain.
+
+Region was confirmed correct incidentally: every function ran in `fra1`. The
+`cdg1` and `sfo1` rows are edge middleware and a redirect, which run near the
+user by design and are not the function.
+
+**One incidental finding, logged not fixed.** `/results` issues **7 sequential
+Supabase calls totalling ~753ms** (56, 62, 89, 92, 131, 137, 148ms, plus auth) —
+`app/results/page.tsx` uses sequential `await`s with no `Promise.all`. It is
+nobody's bottleneck today because the page is viewed once rather than 132 times,
+but several of those are independent and could overlap.
+
 ### N19 — a slow database logged the admin out and said they were never invited
 
 **Status:** Fixed.
@@ -1360,6 +1472,41 @@ One thing this correction improves rather than damages: `inFlight` in
 could never fire — one request per instance means there is no second caller to
 dedupe against. Under Fluid it does the job it was written for. The concurrency
 audit that goes with this is in `docs/deploy.md`.
+
+### Resolution (2026-08-05): measured in production, and the churn is gone
+
+The measurement the correction above demanded, taken by the owner on a live
+single-user session — Vercel Observability, *Function Invocations Count* grouped
+by **Function Start Type**, Environment = Production:
+
+| Start type | Count |
+|---|---|
+| `hot` | 12 |
+| `prewarmed` | 2 |
+| `cold` | **no row — zero** |
+
+**Zero cold starts.** The churn — 12 instances for one user, four serving a
+single request and never reused — does not reproduce. Instances are being
+reused, and the two `prewarmed` ones were ready before the request arrived, so
+nobody waited.
+
+**Held to the rule this note set.** The outcome is measured; the cause is not
+claimed. Fluid's prewarming may be doing some or all of the work, and this
+measurement cannot separate it from the prefetch removal. After three mechanisms
+proposed and disproved, "cold starts are zero" is what is known — "because we
+removed prefetching" is not.
+
+Two dead ends, recorded so the next person skips them:
+- **The dashboard's log export omits `instanceId`.** The method originally
+  written into the open item — "count distinct `instanceId` values" — cannot be
+  carried out. There is no instance dimension in Observability either.
+- **`Function Invocations Count` grouped by *HTTP Status* answers a different
+  question** (volume and error rate: 57 invocations, zero 4xx/5xx — healthy, and
+  beside the point).
+
+`Function Start Type` is the dimension that answers it. It is arguably the
+better measure anyway: cold starts are what instance churn actually *costs*,
+and counting them skips the inference from instance count to user-visible delay.
 
 ## Where this stands (end of 2026-08-04)
 
