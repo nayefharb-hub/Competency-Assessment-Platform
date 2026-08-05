@@ -236,6 +236,14 @@ server code: **no per-user state at module scope**, because instances now serve
 requests concurrently. The audit that certifies the current code, and the one
 known race, are in `docs/deploy.md` → "Runtime: Fluid Compute".
 
+**The arc is closed. Verified in production 2026-08-05: zero cold starts** on a
+live single-user session (`hot` 12, `prewarmed` 2, `cold` none). The churn that
+started this — 12 instances for one user — does not reproduce. Consistent with
+the rule above, the *outcome* is recorded and the *cause* is not claimed:
+Fluid's prewarming and the prefetch removal cannot be separated by this
+measurement. Full numbers and the two dead ends in `docs/pilot-feedback.md` →
+"Resolution (2026-08-05)".
+
 ## Next step
 
 **Invite the nine PMs, assign them the cycle, and run it.** Deployment is done
@@ -390,15 +398,34 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
 6. ~~**Rotate the admin's temporary password.**~~ — enforced rather than
    remembered: every existing account now carries `must_change_password`, so the
    transcript-exposed password stops working the moment it is used once.
-10. **N21 is not verified in production.** Prefetching is off and asserted by a
-   permanent test, but the *benefit* — fewer instances, therefore fewer cold
-   starts — is unmeasured. It needs one click-through on the deployed app and a
-   fresh log export, counting **distinct `instanceId` values** (it was 12 for a
-   single user). Owner's step: `*.vercel.app` is unreachable from the agent
-   sandbox, so nothing an agent says about production is verified. Note the
-   correction at the end of N21 first — with Fluid Compute on, the mechanism
-   behind the churn is unknown, so this measurement now decides more than it
-   originally would have.
+10. ~~**N21 is not verified in production.**~~ — **verified 2026-08-05 by the
+   owner. Zero cold starts.** Vercel Observability, *Function Invocations Count*
+   grouped by **Function Start Type**, Environment = Production, over a live
+   single-user session:
+
+   | Start type | Count |
+   |---|---|
+   | `hot` | 12 |
+   | `prewarmed` | 2 |
+   | `cold` | **no row — zero** |
+
+   The churn this arc was chasing — 12 instances for one user, four of them
+   serving a single request and never reused — **does not reproduce**. Instances
+   are being reused, and the two `prewarmed` ones were ready before the request
+   arrived, so nobody waited on them.
+
+   **What this does and does not establish.** It establishes the outcome: a
+   normal session now pays no cold-start cost. It does **not** establish that
+   removing prefetching is *why* — Fluid Compute's prewarming may be doing some
+   or all of the work, and the two are not separable from this measurement.
+   Given three mechanisms already proposed and disproved in this arc, the
+   outcome is recorded and the cause is not claimed.
+
+   Two dead ends on the way, kept so they are not repeated: the dashboard's
+   log export **omits `instanceId`**, so the originally-specified method cannot
+   work; and `Function Invocations Count` grouped by *HTTP Status* measures
+   volume, not instances. `Function Start Type` is the dimension that answers
+   it — there is no instance dimension at all.
 11. **One unpinned e2e flake — and it is NOT closed.** Two clean 176/176 runs on
    2026-08-05, then, on the escalation branch and with no code change between
    them, one run reported **4 failures** and the next **1**. The single failure

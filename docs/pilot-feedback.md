@@ -1361,6 +1361,41 @@ could never fire — one request per instance means there is no second caller to
 dedupe against. Under Fluid it does the job it was written for. The concurrency
 audit that goes with this is in `docs/deploy.md`.
 
+### Resolution (2026-08-05): measured in production, and the churn is gone
+
+The measurement the correction above demanded, taken by the owner on a live
+single-user session — Vercel Observability, *Function Invocations Count* grouped
+by **Function Start Type**, Environment = Production:
+
+| Start type | Count |
+|---|---|
+| `hot` | 12 |
+| `prewarmed` | 2 |
+| `cold` | **no row — zero** |
+
+**Zero cold starts.** The churn — 12 instances for one user, four serving a
+single request and never reused — does not reproduce. Instances are being
+reused, and the two `prewarmed` ones were ready before the request arrived, so
+nobody waited.
+
+**Held to the rule this note set.** The outcome is measured; the cause is not
+claimed. Fluid's prewarming may be doing some or all of the work, and this
+measurement cannot separate it from the prefetch removal. After three mechanisms
+proposed and disproved, "cold starts are zero" is what is known — "because we
+removed prefetching" is not.
+
+Two dead ends, recorded so the next person skips them:
+- **The dashboard's log export omits `instanceId`.** The method originally
+  written into the open item — "count distinct `instanceId` values" — cannot be
+  carried out. There is no instance dimension in Observability either.
+- **`Function Invocations Count` grouped by *HTTP Status* answers a different
+  question** (volume and error rate: 57 invocations, zero 4xx/5xx — healthy, and
+  beside the point).
+
+`Function Start Type` is the dimension that answers it. It is arguably the
+better measure anyway: cold starts are what instance churn actually *costs*,
+and counting them skips the inference from instance count to user-visible delay.
+
 ## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
