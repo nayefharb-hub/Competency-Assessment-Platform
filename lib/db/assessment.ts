@@ -360,26 +360,69 @@ export async function loadForAssessee(user: AppUser, id: string): Promise<Assess
  * joined the person, the benchmark profile and the target snapshot, none of
  * which it renders. Six round trips for one query's worth of data, on the
  * screen a PM loads 132 times.
+ *
+ * Kept for the callers that already hold a row. The screens use
+ * findAssessmentWithScores() below, which gets the same data in one request.
  */
 export async function scoresFor(user: AppUser, row: AssessmentRow): Promise<Score[]> {
   if (row.assessee_id !== user.id) {
     throw new Error("That assessment belongs to someone else.");
   }
-  const fw = await getFramework();
-  const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
   const rows = unwrap(
     "score fetch",
     await db().from("score")
       .select("control_id, self_level, assessor_level, assessor_touched, evidence")
       .eq("assessment_id", row.id).limit(5000),
   ) as ScoreRow[];
+  return redactScores(rows, row);
+}
 
+/**
+ * The row AND its scores, in one request — the assessee's whole read path.
+ *
+ * Two queries became one for the same reason the framework's nine did: Supabase
+ * charges a fixed ~31ms per REST call regardless of what it returns, so on the
+ * screen a PM loads 132 times, the second call cost more than the data in it.
+ * `score.assessment_id` already points at `assessment.id`, so PostgREST embeds
+ * them without a migration.
+ *
+ * Deliberately NOT memoised with React's cache(). A save posts to a server
+ * action and Next re-renders inside the SAME request, so a cached read would
+ * hand the re-render the scores from before the save — "Save and next" showing
+ * the previous answer. The row lookup alone would be safe to cache; the scores
+ * are exactly what changes.
+ */
+export async function findAssessmentWithScores(
+  user: AppUser,
+  cycle = currentCycle(),
+): Promise<{ row: AssessmentRow; scores: Score[] } | null> {
+  const found = await db()
+    .from("assessment")
+    .select(`${ASSESSMENT_COLUMNS}, score(control_id, self_level, assessor_level, assessor_touched, evidence)`)
+    .eq("assessee_id", user.id)
+    .eq("cycle", cycle)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (found.error) throw new Error(`Supabase assessment lookup failed: ${found.error.message}`);
+  if (!found.data) return null;
+
+  const { score, ...row } = found.data as AssessmentRow & { score: ScoreRow[] | null };
+  return { row, scores: await redactScores(score ?? [], row) };
+}
+
+/**
+ * The assessee's redaction rule, in one place: before approval, the assessor's
+ * revision is not theirs to see. Shared by both readers above so the two cannot
+ * drift — a screen that got the unredacted version would be showing a PM the
+ * marking of their own paper.
+ */
+async function redactScores(rows: ScoreRow[], row: AssessmentRow): Promise<Score[]> {
+  const fw = await getFramework();
+  const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
   const approved = row.state === "approved";
   return rows.map((s) => ({
     control_code: codeById.get(s.control_id) ?? s.control_id,
     self_level: s.self_level as Level | null,
-    // Same redaction rule as loadForAssessee: before approval the assessor's
-    // revision is not the assessee's to see.
     assessor_level: approved ? (s.assessor_level as Level | null) : null,
     assessor_touched: approved ? s.assessor_touched : false,
     evidence: s.evidence,
@@ -463,7 +506,23 @@ export async function listAssessments(
 /* ----------------------------------------------------------------- write */
 
 async function assertState(id: string, allowed: AssessmentState[]): Promise<AssessmentRow> {
-  const row = await rowById(id);
+  return assertRowState(await rowById(id), allowed);
+}
+
+/**
+ * The same guard against a row the caller already has.
+ *
+ * Split out so the write path can stop re-fetching what it was just handed:
+ * saveSelfScoreAction looked the assessment up to find its id, then
+ * saveSelfScore looked the same row up again to check its state. Two of the
+ * ~31ms floors on the action a PM triggers 132 times.
+ *
+ * Re-reading was never the safety property here — the row could change between
+ * the two reads either way. What actually guards the transition is the WHERE
+ * clause on each update (`.eq("state", ...)`), which the database evaluates
+ * atomically. This check is for the error message.
+ */
+function assertRowState(row: AssessmentRow, allowed: AssessmentState[]): AssessmentRow {
   // Checked before the state, and in the one place every mutation passes
   // through: an archived assessment is out of the cycle, so scoring, submitting
   // or approving it would put data into a record the metrics deliberately
@@ -485,12 +544,14 @@ async function assertState(id: string, allowed: AssessmentState[]): Promise<Asse
  */
 export async function saveSelfScore(
   user: AppUser,
-  assessmentId: string,
+  /** The row, not an id: the caller has already fetched it to know which one. */
+  row: AssessmentRow,
   controlCode: string,
   level: Level | null,
   evidence: string | null,
 ): Promise<void> {
-  const row = await assertState(assessmentId, ["draft"]);
+  const assessmentId = row.id;
+  assertRowState(row, ["draft"]);
   if (row.assessee_id !== user.id) throw new Error("That assessment belongs to someone else.");
 
   const fw = await getFramework();

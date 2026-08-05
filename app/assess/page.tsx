@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
-  currentCycle, findArchivedAssessment, findAssessment, scoresFor,
+  currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
 import { saveSelfScoreAction } from "@/app/actions";
 import NotAssigned from "./not-assigned";
@@ -31,15 +31,15 @@ export default async function AssessPage({
 }) {
   const { c, error } = await searchParams;
   const user = await requireUser();
-  const [fw, row] = await Promise.all([getAssesseeFramework(), findAssessment(user.id)]);
-  if (!row) {
+  // The row and its scores in one request. This screen renders nothing from the
+  // person, the profile or the target snapshot, and a PM loads it 132 times.
+  const [fw, mine] = await Promise.all([getAssesseeFramework(), findAssessmentWithScores(user)]);
+  if (!mine) {
     // Distinguish "never assigned" from "yours was archived" — see NotAssigned.
     const archived = await findArchivedAssessment(user.id);
     return <NotAssigned cycle={currentCycle()} archived={archived} />;
   }
-  // Only the scores: this screen renders nothing from the person, the profile
-  // or the target snapshot, and a PM loads it 132 times.
-  const scores = await scoresFor(user, row);
+  const { row, scores } = mine;
 
   const code = c && fw.controlByCode(c)?.active ? c : fw.activeControls[0].code;
   const control = fw.controlByCode(code)!;

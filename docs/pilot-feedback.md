@@ -859,6 +859,98 @@ defaults it to `false` so a browser-side Supabase client can read the token; thi
 app has none, so that bought nothing and exposed the session to any script on
 the page. Now `httpOnly` and `Secure`, asserted in `scripts/e2e.mjs`.
 
+### N16 — every Supabase call costs ~31ms before the query runs
+
+**Status:** Root cause established and measured. Round-trip reduction shipped.
+Two follow-ups logged below, both deliberately not done yet.
+
+Raised by the owner: "the performance is slow… loading the second control takes
+4 seconds." Three rounds of investigation blamed the wrong thing twice — first
+the number of calls, then the function region — before measuring the calls
+themselves.
+
+**The finding.** Supabase's own gateway reports its service time in the
+`x-envoy-upstream-service-time` header, which is measured inside their
+infrastructure and so is independent of where the client sits. Against the live
+project:
+
+| query | payload | Supabase server time |
+|---|---|---|
+| `score` `limit=1` | 0kB | 31–49ms |
+| `app_user` `limit=1` | 0kB | 31ms |
+| `control`, all 133 | **183kB** | 35–41ms |
+| `measure`, all 586 | 104kB | 34–35ms |
+
+**Returning one row costs the same as returning 183kB.** That is not query
+execution — it is a fixed per-request cost charged before the query is
+considered. The database is a `t3a.nano`: 0.5GB RAM and two burstable vCPUs,
+shared between Postgres, PostgREST and the gateway.
+
+It reconciles every number in the Vercel logs: the 38ms best case, the ~100ms
+median across 101 calls, and the framework load where nine parallel queries
+saturated two cores and each one inflated from ~60ms to 180–360ms. Under load
+the floor triples — measured at 102ms median with 20 concurrent requests.
+
+**What this means for scale, since the question was asked.** Data volume is
+*not* the risk: the size-independence above proves the project is nowhere near
+it, the framework tables are fixed at 133 controls and 586 measures forever, and
+`score` grows at 132 rows per person per cycle (a thousand people would be
+132,000 rows). **Request concurrency is the risk**, and round-trip count is the
+multiplier on it. Which is why fewer calls is the structural fix and not a
+workaround — it reduces a cost that no amount of query tuning can touch.
+
+**Shipped:** 12 calls on a cold instance → 2, and 4 → 2 warm. See the commit.
+
+**Not done, and why.**
+
+1. **Compute upgrade — the owner's call, and a measurement as much as a fix.**
+   Nano → Micro is a few dollars a month and reversible. If the idle floor drops
+   it was CPU; if it does not, the floor is Supabase's REST stack on every tier,
+   which is decisive evidence for (2). The owner asked to re-test the round-trip
+   work first so only one variable moves at a time.
+
+2. **Talk to Postgres directly instead of through PostgREST.** Every 31ms trip
+   goes TLS → Cloudflare → Envoy → PostgREST → parse and plan → Postgres, and
+   back. The wire protocol through Supabase's Supavisor pooler skips the first
+   four; same-region that is typically 1–3ms rather than 31ms, and it does not
+   degrade the same way under concurrency because there is no HTTP stack per
+   query. It fits behind the existing seam — `db()` in `lib/supabase/server.ts`
+   and `lib/framework.ts` are exactly the swap points — and being strictly
+   server-side it strengthens the "client never holds a table-capable key" rule
+   rather than weakening it.
+
+   **Deferred on purpose.** It needs a driver, pooler configuration and SQL
+   where the query builder is today. Nine people on a pilot will not tell us
+   whether the right thing was built, and this repo's rule is that generality
+   comes last. Revisit with real usage to measure against — or sooner if (1)
+   comes back showing the floor is not the instance.
+
+### N17 — the add-person tests fail about one run in four
+
+**Status:** Reproduced, cause not yet established. Pre-existing.
+
+Five checks in the `[13] People` block fail intermittently — the allowlist row,
+the password flag, the assign list, and both sign-in checks — because the account
+is never created. **Confirmed pre-existing:** stashing the N16 work and running
+the suite four times on the unchanged code failed twice, at the same rate and in
+the same block.
+
+What is known: the page lands on `/admin/people` with **no** `error=` parameter,
+so the action did not report a failure; yet no `app_user` row exists, and a fresh
+sign-in seconds later is refused. So it is not a read race on the assertion — the
+account genuinely is not there.
+
+The likely area is `purge()` → `deleteAuthUser()` → `addPerson()`'s
+`createUser`: `deleteAuthUser` lists users, deletes if found, and never verifies
+the delete took effect, so a GoTrue delete that has not yet propagated would make
+the next `createUser` refuse the address. That is a hypothesis, not a diagnosis —
+it does not explain an empty `error=` parameter, and it should not be "fixed" on
+a guess.
+
+The failing check now reports the page URL, which is what makes the next
+occurrence diagnosable rather than mysterious. Worth an `/investigate` pass on
+its own; not folded into a performance change.
+
 ## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and
