@@ -255,3 +255,15 @@ Three findings from building it, each a correction to the reviewed text:
    Consequences: the D3 logout-replay e2e is unobservable under this decision
    (replay legitimately recomputes to valid) and is dropped; the D3 memo purge
    ships anyway as defense-in-depth and costs one line.
+
+## Verified on the preview deployment (2026-08-05, owner's own session)
+
+The owner clicked through the PR #19 preview and exported the runtime logs.
+Across the whole session: **zero calls to `/auth/v1/user`** — the per-request
+auth round trip is gone; **one JWKS fetch** (66ms, then module-globally
+cached); **15 viewer-memo hits at 2–3ms** — the memo works under Fluid.
+Save action median **194ms** (baseline 229–276ms); the render after a save
+**8–88ms** (baseline 130–210ms); round trips per save **4, as the e2e
+asserts**. Server work per save ≈ **280ms**, from ~450–550ms. The sign-in
+POST itself remains slow (~1.4s) — cold instance plus Supabase's deliberate
+password hashing, once per session, out of scope here.
