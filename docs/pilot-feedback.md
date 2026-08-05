@@ -951,6 +951,81 @@ The failing check now reports the page URL, which is what makes the next
 occurrence diagnosable rather than mysterious. Worth an `/investigate` pass on
 its own; not folded into a performance change.
 
+### N18 — a save costs two server round trips, and 253–986ms of one is unexplained
+
+**Status:** N16 shipped and measured. Ordinary pages are fixed. The save path is
+not, and this entry is instrumentation, not a fix.
+
+**N16 worked.** Measured in production against the same pages:
+
+| | before | after |
+|---|---|---|
+| framework load | 600–730ms | **20–201ms** (1 query) |
+| median per-call cost | 103ms | **66ms** |
+| median database time per page | ~1,300ms | **222ms** |
+| median page that touches the database | 900–2,300ms | **445ms** |
+
+The per-call drop was not predicted: fewer simultaneous calls means less
+contention on two burstable cores, which is the concurrency effect measured in
+N16 running in reverse. The owner reports the app feels about a second faster.
+
+**What is left, and where.** Ordinary page loads are now essentially pure
+database time — `/` at 1531ms carried 1485ms of queries, `/assess/controls` at
+422ms carried 392ms. But a **save** is two request cycles, and the POST half
+carries time that is neither:
+
+| POST | database | unexplained | then GET | database |
+|---|---|---|---|---|
+| 1422ms | 436ms | **986ms** | 220ms | 202ms |
+| 1221ms | 413ms | **808ms** | 577ms | 407ms |
+| 1057ms | 397ms | **660ms** | 237ms | 223ms |
+| 468ms | 215ms | **253ms** | 172ms | 148ms |
+
+The POST returns a 303, so no page is rendered in it. The time is not queries
+and not rendering.
+
+**A hypothesis, killed before it shipped.** `revalidatePath` looked like the
+`unstable_cache` trap again — free on a laptop, a network hop on Vercel, and
+called by every action. Timed: **0ms**. It is also not dead weight despite every
+route being `force-dynamic`; there is no server cache to invalidate, but it does
+clear the client's router cache, without which a client-side navigation back to
+a scored control could show the pre-save payload. Kept.
+
+Locally the action fully accounts for itself (915ms total: 195ms find, 363ms
+write, 0ms revalidate, the rest auth), which points at the remaining production
+time being **outside** the action — in Vercel's server-action machinery rather
+than in this code. The timers added here bracket the action precisely so that
+the next reading either confirms that or refutes it.
+
+**The bigger observation, raised by the owner and worth more than the fix.**
+Scoring 132 controls means 132 saves, each a POST plus a redirect plus a GET —
+about **264 server round trips to fill in one form**. At 1.5s a save that is
+over three minutes of a PM waiting, arriving immediately after every decision
+they make.
+
+That is not only irritating. `docs/STATUS.md` says this prototype exists to
+answer one question: *will PMs finish online when they would not finish a
+spreadsheet?* A spreadsheet has no latency between cells. Run the pilot with a
+second and a half after every answer and a "no" may be about the wait rather
+than about the tool — which would corrupt the answer the pilot is for.
+
+The current design is not wrong: server-first, simple, and every score is
+durably committed before the PM moves on, which for an assessment record is a
+real virtue. But it multiplies per-request cost by 264, and no query tuning
+touches that multiplier.
+
+**So the ordering changes.** Shaving milliseconds off a round trip matters less
+than deciding whether to keep taking it 264 times. The compute bump (N16) and
+the move to direct Postgres (N16) both drop below:
+
+1. Finish this diagnosis — deploy these timers, one test.
+2. Local JWT verification: ~65ms off every trip, ≈17 seconds across a full
+   assessment. One afternoon.
+3. **The design question, properly:** does scoring stay one navigation per
+   control, or become one screen that saves in the background? That is a product
+   decision about how the assessment feels, not a performance fix — it belongs
+   in `/office-hours`, before the pilot rather than after it.
+
 ## Where this stands (end of 2026-08-04)
 
 Shipped in PR #6: N2, N8, N9 (the two parts that need no email), N11 measure and

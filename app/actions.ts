@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole, requireUser } from "@/lib/auth";
 import { getFramework, invalidateFramework } from "@/lib/framework";
+import { phase, phaseSync } from "@/lib/perf";
 import { db } from "@/lib/supabase/server";
 import {
   acceptAllRemaining, approveAssessment, findAssessment, saveSelfScore,
@@ -26,26 +27,40 @@ function fail(path: string, message: string): never {
 
 /** Save one control's self-score and move on. Assessment is derived from the
  *  session, never from the form — a posted id would be a way to score someone
- *  else's sheet. */
+ *  else's sheet.
+ *
+ *  INSTRUMENTED (N18). This POST carries 253-986ms that is neither database nor
+ *  rendering: the queries account for 190-436ms of it, and the response is a 303
+ *  redirect, so no page is built here. The timers below split the remainder into
+ *  the three things it can be — the reads, the write, and revalidatePath — so
+ *  the next change is aimed rather than guessed. Remove them once it is. */
 export async function saveSelfScoreAction(formData: FormData): Promise<void> {
-  const user = await requireUser();
-  const assessment = await findAssessment(user.id);
-  if (!assessment) fail("/assess", "No assessment has been assigned to you for this cycle.");
-  const code = String(formData.get("control") ?? "");
-  const level = levelOf(formData.get("level"));
-  const evidence = String(formData.get("evidence") ?? "").trim() || null;
-  const next = String(formData.get("next") ?? "");
+  return phase("action: save score (whole action)", async () => {
+    const user = await requireUser();
+    const assessment = await phase("action: find assessment", () => findAssessment(user.id));
+    if (!assessment) fail("/assess", "No assessment has been assigned to you for this cycle.");
+    const code = String(formData.get("control") ?? "");
+    const level = levelOf(formData.get("level"));
+    const evidence = String(formData.get("evidence") ?? "").trim() || null;
+    const next = String(formData.get("next") ?? "");
 
-  if (level === null) fail(`/assess?c=${code}`, "Pick a level before moving on.");
+    if (level === null) fail(`/assess?c=${code}`, "Pick a level before moving on.");
 
-  try {
-    await saveSelfScore(user, assessment, code, level, evidence);
-  } catch (e) {
-    fail(`/assess?c=${code}`, e instanceof Error ? e.message : "Saving failed.");
-  }
+    try {
+      await phase("action: write the score", () =>
+        saveSelfScore(user, assessment, code, level, evidence));
+    } catch (e) {
+      fail(`/assess?c=${code}`, e instanceof Error ? e.message : "Saving failed.");
+    }
 
-  revalidatePath("/assess");
-  redirect(next ? `/assess?c=${next}` : "/assess/controls?saved=1");
+    // Kept, not removed. On a force-dynamic route there is no server cache to
+    // invalidate, which is what made this look like dead weight — but it also
+    // clears the CLIENT's router cache, and without that a client-side
+    // navigation back to a scored control could show the pre-save payload.
+    // So: measure it before touching it.
+    phaseSync("action: revalidatePath", () => revalidatePath("/assess"));
+    redirect(next ? `/assess?c=${next}` : "/assess/controls?saved=1");
+  });
 }
 
 export async function submitAssessmentAction(): Promise<void> {
