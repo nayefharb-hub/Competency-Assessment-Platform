@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/app/link";
 
 /**
  * Shown when someone opens the self-assessment and has no live assessment.

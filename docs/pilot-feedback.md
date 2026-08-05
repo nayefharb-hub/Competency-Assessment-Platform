@@ -1117,8 +1117,57 @@ Two details that are load-bearing rather than tidy:
 
 ### N21 — 98 of 101 prefetches render nothing, and may be causing the cold starts
 
-**Status:** Measured, not fixed. One-line change, deliberately left until it can
-be verified rather than assumed.
+**Status:** Fixed. Prefetching is off, asserted by a permanent test. The
+production benefit (fewer instances) is **not yet verified** — that needs a
+click-through and a fresh log export.
+
+**How it was fixed.** Not `prefetch={false}` on five links, which was the
+original plan: `app/assess/controls/page.tsx` renders one `<Link>` per control,
+so the real count is closer to 140 call sites than five. Instead `app/link.tsx`
+wraps `next/link` with the default flipped, and every file imports that. The
+reasoning for the default — and the two conditions that should reverse it — live
+in that one file, so re-enabling is one edit rather than an archaeology exercise.
+
+Verified directly rather than assumed: on the heaviest page, scrolled to the
+bottom so every link enters the viewport, **zero** `_rsc` requests. Before the
+change the same page produced twelve. The suite asserts both that and that
+navigation still works, which also guards against someone importing `next/link`
+directly and quietly reinstating the cost.
+
+### What this broke, which was the more useful finding
+
+Removing the prefetches made **fourteen tests start failing intermittently**,
+across add-person, change-password, submit, approve and admin — areas with no
+connection to prefetching.
+
+They had all been passing for an accidental reason. The pattern was:
+
+```js
+await page.click(submit);
+await page.waitForLoadState("networkidle");
+```
+
+`networkidle` is 500ms of network silence, which is a *proxy* for "the server
+action finished" and not the thing itself. `click()` waits for nothing, so that
+500ms could elapse **before the POST had even started** — silence measured ahead
+of the work and read as silence after it. The prefetch requests were incidental
+noise that kept the network busy just long enough to paper over it.
+
+So the suite was not testing what it appeared to test, and deleting a pointless
+optimisation is what revealed it. Fixed with two helpers: `submitAction`, which
+arms `waitForResponse` **before** the click and only then measures idleness, and
+`actionLanded`, which waits for the specific outcome about to be asserted.
+Fourteen sites converted; zero `click`-then-`networkidle` pairs remain.
+
+**Worth generalising:** a test that passes because of unrelated traffic is
+indistinguishable from a test that passes, right up until the traffic changes.
+This suite had that property for weeks.
+
+**Still honest about:** an occasional single-check flake remains across long run
+sequences, not yet pinned to one cause. The add-person check now reports the
+error **banner** rather than the URL — twice the wrong diagnostic was chosen
+there, because `addPersonAction` renders failures in the page and the URL could
+only ever echo the page it was already on.
 
 The header renders five nav links on every signed-in page, all visible
 immediately, so every page load fires five or six `<Link>` prefetches at once.
