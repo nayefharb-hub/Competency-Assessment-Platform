@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { currentUser } from "@/lib/auth";
 import { signIn } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,26 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; denied?: string; next?: string }>;
 }) {
   const { error, denied, next } = await searchParams;
+
+  /*
+   * Already signed in? Go where they were headed (N22).
+   *
+   * Without this the page renders a sign-in form INSIDE the signed-in chrome —
+   * the owner read that as "I am logged out but the nav is still showing" and
+   * reported it as a session leak. It was the opposite: the session was fine
+   * and the form was the thing that should not have been there.
+   *
+   * `denied=1` is deliberately exempt. That arrives from /logout after an
+   * allowlist refusal, and its banner is the only explanation the person gets;
+   * redirecting on it would bounce them to a page they cannot use and swallow
+   * the reason. It is reachable while signed out, so this never loops.
+   *
+   * Same in-app-path guard as the sign-in action: `//host` and `/\host` are
+   * read as protocol-relative by browsers, so startsWith("/") is not enough.
+   */
+  if (!denied && (await currentUser())) {
+    redirect(/^\/(?![/\\])/.test(next ?? "") ? (next as string) : "/");
+  }
 
   return (
     <div className="section" style={{ maxWidth: 420, margin: "48px auto 0" }}>

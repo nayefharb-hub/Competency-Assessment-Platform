@@ -342,6 +342,15 @@ Full rationale is in the design doc and `CLAUDE.md`; the short version:
 - **Targets snapshot at approval, never before.** Editing a target in the admin
   screen changes future rollups only; approved assessments keep their frozen
   values.
+- **Preview deployments reuse the production Supabase project, and are safe only
+  because Vercel Authentication guards them** (2026-08-05). Environment variables
+  are scoped to `Preview` as well as `Production` so preview URLs actually work —
+  before this, a change could only be seen by merging it, which is how #14 and
+  #15 came to be reviewed after landing. The service-role key on a shareable URL
+  is defensible *only* while *Deployment Protection → Vercel Authentication* is
+  on (Standard Protection). **Turn that off and the preview scoping must come off
+  too.** A separate preview Supabase project is the alternative if isolation is
+  ever needed; rationale and trigger conditions in `docs/deploy.md`.
 
 ## Use gstack for the next phase
 
