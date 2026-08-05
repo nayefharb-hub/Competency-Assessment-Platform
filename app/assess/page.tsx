@@ -4,8 +4,8 @@ import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
-import { saveSelfScoreAction } from "@/app/actions";
 import NotAssigned from "./not-assigned";
+import ScorePanel from "./score-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -117,70 +117,24 @@ export default async function AssessPage({
           )}
         </div>
 
-        {/* ---- your answer: pinned, so it never scrolls out of reach ---- */}
+        {/* ---- your answer: pinned, so it never scrolls out of reach ----
+             A client component since the save UX change: the answer is held
+             locally until "Next control" commits it to the outbox, so the PM
+             never waits on a write (docs/eng-plan-save-ux.md). */}
         <div className="scorepanel">
-          <div className="card pad">
-            <form action={saveSelfScoreAction}>
-              <input type="hidden" name="control" value={code} />
-              <input type="hidden" name="next" value={next?.code ?? ""} />
-
-              <div className="mh" style={{ color: "var(--ink)", marginTop: 0 }}>
-                Your level{" "}
-                <span className="muted" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-                  🔒 target hidden while you self-score
-                </span>
-              </div>
-              <div className="optlist" role="radiogroup" aria-label="Proficiency level">
-                {fw.scaleLevels.map((s) => (
-                  <label className="opt" key={s.level}>
-                    <input
-                      type="radio"
-                      name="level"
-                      value={s.level}
-                      defaultChecked={score?.self_level === s.level}
-                      disabled={locked}
-                    />
-                    <span>
-                      <b>{s.label}</b>
-                      <span className="gloss">{fw.glossOf(s.level)}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="evidence">Evidence or example (optional, not scored)</label>
-                <input
-                  className="input"
-                  id="evidence"
-                  name="evidence"
-                  defaultValue={score?.evidence ?? ""}
-                  disabled={locked}
-                  placeholder="A short example of when you did this…"
-                />
-              </div>
-
-              {/* No inline styles here: the mobile rule turns this into a fixed
-                  bar, and an inline style would beat the media query. */}
-              <div className="assess-actions">
-                {!locked && (
-                  <button className="btn btn-primary" type="submit">
-                    {next ? "Save & next control" : "Save & review before submitting"}
-                  </button>
-                )}
-                {prev && (
-                  <Link className="btn btn-secondary" href={`/assess?c=${prev.code}`}>
-                    ← Previous
-                  </Link>
-                )}
-                {locked && next && (
-                  <Link className="btn btn-secondary" href={`/assess?c=${next.code}`}>
-                    Next →
-                  </Link>
-                )}
-              </div>
-            </form>
-          </div>
+          <ScorePanel
+            control={code}
+            nextControl={next?.code ?? null}
+            prevControl={prev?.code ?? null}
+            levels={fw.scaleLevels.map((s) => ({
+              level: s.level,
+              label: s.label,
+              gloss: fw.glossOf(s.level),
+            }))}
+            savedLevel={score?.self_level ?? null}
+            savedEvidence={score?.evidence ?? ""}
+            locked={locked}
+          />
         </div>
       </div>
     </div>

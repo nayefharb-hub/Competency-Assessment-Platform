@@ -12,7 +12,7 @@ import {
 } from "@/lib/db/assessment";
 import type { Level } from "@/lib/types";
 
-function levelOf(raw: FormDataEntryValue | null): Level | null {
+function levelOf(raw: FormDataEntryValue | number | null): Level | null {
   if (raw === null || raw === "") return null;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0 || n > 5) return null;
@@ -61,6 +61,40 @@ export async function saveSelfScoreAction(formData: FormData): Promise<void> {
     phaseSync("action: revalidatePath", () => revalidatePath("/assess"));
     redirect(next ? `/assess?c=${next}` : "/assess/controls?saved=1");
   });
+}
+
+/**
+ * The same save, for the outbox: no redirect, no thrown redirect, an answer
+ * instead of a navigation.
+ *
+ * `saveSelfScoreAction` above ends in `redirect()`, which works by throwing —
+ * fine when a form POST owns the response, useless to a caller that wants to
+ * know whether the write landed. This variant returns `{ ok }` so the outbox
+ * can decide: drop the entry, or keep it and retry.
+ *
+ * No `revalidatePath`: the PM has already navigated by the time this runs, and
+ * the destination fetched its own data. Invalidating here would refetch a page
+ * nobody is looking at.
+ */
+export async function commitSelfScoreAction(
+  control: string,
+  level: number,
+  evidence: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const user = await requireUser();
+    const assessment = await findAssessment(user.id);
+    if (!assessment) return { ok: false, error: "No assessment is assigned to you." };
+    const lvl = levelOf(level);
+    if (lvl === null) return { ok: false, error: "That is not a valid level." };
+    await saveSelfScore(user, assessment, control, lvl, evidence);
+    return { ok: true };
+  } catch (e) {
+    // Every failure is retryable from the outbox's point of view — a network
+    // blip and a rejected write look the same to it, and the answer is the
+    // same either way: keep the entry, say so, try again.
+    return { ok: false, error: e instanceof Error ? e.message : "Saving failed." };
+  }
 }
 
 export async function submitAssessmentAction(): Promise<void> {

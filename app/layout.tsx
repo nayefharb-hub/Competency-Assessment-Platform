@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import { currentUser } from "@/lib/auth";
 import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
+import OutboxBanner from "./outbox-banner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -69,6 +70,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </div>
           )}
+
+          {/* Above <main> and outside every route: a failed save has to stay
+              visible after the PM navigates away from the control that made
+              it (docs/eng-plan-save-ux.md). Renders nothing when the queue is
+              empty, which is nearly always. */}
+          {user && <OutboxBanner userId={user.id} />}
 
           <main>{children}</main>
         </div>
