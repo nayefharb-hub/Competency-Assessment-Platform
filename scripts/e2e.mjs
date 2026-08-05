@@ -122,8 +122,15 @@ await ensure(OTHER);
 await ensure(BOSS);
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
-browser.on("disconnected", () =>
-  console.log(`    ⚠ chromium DISCONNECTED at ${new Date().toISOString()} (N21)`));
+// `closingOnPurpose` matters: teardown's own browser.close() fires this event,
+// so without the flag the diagnostic reports a disconnect on EVERY clean run —
+// it did exactly that on its first outing. A signal that always fires carries
+// no information, and would have made the real thing invisible.
+let closingOnPurpose = false;
+browser.on("disconnected", () => {
+  if (closingOnPurpose) return;
+  console.log(`    ⚠ chromium DISCONNECTED UNEXPECTEDLY at ${new Date().toISOString()} (N21)`);
+});
 
 /**
  * Cleanup has to run even when the suite dies mid-flight.
@@ -151,6 +158,7 @@ async function teardown() {
   const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
   check("no QA sign-in accounts left behind either", strays.length === 0,
     strays.map((u) => u.email).join(","));
+  closingOnPurpose = true;
   await browser.close().catch(() => {});
 }
 
@@ -319,6 +327,42 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
     document.cookie.split("; ").filter((c) => c.startsWith("sb-")));
   check("page JavaScript cannot read the session", visible.length === 0, visible.join(","));
 }
+/*
+ * N22: signing in and then pressing Back landed on /login again — with the
+ * signed-in header still around it, because the session was fine and the page
+ * simply never asked. It reads as "I am logged out but the nav is showing".
+ * Browser Back is the reported route in, so that is what is driven here rather
+ * than a bare goto.
+ */
+{
+  // Back FIRST, before any other navigation: `session()` just signed this page
+  // in through the form, so /login is genuinely the previous history entry.
+  // This is the owner's exact sequence, not an approximation of it.
+  await pm.page.goBack();
+  const backForm = await pm.page.locator('form input#password').count();
+  const backChrome = await pm.page.locator('a:has-text("Sign out")').count();
+  const where = `${pm.page.url()} — password field: ${backForm}, chrome: ${backChrome}`;
+
+  // Assert what was REPORTED — a sign-in form inside signed-in chrome — not the
+  // URL. The first version of this check tested `url() !== /login` and failed
+  // against a page that was already rendering correctly: after a soft back the
+  // address bar still reads /login while the CONTENT is the redirect target.
+  // That is cosmetic; being shown the form is not. Measured: 0 password fields.
+  check("pressing Back after signing in does not show the sign-in form again",
+    backForm === 0 && backChrome === 1, where);
+
+  await pm.page.goto("/login");
+  check("nor does going to /login directly while signed in",
+    !pm.page.url().includes("/login"), pm.page.url());
+
+  // The denied banner is the only explanation an un-allowlisted person gets,
+  // so it must survive the redirect rather than be swallowed by it.
+  await pm.page.goto("/login?denied=1");
+  check("the allowlist refusal still explains itself",
+    (await pm.page.locator('[role="status"]').count()) > 0, pm.page.url());
+  await pm.page.goto("/");
+}
+
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 

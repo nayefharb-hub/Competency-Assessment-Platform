@@ -1115,6 +1115,63 @@ Two details that are load-bearing rather than tidy:
   a silent truncation would rebuild it in a form that only appears once the
   organisation is big.
 
+### N22 — "I am not logged in and the whole nav bar is showing"
+
+**Status:** Fixed. Reported 2026-08-05, with the repro supplied by the owner.
+
+The owner signed in, pressed the browser's **Back** button, and landed on the
+sign-in form with the full signed-in header around it — nav, name, role, Sign
+out — and found the nav still worked.
+
+**The report was right about the symptom and inverted about the cause, and the
+inversion is the interesting part.** Read as stated it looks alarming: a signed
+-out visitor holding signed-in chrome, which would be a session leak. It was the
+exact opposite. The session was valid the entire time; the header was telling the
+truth. The thing that had no business being on screen was **the form**.
+
+`app/login/page.tsx` never asked who was looking. It rendered the sign-in form to
+anyone, authenticated or not, so Back re-rendered it with a live session and the
+layout dressed it in the signed-in header. Nothing was stale and nothing leaked.
+
+Two details that decided this rather than the first theory:
+
+- The second screenshot — the owner navigating to Results and getting *their own*
+  in-progress state — proved the session was live. A stale-cache or bfcache
+  restore would have carried signed-**out** chrome, since that is what the page
+  looked like before signing in. Signed-in chrome ruled that whole family out.
+- Prefetching was the tempting culprit, given N21. It is **off** (`app/link.tsx`),
+  so it could not have been. Checking that before theorising cost one grep.
+
+The fix is a guard: signed in, `/login` redirects to `next` (validated as an
+in-app path, same rule as the sign-in action) or `/`.
+
+`?denied=1` is deliberately exempt. That parameter arrives from `/logout` after
+an allowlist refusal and its banner is the only explanation the person ever gets;
+redirecting it would bounce them to a page they cannot use and swallow the
+reason. It is only reachable while signed out, so the exemption cannot loop.
+
+`/login` is also served `Cache-Control: no-store` (in `next.config.ts`, scoped to
+that one route) so the form is never restored from the browser's back/forward
+cache.
+
+Covered in `[1] Invite-only auth` by driving **Back** specifically — the reported
+route in — plus the direct visit and the `denied` banner.
+
+**Two corrections earned during the fix, both worth keeping:**
+
+- The first version of the Back test asserted `url() !== "/login"` and **failed
+  against a page that was already correct**. After a soft back the address bar
+  still reads `/login` while the content is the redirect target: 0 password
+  fields, signed-in chrome present. The form — the thing reported — was gone.
+  The test now asserts that, and the lingering URL is recorded as cosmetic
+  rather than chased. This is the same mistake as the `4.4.3` substring check
+  in N21: asserting on a proxy instead of on the symptom.
+- `no-store` was added on the theory that Back was an HTTP request. It is not —
+  a server-action redirect makes `/login → /` a client-side push, so Back is a
+  soft navigation served from Next's router cache, and no header can reach it.
+  The header is kept because it is correct for hard reloads and costs nothing on
+  one route, but it is **not** what fixed this. The page guard is.
+
 ### N21 — 98 of 101 prefetches render nothing, and may be causing the cold starts
 
 **Status:** Fixed. Prefetching is off, asserted by a permanent test. The
