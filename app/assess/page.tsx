@@ -6,6 +6,7 @@ import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
+import { nextAfter, scoredCodes, shapeOf } from "@/lib/shape";
 import NotAssigned from "./not-assigned";
 import ScorePanel from "./score-panel";
 
@@ -72,6 +73,15 @@ export default async function AssessPage({
   const pos = fw.controlPosition(code);
   const { prev, next } = fw.neighbours(code);
 
+  /* Where "Next" goes at the end of a competence element (D25). A CE is the
+     sitting, so its last control does not walk into the next CE's first —
+     finishing is a moment, and continuing is a choice. The last CE of an area
+     steps up one further. shapeOf() derives this in memory from data already
+     fetched; no extra round trip on the path two PRs were spent making fast. */
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
+    fw.data.areas.map((a) => a.name));
+  const boundary = nextAfter(areas, control);
+
   const score = scores.find((s) => s.control_code === code);
   const answered = scores.filter((s) => s.self_level !== null).length;
   const locked = row.state !== "draft";
@@ -79,8 +89,8 @@ export default async function AssessPage({
   return (
     <div className="section assess-wide">
       <div className="assess-nav">
-        <Link className="btn btn-secondary btn-sm" href="/assess/controls">
-          ← Back to controls
+        <Link className="btn btn-secondary btn-sm" href={`/assess/area/${encodeURIComponent(control.area)}`}>
+          ← {control.area}
         </Link>
         <span className="note">
           Control <b className="tnum">{pos}</b> of{" "}
@@ -158,6 +168,7 @@ export default async function AssessPage({
             savedLevel={score?.self_level ?? null}
             savedEvidence={score?.evidence ?? ""}
             locked={locked}
+            boundary={boundary}
           />
         </div>
       </div>

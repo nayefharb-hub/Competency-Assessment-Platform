@@ -2,6 +2,8 @@ import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { listPeople } from "@/lib/db/people";
 import { currentCycle } from "@/lib/db/assessment";
+import { getFramework } from "@/lib/framework";
+import { daysSince, hasStalled } from "@/lib/stall";
 import {
   addPersonAction, archiveAction, assignAction, resetPasswordAction,
   restoreAction, unassignAction,
@@ -34,7 +36,10 @@ export default async function PeoplePage({
     await searchParams;
   const admin = await requireRole("admin");
   const cycle = currentCycle();
-  const people = await listPeople(cycle);
+  const [people, fw] = await Promise.all([listPeople(cycle), getFramework()]);
+  const activeControlCount = fw.activeControls.length;
+  // One clock for the whole render, so two rows cannot disagree about "today".
+  const now = Date.now();
 
   const pms = people.filter((p) => p.role === "assessee").length;
   const unassigned = people.filter((p) => p.assessment_id === null);
@@ -224,6 +229,28 @@ export default async function PeoplePage({
                       <>
                         {p.assessment_state.replace("_", " ")}
                         <div className="note tnum">{p.scored} scored</div>
+                        {/* Last activity, and a quiet marker when a draft has
+                            stopped moving (D16). Completion alone renders a PM
+                            who is 40% through and scoring daily identically to
+                            one who stopped three weeks ago. No email, no
+                            nagging — it is an invitation to look. */}
+                        <div className="note">
+                          {p.assessment_state !== "draft"
+                            ? null
+                            : p.last_scored
+                            ? <>last scored {daysSince(p.last_scored, now) === 0
+                                ? "today"
+                                : `${daysSince(p.last_scored, now)}d ago`}</>
+                            : "not started"}
+                          {hasStalled({
+                            lastScored: p.last_scored, scored: p.scored,
+                            total: activeControlCount, state: p.assessment_state,
+                          }, now) && (
+                            <span className="pill pill-deficit" style={{ marginLeft: 8 }}>
+                              stalled
+                            </span>
+                          )}
+                        </div>
                         {p.assessment_state === "draft" && p.scored === 0 ? (
                           // Nothing to lose yet, so this is a plain undo.
                           <form action={unassignAction}>

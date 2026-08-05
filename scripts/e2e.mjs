@@ -390,6 +390,36 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
 }
 
 /*
+ * N23 — a failed sign-in keeps what was typed.
+ *
+ * The bug was never that the app replaced the address: it redirected to a
+ * fresh page with an empty field, and the browser's autofill supplied the
+ * saved one. The person then saw an address they had not typed and could not
+ * see their own typo. The fix returns the typed value instead of redirecting,
+ * so this asserts the value SURVIVES rather than asserting anything about
+ * autofill, which the suite cannot simulate.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  const typo = "qa..pm@example.test";          // doubled dot: passes type="email"
+  await page.fill("#email", typo);
+  await page.fill("#password", "wrong-on-purpose");
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+
+  check("a failed sign-in still refuses", (await page.locator(".banner-error").count()) === 1);
+  check("and keeps the address that was actually typed",
+    (await page.inputValue("#email")) === typo, await page.inputValue("#email"));
+  check("the refusal says nothing about which part was wrong",
+    /not recognised, or that account has not been invited/.test(
+      await page.locator(".banner-error").innerText()));
+  check("and nothing is written into the URL",
+    !page.url().includes("error=") && !page.url().includes("email="), page.url());
+  await ctx.close();
+}
+
+/*
  * A1 (eng-plan-save-latency): tokens are verified LOCALLY by signature, so
  * prove the signature is actually checked — a tampered token must bounce.
  * The session cookie is base64url JSON holding access_token; corrupt the
@@ -680,6 +710,55 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
+   * THE SHAPE OF THE WORK (D14, D18, D25). Areas -> competencies -> controls,
+   * with the competence element as the unit of a sitting.
+   */
+  {
+    await pm.page.goto("/assess/areas");
+    await pm.page.waitForLoadState("networkidle");
+    const cards = await pm.page.locator(".area-card").count();
+    check("the way in shows the three ICB4 areas", cards === 3, `${cards}`);
+
+    const head = await pm.page.locator(".progress-head").innerText();
+    check("progress is counted in competencies, not 132 controls",
+      /of\s+28\s+competencies/i.test(head), JSON.stringify(head));
+    check("and it names what is next", /next:/i.test(head), JSON.stringify(head));
+
+    // A duration is a property of the WORK — a cook time, not a prediction
+    // about the reader (D15b). It answers "can I start this now?".
+    check("each area states how long it takes",
+      /about\s+\d+(–\d+)?\s*min/i.test(await pm.page.locator(".area-grid").innerText()));
+
+    await pm.page.locator(".area-card").first().click();
+    await pm.page.waitForURL(/\/assess\/area\//, { timeout: 10_000 }).catch(() => {});
+    await pm.page.waitForSelector(".ce-row", { timeout: 10_000 }).catch(() => {});
+    const rows = await pm.page.locator(".ce-row").count();
+    check("an area opens its competencies", rows >= 5, `${rows}`);
+    const firstRow = await pm.page.locator(".ce-row").first().innerText();
+    check("each competency states its own size and duration",
+      /\d+\s+controls\s+·\s+about/i.test(firstRow), firstRow);
+    /* The NAME, not just the shape. The first version of this check asserted
+       "N controls · about M min" and passed while every row read "4.3.1 4.3.1"
+       — shapeOf was looking the competence element up by control code, so the
+       name was always undefined and fell back to the code. A test that only
+       checks the furniture cannot see the missing content. */
+    check("and names the competency rather than repeating its code",
+      /^\s*[\d.]+\s+[A-Za-z]/.test(firstRow.split("\n")[0]), firstRow.split("\n")[0]);
+
+    /* THE BLINDING GUARD (D24). These screens are the first assessee-facing UI
+       where a competence element appears, which makes them the natural place
+       for someone to add a "helpful" target. Seeing the target anchors the
+       self-score, and the failure is silent — no crash, just quietly worse
+       data. So it is asserted, not trusted. */
+    for (const url of ["/assess/areas", pm.page.url()]) {
+      await pm.page.goto(url);
+      const html = await pm.page.content();
+      check(`no target reaches ${url.replace(BASE, "")}`,
+        !/target_level|Target level|target level/i.test(html), url);
+    }
+  }
+
+  /*
    * RESUMING (decision D12, as revised). /assess with no control named comes
    * back to the control the PM was last on — including one they went back to
    * re-read, which "first unanswered" would have overruled. Falls back to the
@@ -744,7 +823,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
       pm.page.url().includes("4.3.2.4") && (await pm.page.locator(".optlist").count()) > 0,
       pm.page.url());
 
-    await pm.page.click('a:has-text("Back to controls")');
+    await pm.page.click(".assess-nav a");
     await pm.page.waitForTimeout(1_000);
     check("and so is the rest of the app's navigation",
       pm.page.url().includes("4.3.2.4"), pm.page.url());

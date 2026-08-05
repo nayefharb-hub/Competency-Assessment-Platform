@@ -1,6 +1,7 @@
 # Eng plan: the shape of the work, and pace
 
-Status: REVIEWED — see the report at the bottom. **Scope reduced during review
+Status: PARTS 1–3 BUILT (2026-08-05). Part 4 (pace) still to come, and D26
+still open. See the report at the bottom. **Scope reduced during review
 (D23): Parts 1–3 ship first, Part 4 (pace) follows as its own PR.** One
 question was deliberately deferred rather than answered (D26, targets) and it
 gates one decision inside Part 1. Derived from
@@ -209,3 +210,32 @@ Build order: Parts 1–3 as one PR. Then D26 in its own session. Then Part 4,
 with `/cso` on the commit-path change and the pace data.
 
 NO UNRESOLVED DECISIONS
+
+
+## What building it changed (2026-08-05)
+
+Three things the plan did not anticipate, recorded rather than smoothed over:
+
+1. **`allowImportingTsExtensions` is now on.** The unit tests run against the
+   real source via `node --experimental-strip-types`, which needs explicit
+   `.ts` specifiers where the bundler does not. The alternative was testing a
+   copy of the logic, which is not testing it. `lib/duration.ts` and
+   `lib/shape.ts` import with extensions; nothing else changed.
+
+2. **The control page's "← Back to controls" is now "← {area}".** The
+   breadcrumb should climb the hierarchy the design just introduced, not jump
+   past it to the flat list. The flat list is still reachable — from the areas
+   screen, where "All 132 controls" now lives. The e2e suite caught the
+   rename, which is what it is for.
+
+3. **`shapeOf()` recomputes on the control page.** It is O(132) over arrays
+   already in memory and adds no query, but it runs on the hottest path in the
+   app. If the save loop ever measures slower, this is a candidate to memoize
+   per request — noted here so the next person measuring does not have to
+   rediscover it.
+
+Tests: **221 passed, 0 failed** (was 213), plus 19 unit tests. New coverage:
+the areas screen lists three areas and counts competencies not controls; each
+area and competency states its duration; an area opens its competencies; and
+**no target reaches either new screen** — the D24 guard, asserted rather than
+trusted.

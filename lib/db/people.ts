@@ -23,6 +23,18 @@ export interface PersonRow extends AppUser {
   assessment_state: string | null;
   scored: number;
   /**
+   * When this person last scored anything, or null if never. Completion alone
+   * cannot tell a person who is 40% through and moving from one who stopped
+   * three weeks ago — this is what separates them (D16).
+   *
+   * ONLY MEANINGFUL WHILE THE ASSESSMENT IS A DRAFT. `score.updated_at` is
+   * bumped by any upsert, and three assessor-side paths write score rows — the
+   * submit prefill, saveRevisions and accept-all. After submission this would
+   * report the ASSESSOR's activity under the PM's name, so the screen shows it
+   * only for drafts, which is also the only state that can stall.
+   */
+  last_scored: string | null;
+  /**
    * Most recent ARCHIVED assessment for the cycle. Carried separately rather
    * than folded into the fields above: this screen is the only place an
    * archived record is still visible, so it is also the only place it can be
@@ -50,14 +62,14 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       .eq("cycle", cycle)
       .is("deleted_at", null)
       .in("assessee_id", people.map((p) => p.id))
-      .then((r) => (r.data ?? []) as { id: string; assessee_id: string; state: string }[]),
+      .then((r) => unwrap("assignment lookup", r) as { id: string; assessee_id: string; state: string }[]),
     sb.from("assessment")
       .select("id, assessee_id, deleted_at, deleted_reason")
       .eq("cycle", cycle)
       .not("deleted_at", "is", null)
       .order("deleted_at", { ascending: false })
       .in("assessee_id", people.map((p) => p.id))
-      .then((r) => (r.data ?? []) as {
+      .then((r) => unwrap("archive lookup", r) as {
         id: string; assessee_id: string; deleted_at: string; deleted_reason: string | null;
       }[]),
   ]);
@@ -69,18 +81,36 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
     if (!archivedByPerson.has(a.assessee_id)) archivedByPerson.set(a.assessee_id, a);
   }
 
-  const scores = (
-    await sb
+  /* A failed read here used to render as zeroes: everyone "0 scored", everyone
+     "not started", and hasStalled silently false for the whole team — a
+     plausible, entirely wrong page with nothing to say it had failed. That is
+     the N19 mistake in a different table, so it throws now.
+     Also skipped entirely when nothing is assigned, which is the normal state
+     at the start of a cycle and was costing an `.in(…, [])` round trip. */
+  const scores = assessments.length === 0 ? [] : (
+    unwrap("score tally", await sb
       .from("score")
-      .select("assessment_id, self_level")
+      // updated_at rides along with the rows already being counted, so the
+      // last-activity column costs no extra query — deliberately not one
+      // aggregate per person.
+      .select("assessment_id, self_level, updated_at")
       .in("assessment_id", assessments.map((a) => a.id))
       .not("self_level", "is", null)
-      .limit(20000)
-  ).data as { assessment_id: string }[] | null;
+      .limit(20000))
+  ) as { assessment_id: string; updated_at: string | null }[];
 
   const scoredCount = new Map<string, number>();
-  for (const s of scores ?? []) {
+  const lastScored = new Map<string, string>();
+  for (const s of scores) {
     scoredCount.set(s.assessment_id, (scoredCount.get(s.assessment_id) ?? 0) + 1);
+    const at = s.updated_at;
+    const held = lastScored.get(s.assessment_id);
+    // Compare instants rather than strings: lexicographic ISO ordering holds
+    // only while every row carries the same UTC offset, which is a property of
+    // the connection, not of the data.
+    if (at && (!held || Date.parse(at) > Date.parse(held))) {
+      lastScored.set(s.assessment_id, at);
+    }
   }
 
   return people.map((p) => {
@@ -91,6 +121,7 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       assessment_id: a?.id ?? null,
       assessment_state: a?.state ?? null,
       scored: a ? scoredCount.get(a.id) ?? 0 : 0,
+      last_scored: a ? lastScored.get(a.id) ?? null : null,
       archived_id: gone?.id ?? null,
       archived_reason: gone?.deleted_reason ?? null,
       archived_at: gone?.deleted_at ?? null,
