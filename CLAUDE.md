@@ -48,6 +48,29 @@ Next.js (App Router, TypeScript) · Supabase (Postgres + Auth) · Vercel · Rech
 All database access goes through server-side code (service key server-side only);
 the client never holds a table-capable key.
 
+## Architecture rules that must not drift
+
+Learned by measurement during the 2026-08 performance arc; each has a cost
+that was paid once already.
+
+- **No synchronous network dependency in the per-request hot path unless it
+  fetches the data being served.** Auth is verified locally by signature
+  (`getClaims`, ES256) — never reintroduce a per-request call to an auth
+  service "to be safe"; the allowlist select in `lib/auth.ts` is the
+  per-request revocation check, and it is already paid for. This one habit
+  cost ~290ms on every save until it was measured.
+- **Round trips are counted, not estimated.** A warm save is exactly 4
+  Supabase calls, asserted by e2e from the server's own log. Any change that
+  adds a per-request call must move that number knowingly, in the same PR.
+- **Performance claims come from `npm run perf:save` (or the phase logs),
+  never from reasoning about where time "must" be going.** Four asserted
+  mechanisms in a row were wrong before measurement; the rule exists because
+  arithmetic filler in a table reads exactly like evidence.
+- **Per-user state at module scope needs an argued exception in
+  `docs/deploy.md`** (Fluid Compute: instances serve interleaved requests).
+  One exists — `viewerMemo`, token-keyed, 2s TTL. Retire it if Next ever
+  provides a request store spanning a server action and its redirect render.
+
 ## Domain rules that must not drift
 - Framework: IPMA ICB4 v4.0.1 — 3 areas, 28 competence elements, **133 controls
   (132 active, 1 inactive)**. Inactive controls contribute nothing to any rollup.
