@@ -363,6 +363,47 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
   await pm.page.goto("/");
 }
 
+/*
+ * A1 (eng-plan-save-latency): tokens are verified LOCALLY by signature, so
+ * prove the signature is actually checked — a tampered token must bounce.
+ * The session cookie is base64url JSON holding access_token; corrupt the
+ * token's signature segment and the next request must land on /login.
+ *
+ * NOT tested here, stated rather than hidden: logout-then-replay. Under D5
+ * (accepted 15-min window) a replayed token legitimately verifies until
+ * expiry, so there is nothing observable to assert; and "unavailable is
+ * never memoized" needs a failing database, which this suite — pointed at a
+ * healthy one — cannot stage. That property is held by structure instead:
+ * viewerMemo has exactly one set site, on the `ok` branch.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+
+  const jar = await ctx.cookies();
+  const auth = jar.find((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+  check("found the session cookie to tamper with", !!auth, jar.map((c) => c.name).join(","));
+  if (auth) {
+    const prefix = "base64-";
+    const decoded = JSON.parse(Buffer.from(auth.value.slice(prefix.length), "base64url").toString());
+    const [h, p, sig] = decoded.access_token.split(".");
+    // flip the last character of the signature — structurally valid, cryptographically not
+    const flipped = sig.slice(0, -1) + (sig.endsWith("A") ? "B" : "A");
+    decoded.access_token = [h, p, flipped].join(".");
+    const value = prefix + Buffer.from(JSON.stringify(decoded)).toString("base64url");
+    await ctx.addCookies([{ ...auth, value }]);
+
+    await page.goto("/assess/controls");
+    check("a signature-tampered token is refused, not trusted",
+      page.url().includes("/login"), page.url());
+  }
+  await ctx.close();
+}
+
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 
@@ -536,6 +577,42 @@ console.log("\n[4] Self-scoring persists to Postgres");
     check("a scored row names the level it holds", /^\u2713 /.test(marks.doneText ?? ""), `${marks.doneText}`);
     check("the two row states differ by more than a badge",
       marks.todoEdge !== marks.doneEdge, `${marks.todoEdge} vs ${marks.doneEdge}`);
+  }
+
+  /*
+   * Round-trip budget (eng-plan-save-latency). A warm, steady-state save is
+   * exactly FOUR Supabase calls: app_user, find assessment, write score, and
+   * the render's assessment+scores query. Asserted by counting the server's
+   * own `[supabase` log lines, so a regression that quietly re-adds a call —
+   * a second auth validation, a duplicated lookup — fails the suite instead
+   * of fading into "the app feels slower".
+   *
+   * Re-saves 4.3.1.1 with identical values so the fixture state the filter
+   * checks above depend on (exactly one scored control) is untouched.
+   * Sleeps past the 2s viewer-memo TTL first: within TTL a save costs 3
+   * (the preceding GET primed the memo), which is real but timing-dependent;
+   * the steady state — a human takes >2s per control — is what gets pinned.
+   * Requires E2E_SERVER_LOG pointing at the `next start` log; skips loudly
+   * when unset rather than passing vacuously.
+   */
+  {
+    const LOG = process.env.E2E_SERVER_LOG;
+    if (LOG) {
+      const { readFileSync } = await import("node:fs");
+      await pm.page.goto("/assess?c=4.3.1.1");
+      await pm.page.check('input[name="level"][value="3"]');
+      await pm.page.fill("#evidence", "QA evidence line");
+      await new Promise((r) => setTimeout(r, 2_200)); // past the viewer-memo TTL
+      const mark = readFileSync(LOG, "utf8").length;
+      await submitAction(pm.page, () => pm.page.click('.assess-actions button[type="submit"]'));
+      await new Promise((r) => setTimeout(r, 500)); // let the server log flush
+      const lines = readFileSync(LOG, "utf8").slice(mark)
+        .split("\n").filter((l) => l.includes("[supabase "));
+      check("a warm save costs exactly 4 supabase round trips",
+        lines.length === 4, `${lines.length}: ${lines.join(" | ")}`);
+    } else {
+      console.log("  – round-trip budget not asserted: set E2E_SERVER_LOG to the next-start log path");
+    }
   }
 
   /* N14: the answer and Save must be on screen without scrolling, at every

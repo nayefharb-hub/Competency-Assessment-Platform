@@ -19,6 +19,7 @@ import { createServerClient } from "@supabase/ssr";
 import { db, supabaseAnonKey, supabaseUrl, timedSupabaseFetch } from "./supabase/server";
 import { phase } from "./perf";
 import { SESSION_COOKIE } from "./supabase/cookies";
+import { TTLMap } from "./ttl-map";
 import type { AppUser, UserRole } from "./types";
 
 /** Auth-only client bound to the request's cookie jar. */
@@ -87,16 +88,58 @@ type Viewer =
   | { status: "unavailable"; message: string }
   | { status: "ok"; user: AppUser };
 
+/**
+ * Cross-pass memo for the resolved viewer (eng-plan-save-latency, A2).
+ *
+ * React's `cache()` above dedupes WITHIN one render pass. A server action and
+ * the render of its redirect target are two passes of the same POST, so every
+ * save paid for authentication twice. This memo bridges exactly that gap.
+ *
+ * This is the argued exception to the Fluid Compute rule "no per-user state
+ * at module scope" (docs/deploy.md). Why it cannot leak or lie:
+ * - keyed by the FULL access token — two users share an entry only if they
+ *   share a token, which is theft, not a collision;
+ * - only `status: "ok"` is stored. `unavailable` is never replayed (N19:
+ *   a transient DB failure must stay transient), `anon`/`uninvited` are
+ *   cheap to recompute and dangerous to cache;
+ * - 2s TTL spans action→render of one request, not two human interactions;
+ *   LRU cap 200. signOut() deletes the entry (review D3).
+ * - staleness bound: a role or must_change_password flip lands within 2s.
+ */
+const viewerMemo = new TTLMap<string, Viewer>(2_000, 200);
+
 const viewer = cache(async function viewer(): Promise<Viewer> {
   return phase("auth: validate token + load app_user", async () => {
   const auth = await authClient();
-  const { data, error } = await auth.auth.getUser();
-  if (error || !data.user) return { status: "anon" };
+
+  // The raw token, read from the cookie without a network call. It is both
+  // the memo key and the thing getClaims() verifies.
+  const { data: sess } = await auth.auth.getSession();
+  const token = sess.session?.access_token;
+  if (!token) return { status: "anon" };
+
+  const memoized = viewerMemo.get(token);
+  if (memoized) return memoized;
+
+  // Local signature verification (A1). The project signs sessions with ES256
+  // (verified 2026-08-05), so this is CPU + a module-globally cached JWKS —
+  // no auth round trip. Every failure path inside getClaims (alg:none, HS*
+  // downgrade, unknown kid, missing WebCrypto) falls back to a server-side
+  // getUser() — verified in auth-js 2.112.0 source — so forged headers
+  // degrade to the slow path, never to trust.
+  const { data: verified, error } = await auth.auth.getClaims();
+  if (error || !verified) return { status: "anon" };
+
+  // /cso hardening: only a real session token names an authenticated user.
+  // The allowlist below would refuse a non-user token anyway (no app_user
+  // row for a sub it doesn't have) — this makes the intent explicit.
+  const claims = verified.claims;
+  if (claims.role !== "authenticated" || !claims.sub) return { status: "anon" };
 
   const row = await db()
     .from("app_user")
     .select(APP_USER_COLUMNS)
-    .eq("id", data.user.id)
+    .eq("id", claims.sub)
     .maybeSingle();
 
   // The query FAILED — we do not know whether they are invited, so we must not
@@ -109,7 +152,9 @@ const viewer = cache(async function viewer(): Promise<Viewer> {
   }
   // Queried successfully, and there is genuinely no row: an uninvited account.
   if (!row.data) return { status: "uninvited" };
-  return { status: "ok", user: row.data as AppUser };
+  const ok: Viewer = { status: "ok", user: row.data as AppUser };
+  viewerMemo.set(token, ok);
+  return ok;
   });
 });
 
@@ -187,5 +232,9 @@ export function canAdmin(user: AppUser): boolean {
 
 export async function signOut(): Promise<void> {
   const auth = await authClient();
+  // Purge BEFORE revoking (review D3): without this, a captured token would
+  // skip even the allowlist check for up to 2s after logout.
+  const { data } = await auth.auth.getSession();
+  if (data.session?.access_token) viewerMemo.delete(data.session.access_token);
   await auth.auth.signOut();
 }
