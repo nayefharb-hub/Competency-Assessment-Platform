@@ -90,6 +90,64 @@ denominator is the number of people you actually asked, not the number who hold
 a login. An assignment nobody has started can be withdrawn; once anything is
 scored it cannot, because that would destroy the scores.
 
+## Runtime: Fluid Compute is ON, and it constrains how we write server code
+
+**State:** enabled (Project → Settings → Functions), confirmed by the owner on
+2026-08-05, and **already enabled during the N16–N21 performance work**. This is
+a dashboard toggle with no trace in the repo, which is exactly why it is written
+down here — a rebuild that silently lost it would change the app's concurrency
+model without changing a line of code.
+
+**What it changes.** Classic serverless gives one instance one request at a
+time: while our code waits ~200ms for Supabase, that instance is pinned and
+unavailable to anyone else. Fluid lets a single instance serve **several
+requests concurrently**, reusing it across I/O waits. For this app — roughly 95%
+of a request is spent waiting on Postgres (N16, N18) — that is the right shape,
+and the billing model that goes with it charges for CPU actually burned rather
+than wall-clock spent waiting.
+
+**The rule it imposes, which is the part to not lose.** With concurrency inside
+an instance, **module-level mutable state is shared between simultaneous
+requests**. Under the old model a module-level variable was sloppy but
+survivable, because requests could not interleave. Under Fluid, one holding
+anything user-specific is a cross-user data leak, not a code-smell.
+
+So: **no per-user state at module scope, ever.** Request-scoped data belongs in
+React's `cache()` (which is scoped per request, not per instance) or is passed
+down the call chain.
+
+**Audit as of `aed70e3`.** Method, so it can be re-run rather than trusted:
+swept `app/`, `lib/` and `proxy.ts` for module-scope `let`/`var`, for `const`
+bound to a mutable container (`{}`, `[]`, `new Map`/`Set`/`WeakMap`), and for
+`globalThis` assignment. The last two categories are empty; `proxy.ts` holds
+only an immutable `PUBLIC_PATHS`. That leaves three, all safe:
+
+| Where | What | Why it is safe under concurrency |
+|---|---|---|
+| `lib/supabase/server.ts:61` | `serviceClient` singleton | Stateless: `persistSession: false`, `autoRefreshToken: false`. Holds no user. |
+| `lib/framework.ts:136` | `cache` — the framework memo | Same data for every viewer; sharing it is the point. |
+| `lib/framework.ts:137` | `inFlight` — single-flight dedupe | **Improves** under concurrency: it stops two simultaneous loads both hitting the database, which it could never do when an instance served one request at a time. |
+
+Viewer resolution (`lib/auth.ts`) uses React's `cache()` — request-scoped, and
+therefore correct when requests interleave. **No user-specific state at module
+scope.**
+
+**One known race, small and pre-existing.** In `getFrameworkUncached`, if
+`invalidateFramework()` runs while a load is in flight, that load's `.then()`
+still writes its now-stale result into `cache`. This exists independently of
+Fluid — an invalidation during an `await` does the same thing — and concurrency
+makes it *more likely*, not newly possible. Worst case is a stale `kib_note` for
+up to `TTL_MS` (10 minutes), which is the trade already stated and accepted at
+`lib/framework.ts:130`. Recorded rather than fixed, because the fix (a
+generation counter checked before the write) costs more than the symptom.
+
+**What this means for the N21 hypothesis.** The 12-instances-for-one-user
+measurement was taken **with Fluid already on**. So "six simultaneous prefetches
+force six instances because an instance can only serve one request" is *not* the
+explanation — under Fluid an instance can absorb them. The observation stands;
+the mechanism behind it does not, and N21's cold-start chain is weaker than it
+appeared. See N21 for how that changes the verification.
+
 ## Notes
 
 - **Preview deployments.** Once connected, every pushed branch gets its own URL,

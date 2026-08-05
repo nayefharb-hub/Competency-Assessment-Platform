@@ -635,6 +635,81 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   }
   check("every CE mean on the page equals mean(assessor_level over active controls)",
     matched === byCe.size, `${matched}/${byCe.size}`);
+
+  /*
+   * The escalation case, constructed on purpose (STATUS.md open item 3).
+   *
+   * A CE whose mean sits ABOVE its target can still read "Capability Deficit"
+   * because one control is 2+ levels below its own target. On screen that looks
+   * like the number and the verdict disagree, and until now nothing on the page
+   * named the control responsible. Waiting for the seeded spread to produce this
+   * shape would be a test that passes for an accidental reason — the exact trap
+   * N21 caught — so it is built rather than hoped for.
+   */
+  const { data: ceRows } = await db.from("competence_element")
+    .select("id, code, target_level, control(id, code, active, target_level)")
+    .limit(200);
+  const fat = (ceRows ?? [])
+    .map((ce) => ({ ...ce, actives: (ce.control ?? []).filter((c) => c.active && c.target_level !== null) }))
+    .filter((ce) => ce.target_level !== null && ce.actives.length >= 5)
+    .sort((a, b) => b.actives.length - a.actives.length)[0];
+
+  if (!fat) {
+    check("a CE with 5+ active targeted controls exists to test escalation", false);
+  } else {
+    const victim = fat.actives[0];
+    const low = Math.max(0, victim.target_level - 2);
+    const restore = new Map();
+    const { data: before } = await db.from("score")
+      .select("control_id, assessor_level").eq("assessment_id", assessmentId)
+      .in("control_id", fat.actives.map((c) => c.id));
+    for (const r of before ?? []) restore.set(r.control_id, r.assessor_level);
+
+    // everything at the ceiling except the victim, so the MEAN clears the target
+    // and escalation is unambiguously the only thing producing the verdict
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: c.id === victim.id ? low : 5,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+
+    const mean = (5 * (fat.actives.length - 1) + low) / fat.actives.length;
+    check("constructed mean clears the CE target, so the badge looks contradictory",
+      mean >= fat.target_level, `mean ${mean.toFixed(2)} vs target ${fat.target_level}`);
+
+    await boss.page.goto(`/results?a=${assessmentId}`);
+    // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of
+    // control 4.4.3.2, so includes() happily returns a DIFFERENT element's row —
+    // which is how the first version of this check reported a failure against a
+    // row that was in fact rendering correctly.
+    const rows = await boss.page.locator(".barrow").allInnerTexts();
+    const row = rows.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
+    const where = `ce ${fat.code} victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
+
+    check("escalated CE still reads Capability Deficit",
+      !!row && row.includes("Capability Deficit"), where);
+    check("the page names the control that forced it, not just the verdict",
+      !!row && row.includes(`deficit driven by ${victim.code}`), where);
+    check("and states what that control scored against its own target",
+      !!row && row.includes(`scored ${low} against target ${victim.target_level}`), where);
+
+    // The note must never appear on a row that is not a deficit — otherwise it
+    // is explaining a verdict that was never given.
+    const stray = (await boss.page.locator(".barrow").allInnerTexts())
+      .filter((t) => t.includes("deficit driven by") && !t.includes("Capability Deficit"));
+    check("the explanation never appears without the verdict it explains",
+      stray.length === 0, `${stray.length} stray`);
+
+    await db.from("score").upsert(
+      fat.actives.map((c) => ({
+        assessment_id: assessmentId, control_id: c.id,
+        assessor_level: restore.get(c.id) ?? null,
+      })),
+      { onConflict: "assessment_id,control_id" },
+    );
+  }
 }
 
 /* ------------------------------------------------------ 10. framework admin */

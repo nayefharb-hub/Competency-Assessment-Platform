@@ -1,6 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-04 (A2 assignment · PR B archive · cookie hardening · PR C UX pass). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-05 (the performance arc: PRs #9–#13, N16–N21). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
@@ -37,16 +37,27 @@ accounts and needs no real credentials.
 npm install
 npm run verify:db          # expect 11/11
 npm run build && npm start &
-npm run e2e                # expect 166/166 — writes, then cleans up after itself
+npm run e2e                # expect 176/176 — writes, then cleans up after itself
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
+
+**If `e2e` dies with "Executable doesn't exist at /opt/pw-browsers/…":** the
+cloud sandbox ships a pinned Chromium build that will not match whatever
+`playwright@^1.62.1` floats to. Do **not** run `npx playwright install` — it is
+blocked and unnecessary. Point the suite at the preinstalled browser instead:
+
+```bash
+E2E_CHROMIUM=/opt/pw-browsers/chromium npm run e2e
+```
+
+`scripts/e2e.mjs:24` already reads that variable; nothing needs changing.
 
 **5. Where things are.**
 
 | Want | Read |
 |---|---|
-| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N15) |
+| What the owner asked for and what happened to it | `docs/pilot-feedback.md` (N1–N21) |
 | What to build next and in what order | `docs/eng-plan-admin-and-ux.md` |
 | Visual rules — locked, do not deviate | `DESIGN.md` |
 | Rollup arithmetic contract | `docs/rollup-spec.md` |
@@ -77,9 +88,12 @@ as cards below 560px), N12 Light/Dark/Auto in a cookie with no client component,
 N5 controls filter as a query parameter, N4 scored-state emphasis decided after
 N5 as planned. `DESIGN.md` gains three decision-log rows.
 
-**Nothing buildable is left in the backlog.** The next step is to run the cycle:
-add the nine PMs on **People**, assign them, and let the completion figure
-collect. Everything still open is the owner's call — see item 7.
+**The feature backlog is empty; a performance arc followed it.** PRs #9–#13 are
+merged (N16–N21) — see "The performance arc" below. The next step is still to
+run the cycle: add the nine PMs on **People**, assign them, and let the
+completion figure collect. Most of what is still open is the owner's call — see
+item 7 — with two exceptions carried in the open items list: the N21
+verification and one unpinned e2e flake.
 
 **7. Everything still open is blocked on the owner, not on code.**
 - **N1 / N1b** — untick Preview and Development on the two secret-bearing Vercel
@@ -155,11 +169,11 @@ the single seam; it queries Supabase instead of `data/seed/icb4-framework.json`.
 The seed JSON stays in the repo as the source `supabase/seed.sql` was generated
 from — it is no longer read at runtime.
 
-Verified 2026-08-04 against the live database:
+Verified 2026-08-05 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **166/166** through a real browser against the running app,
+- `npm run e2e` — **176/176** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
@@ -190,6 +204,37 @@ Verified 2026-08-04 against the live database:
   submit; the assessor's first screen leads with finished-count and median
   time-to-complete. The denominator is the number of people an admin **assigned**
   this cycle — a recorded fact, not an inference from who holds a login.
+
+## The performance arc (PRs #9–#13, N16–N21)
+
+The app was slow in production. Five PRs, and the useful output is as much about
+*how the investigation went wrong* as about what got faster.
+
+| PR | What it found | Result |
+|---|---|---|
+| #9 | 18 Supabase calls per page; wrong function region | 18 → 4 calls; region pinned `fra1` |
+| #10 | Supabase charges ~31ms **per REST call** before the query runs, so round-trip *count* is the multiplier | framework 9 queries → 1; median DB time per page 1300ms → 222ms |
+| #11 | Bracketed the save action; killed the author's own `revalidatePath` theory (measured 0–1ms) | ~50% of a save is Next/Vercel machinery *outside* our code |
+| #12 | **N19** a failed `app_user` query and "not on the allowlist" shared a branch — a transient DB error signed the admin out, silently. **N20** an orphan `auth.users` row held an email hostage with no route out | both fixed; N20 was also the N17 flake, now deterministic |
+| #13 | 98 of 101 prefetches rendered nothing — and deleting them exposed 14 tests passing on unrelated network noise | prefetching off via `app/link.tsx`; `click`-then-`networkidle` eliminated |
+
+**Three things worth not re-learning:**
+
+1. **"I could not find out" and "the answer is no" are different answers.**
+   Collapsing them (N19) turned an availability blip into a security-shaped lie
+   told to a legitimate user.
+2. **A test that passes because of unrelated traffic is indistinguishable from a
+   test that passes** — until the traffic changes. The suite had that property
+   for weeks (N21).
+3. **On this platform, measure first and explain second.** Three mechanisms were
+   proposed and disproved: `unstable_cache`, the function region, and — after
+   the owner confirmed Fluid Compute was on all along — the concurrency model
+   itself. See the correction at the end of N21.
+
+**Fluid Compute is ON** and was on throughout. That imposes a rule on all future
+server code: **no per-user state at module scope**, because instances now serve
+requests concurrently. The audit that certifies the current code, and the one
+known race, are in `docs/deploy.md` → "Runtime: Fluid Compute".
 
 ## Next step
 
@@ -313,9 +358,16 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    "after"; this is the "before" it gets compared against.
 2. **What decision the rollup drives** (training budget? staffing?) — confirm
    before polishing the dashboard.
-3. **Escalation reads oddly in the UI**: a CE at 3.0/3 can show "Capability
-   Deficit" when one control sits 2+ levels below its own target. Correct per
-   the brief; may want a visual cue explaining why.
+3. ~~**Escalation reads oddly in the UI**~~ — done (2026-08-05). A CE at 3.0/3
+   showing "Capability Deficit" now names the control that forced it: *"deficit
+   driven by 4.3.1.2, scored 1 against target 3"*. Shown **only** where
+   escalation actually changed the verdict — where the mean is also short the
+   badge needs no defence, and explaining it anyway would train people to skim
+   the line in the case that matters. No new visual element: it reuses the
+   existing `<small>` row that already carries *"weakest …"*, so `DESIGN.md`
+   is untouched. The wording and placement are still the owner's to approve.
+   Engine change is presentation-only — `health` arithmetic is unchanged, and
+   `rollup-spec.md` §4 records why.
 4. ~~**Vercel deploy**~~ — done. See `docs/deploy.md`.
 8. **Migration tracking.** Nothing records which migrations have been applied to
    which database. Survivable with one database, guesswork with two — close it
@@ -329,6 +381,26 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
 6. ~~**Rotate the admin's temporary password.**~~ — enforced rather than
    remembered: every existing account now carries `must_change_password`, so the
    transcript-exposed password stops working the moment it is used once.
+10. **N21 is not verified in production.** Prefetching is off and asserted by a
+   permanent test, but the *benefit* — fewer instances, therefore fewer cold
+   starts — is unmeasured. It needs one click-through on the deployed app and a
+   fresh log export, counting **distinct `instanceId` values** (it was 12 for a
+   single user). Owner's step: `*.vercel.app` is unreachable from the agent
+   sandbox, so nothing an agent says about production is verified. Note the
+   correction at the end of N21 first — with Fluid Compute on, the mechanism
+   behind the churn is unknown, so this measurement now decides more than it
+   originally would have.
+11. **One unpinned e2e flake — and it is NOT closed.** Two clean 176/176 runs on
+   2026-08-05, then, on the escalation branch and with no code change between
+   them, one run reported **4 failures** and the next **1**. The single failure
+   was a real deterministic bug in a new check (a substring match — CE `4.4.3`
+   is a prefix of control `4.4.3.2`, so `includes()` matched a different
+   element's row); that is fixed. **The other three were never captured and
+   remain unexplained** — the run was tailed rather than saved, so there is no
+   record of which checks they were.
+   The lesson is the cheap one: **always save the whole run, never tail it.**
+   Next step is a saved sequence of 10+ runs on the current build, keeping every
+   log, before this can be called anything other than open.
 7. **CE targets do not re-point by benchmark profile.** Per-control targets do
    (`targetsForProfile`), but CE targets are APM's published values for the
    Intermediate profile, taken from the workbook's Results sheet. Anything other

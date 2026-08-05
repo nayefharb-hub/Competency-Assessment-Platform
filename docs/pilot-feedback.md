@@ -1197,7 +1197,11 @@ prefetches do not slow the request they belong to — they degrade the *next* on
 because cold is where 421–779ms of server-action overhead lives against 210ms
 warm (N18).
 
-**The fix:** `prefetch={false}` on the five nav links in `app/layout.tsx`.
+**The fix as originally scoped:** `prefetch={false}` on the five nav links in
+`app/layout.tsx`. That is not what shipped — see "How it was fixed" above: the
+controls page alone is ~132 call sites, so it became a wrapper (`app/link.tsx`)
+rather than a per-link flag. Left here because the gap between the plan and the
+shipped change is the useful part.
 
 **The condition for putting it back, which is the part worth not losing.**
 Nothing measurable is given up today *because the prefetches are not delivering
@@ -1225,6 +1229,40 @@ conclusion.
 `instanceId` values in the log export. If instance count drops, the theory held.
 If it does not, 98 pointless invocations are still gone and the next place to
 look is elsewhere.
+
+### Correction (2026-08-05): Fluid Compute was on the whole time
+
+The owner confirmed that Vercel **Fluid Compute is enabled, and was enabled
+during these measurements**. That breaks the mechanism this note leaned on.
+
+The reasoning above assumes classic serverless, where an instance serves **one
+request at a time** — so six simultaneous prefetches must become six instances.
+Under Fluid an instance serves several requests **concurrently**, reusing itself
+across I/O waits. Six simultaneous requests do not, on their own, require six
+instances.
+
+So the numbers are unchanged and still damning — 98 of 101 empty, 12 instances
+for one user, four of them serving a single request — but **the explanation for
+the churn is now unknown**, not merely unproven. Candidates worth *measuring*
+rather than believing: a new instance may ramp its concurrency before accepting
+a full load; scale-out may key on CPU or region rather than in-flight count; a
+deployment mid-session mints fresh instances regardless.
+
+This is the third time this investigation has been wrong by reasoning from
+mechanism (`unstable_cache`, then the function region, now the concurrency
+model). The pattern is consistent enough to state as a rule: **on this platform,
+measure first and explain second.** The click-through and log export decide it;
+nothing above should be treated as the reason until they do.
+
+What does *not* change: the prefetches bought nothing (that is measured), and
+removing them removed real invocations (also measured). The fix stands on its
+own regardless of what the instance count turns out to do.
+
+One thing this correction improves rather than damages: `inFlight` in
+`lib/framework.ts` is a single-flight guard that, under classic serverless,
+could never fire — one request per instance means there is no second caller to
+dedupe against. Under Fluid it does the job it was written for. The concurrency
+audit that goes with this is in `docs/deploy.md`.
 
 ## Where this stands (end of 2026-08-04)
 

@@ -22,6 +22,24 @@ function HealthPill({ health }: { health: Health | null }) {
   );
 }
 
+/**
+ * Why a CE can read "Capability Deficit" while its mean sits at or above target:
+ * one control 2+ levels below its own target escalates the whole element
+ * (rollup-spec §4). Without this line the screen shows 3.0 / 3 next to a deficit
+ * badge and looks broken — the number and the verdict appear to disagree, and
+ * the reader has no way to find the control responsible.
+ *
+ * Shown ONLY when escalation actually changed the verdict. When the mean is also
+ * more than half a level short the badge needs no defence, and explaining it
+ * anyway would train people to skim past the line in the case that matters.
+ */
+function escalationNote(r: CeResult): string | null {
+  if (!r.escalation_drove_health || r.escalated_by.length === 0) return null;
+  const [first, ...rest] = r.escalated_by;
+  const more = rest.length === 0 ? "" : ` and ${rest.length} more`;
+  return ` · deficit driven by ${first.control_code}, scored ${first.level} against target ${first.target}${more}`;
+}
+
 function Bar({ r }: { r: CeResult }) {
   return (
     <div className="barrow">
@@ -30,6 +48,7 @@ function Bar({ r }: { r: CeResult }) {
         <small>
           {r.ce_code}
           {r.weakest && ` · weakest ${r.weakest.control_code} (${r.weakest.level})`}
+          {escalationNote(r)}
         </small>
       </div>
       <div className="track">

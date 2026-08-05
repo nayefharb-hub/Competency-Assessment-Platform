@@ -49,6 +49,27 @@ Let `gap = target(CE) - actual(CE)`.
 The single-control escalation is deliberate: one severe gap makes the CE a
 deficit even when the mean looks acceptable.
 
+**Escalation must be explained where it changed the verdict.** "Even when the
+mean looks acceptable" is the whole point of the rule, and it is also what makes
+it read as a bug on screen — a CE showing `3.0 / 3` beside a Capability Deficit
+badge looks like the page contradicting itself, and the reader has no way to
+reach the control responsible. So the engine records **which** controls escalated
+(`escalated_by`) and **whether escalation alone produced the verdict**
+(`escalation_drove_health`), and the results row names the offending control.
+
+Two constraints on that, both load-bearing:
+- Explain **only** when escalation changed the outcome. Where the mean is also
+  more than half a level short the badge needs no defence, and explaining it
+  anyway trains people to skim the line in the case that matters.
+- This is **presentation, not arithmetic**. `health` is unchanged, and both new
+  fields are derived by asking `healthOf` the same question twice — once with
+  escalation and once without — so the thresholds above stay defined in exactly
+  one place.
+
+This does not soften the verdict. Per §7 the tool supports a decision and never
+gates one; naming the control makes the deficit *actionable* rather than
+arguable.
+
 ### 5. Area rollup
 Area (Perspective / People / Practice) shows the mean of its CEs' actuals against
 the mean of its CEs' targets, for the three summary tiles only. Areas have no
