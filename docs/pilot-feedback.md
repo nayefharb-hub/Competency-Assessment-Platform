@@ -927,7 +927,27 @@ workaround — it reduces a cost that no amount of query tuning can touch.
 
 ### N17 — the add-person tests fail about one run in four
 
-**Status:** Reproduced, cause not yet established. Pre-existing.
+**Status:** Cause found and fixed. It was never only a test problem — the owner
+hit the same defect in production. See N20, which is the same bug.
+
+**Update.** The cause is an ORPHAN: a row in `auth.users` with no matching
+`app_user` row. `addPerson` checks the allowlist, finds nobody, calls
+`createUser`, and is told the address is already registered — a dead end with no
+route out of the UI. An interrupted test run leaves exactly that state behind,
+which is why the suite hit it about one run in four.
+
+It is now reproduced **deterministically** rather than waited for: the suite
+builds an orphan on purpose and asserts the account is adopted, that adoption
+reuses the existing auth id instead of forking a second identity, that the gate
+is still armed, and that the password the admin typed is the one that works.
+
+Four consecutive clean runs since. Worth being honest about that number: for a
+one-in-four failure, four clean runs is only about 68% likely to be luck-free,
+so the run count alone would not settle it. The reason to believe it is fixed is
+the mechanism — proven by a deterministic test — not the streak.
+
+**Original entry, kept because the reasoning it records was wrong in an
+instructive way:**
 
 Five checks in the `[13] People` block fail intermittently — the allowlist row,
 the password flag, the assign list, and both sign-in checks — because the account
@@ -1025,6 +1045,75 @@ the move to direct Postgres (N16) both drop below:
    control, or become one screen that saves in the background? That is a product
    decision about how the assessment feels, not a performance fix — it belongs
    in `/office-hours`, before the pilot rather than after it.
+
+### N19 — a slow database logged the admin out and said they were never invited
+
+**Status:** Fixed.
+
+Raised by the owner refreshing the page after a deployment: signed in as the
+admin, demonstrably on the allowlist, and shown *"That account is not on the
+assessment allowlist. Ask the Head of PMO to invite you."* The session was gone.
+
+One line in `lib/auth.ts`:
+
+```ts
+if (row.error || !row.data) return { status: "uninvited" };
+```
+
+A **failed query** and **genuinely not on the allowlist** were the same branch,
+and "uninvited" redirects to `/logout?denied=1`, which clears the session. So any
+transient failure reading `app_user` did not merely error — it signed a
+legitimate user out and told them something false about why.
+
+On a `t3a.nano` measured at a 31ms floor that triples under concurrency, and
+right after a deployment when every instance is cold, a transient failure is an
+ordinary event rather than an exotic one. This is N16's finding arriving as a
+correctness bug rather than a slow page.
+
+It was also **silent** — no log line, which is why the exported logs showed
+nothing at all and the only evidence was a screenshot.
+
+Fixed by splitting the two states. `unavailable` now carries the database's own
+message, is logged with `console.error`, and **throws instead of redirecting** —
+every redirect target either signs the user out or is itself a page that must
+resolve the viewer, so redirecting on a failure would either destroy a good
+session or loop. The session survives and a refresh recovers.
+
+The general lesson, worth more than the fix: **"I could not find out" and "the
+answer is no" are different answers, and collapsing them into one branch is how
+an availability problem turns into a security-shaped lie.**
+
+### N20 — "already registered", but nobody by that name in the People list
+
+**Status:** Fixed. Same root cause as N17.
+
+The owner tried to add a person and got *"A user with this email address has
+already been registered"*, while the People list showed one person and no such
+address. No way forward from the UI, and no way to see what was wrong.
+
+The account had come apart: a row in `auth.users` with no `app_user` row. Since
+`app_user` IS the allowlist, such an account can sign in and reach nothing — it
+is inert, invisible to every screen, and still holds the email address against
+any future attempt to use it.
+
+`addPerson` now **adopts** an orphan instead of refusing it: it finds the
+existing auth id, sets the password the admin just typed, and writes the
+allowlist row against that same id.
+
+Why adoption is safe rather than a hijack route: the function has already
+refused any address that HAS an `app_user` row ("already on the allowlist"), so
+adoption can only ever reach an account with no access to anything. Writing the
+row and setting a password is precisely what "add this person" was asking for.
+Only an admin can reach it.
+
+Two details that are load-bearing rather than tidy:
+- The rollback path only deletes the sign-in account when **we** created it.
+  Deleting one we merely adopted would destroy something that predated the
+  request; leaving it costs nothing, because the next attempt adopts it again.
+- The lookup pages through `listUsers` rather than taking one large page. "The
+  address is taken but I cannot find it" is the exact dead end this removes, and
+  a silent truncation would rebuild it in a form that only appears once the
+  organisation is big.
 
 ## Where this stands (end of 2026-08-04)
 

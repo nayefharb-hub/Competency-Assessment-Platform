@@ -99,6 +99,30 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
 }
 
 /**
+ * The auth user id for an email, or null.
+ *
+ * Supabase's admin API has no get-by-email, so this pages through listUsers.
+ * Paged rather than a single perPage=1000 call because "the address is taken
+ * but I cannot find it" is exactly the dead end this exists to remove, and a
+ * silent truncation at user 1001 would recreate it in a form that only appears
+ * once the organisation is large.
+ */
+async function findAuthUserByEmail(
+  sb: ReturnType<typeof db>,
+  email: string,
+): Promise<string | null> {
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return null;
+    const users = data?.users ?? [];
+    const hit = users.find((u) => u.email?.toLowerCase() === email);
+    if (hit) return hit.id;
+    if (users.length < 200) return null;
+  }
+  return null;
+}
+
+/**
  * Create an account. The password is chosen by the admin and is valid for
  * exactly one sign-in: `must_change_password` forces the user to replace it,
  * which is what stops an admin (who is also the assessor here) from being able
@@ -127,12 +151,52 @@ export async function addPerson(input: {
     email_confirm: true,
     user_metadata: { full_name: input.full_name.trim() },
   });
-  if (created.error || !created.data.user) {
-    return { ok: false, error: created.error?.message ?? "Could not create the sign-in account." };
+
+  /**
+   * An ORPHAN: a sign-in account with no allowlist row.
+   *
+   * We already know there is no `app_user` row for this address — that was
+   * checked above — so "already registered" means the two halves of an account
+   * have come apart. It happens when a previous add failed part-way, or when a
+   * removal took the allowlist row without the sign-in account.
+   *
+   * Before this, that was a dead end with no route out of the UI: the admin was
+   * told the address was taken, while the People list showed nobody by that
+   * name. The owner hit it trying to add a real person. The only fix was a
+   * database console.
+   *
+   * So adopt it. An orphaned account holds NO access — `app_user` IS the
+   * allowlist, and without a row it can sign in and reach nothing — so writing
+   * the row and setting the password the admin just typed is precisely what
+   * "add this person" was asking for. It cannot be used to hijack a live
+   * account, because a live account has an `app_user` row and was refused
+   * above.
+   */
+  let userId = created.data.user?.id;
+  if (created.error) {
+    const orphan = await findAuthUserByEmail(sb, email);
+    if (!orphan) {
+      return { ok: false, error: created.error.message };
+    }
+    const adopted = await sb.auth.admin.updateUserById(orphan, {
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.full_name.trim() },
+    });
+    if (adopted.error) {
+      return {
+        ok: false,
+        error: `${email} has a sign-in account that could not be reclaimed: ${adopted.error.message}`,
+      };
+    }
+    userId = orphan;
+  }
+  if (!userId) {
+    return { ok: false, error: "Could not create the sign-in account." };
   }
 
   const row = await sb.from("app_user").insert({
-    id: created.data.user.id,
+    id: userId,
     email,
     full_name: input.full_name.trim(),
     job_title: input.job_title?.trim() || null,
@@ -142,7 +206,10 @@ export async function addPerson(input: {
   if (row.error) {
     // Never leave a sign-in account without an allowlist row: it would be an
     // authenticated identity that the app refuses, with no way to see why.
-    await sb.auth.admin.deleteUser(created.data.user.id);
+    // Only when we made it. Deleting an account we merely adopted would destroy
+    // something that existed before this request — and leaving it costs nothing,
+    // since an orphan holds no access and the next attempt adopts it again.
+    if (created.data.user) await sb.auth.admin.deleteUser(created.data.user.id);
     return { ok: false, error: `Could not add them to the allowlist: ${row.error.message}` };
   }
 
