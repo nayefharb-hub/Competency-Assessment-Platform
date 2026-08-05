@@ -68,6 +68,13 @@ signature verification via `auth.getClaims()`.
   rejects → treated exactly as an invalid token today (anon → /login). The
   session cookie is intact, so a retry recovers. Same shape as today's
   network-failure behaviour, not a new one.
+- **Hardening (from /cso):** after `getClaims()`, assert
+  `claims.role === "authenticated"` and `claims.sub` present before the
+  `app_user` lookup. The allowlist already backstops this — a non-session
+  token has no `app_user` row — but the assert makes the intent explicit and
+  costs one line. Verified in auth-js source: every verification failure path
+  (`alg:none`, HS downgrade, unknown `kid`, missing WebCrypto) falls back to
+  server-side `getUser()`, never to trust.
 - **Revocation window, stated honestly:** `getUser()` asks Supabase "does this
   session still exist", so a deleted/banned user dies on the next request.
   Local verification accepts any *unexpired, signed* access token — a deleted
@@ -206,3 +213,14 @@ The remaining decision is the owner's original D1 (A / B / C), which this
 review deliberately does not pre-empt.
 
 NO UNRESOLVED DECISIONS
+
+## CSO AUDIT (2026-08-05, --scope auth)
+
+Six attack scenarios traced against the plan, with the failure paths verified
+in `@supabase/auth-js@2.112.0` source rather than assumed: algorithm
+confusion, kid injection, deleted-user token replay, cross-instance memo
+replay after logout, cross-user memo bleed, cached-failure amplification.
+**Findings at the 8/10 gate: none.** One hardening note (the role/sub claim
+assert) folded into A1 above. The decisive property: every getClaims failure
+path degrades to server-side validation, never to trust, and both options
+preserve the allowlist select — the gate that actually governs access.
