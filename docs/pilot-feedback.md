@@ -1753,3 +1753,51 @@ leave the shape of the problem untouched. The real questions:
 prototype ships to nine people with a single assessor, so this is not blocking
 the pilot — but it is the first question an auditor asks of a bank capability
 record, and it is cheaper to settle before the framework is multi-tenant.
+
+### N26 — SonarCloud has not analysed anything since 2026-08-04
+
+Read via the API on 2026-08-05, once the owner allowed the host and supplied a
+token.
+
+**The finding that matters more than any individual issue: the analysis is
+stale.** SonarCloud's last run was `b898a19` — *"Pilot feedback, the readability
+fix, and the admin People screen (#6)"*, dated 2026-08-04. Since then main has
+taken the whole performance arc (#9–#13), plus #15, #16, #19 and #20. None of
+it has been scanned: `lib/outbox.ts`, `lib/ttl-map.ts`, `app/outbox-banner.tsx`
+and `app/assess/score-panel.tsx` are not files SonarCloud knows exist.
+
+So the gate the owner asked for — *check Sonar after every push containing
+code* — cannot function yet. There is no `.github/workflows`, so nothing runs
+the scanner in CI, and Automatic Analysis is evidently not running either.
+**Owner step:** SonarCloud → the project → Administration → Analysis Method →
+turn **Automatic Analysis** on (it covers TS/JS/CSS, which is this repo). Adding
+a `sonar-project.properties` file is NOT the move — SonarCloud reads that as a
+CI-based setup and disables Automatic Analysis.
+
+**The 325 open issues, triaged.**
+
+| Count | Rule | Verdict |
+|---|---|---|
+| 224 | `plsql:S1192` duplicated string literal | **False positive.** All but four are in `supabase/seed.sql`, and every one is the ICB4 framework's own seed data — 133 controls whose area names and level labels repeat by definition. Sonar is also reading Postgres as PL/SQL. |
+| 10 | `javascript:S1313` "hardcoded IP address" | **False positive, and a good one:** the "IP addresses" are ICB4 control codes. `4.3.1.1` is *Leadership*, not a host. |
+| 3 | `plsql:LiteralsNonPrintableCharacters` | **False positive.** ICB4 source text carries typographic quotes and dashes. That text is never edited — it is the standard's own wording. |
+| 24 | `typescript:S6551` implicit stringification | **Worth a look, not urgent.** `String(formData.get(x))` can yield `[object File]` if a form ever posts a file. None do today, so this is latent rather than live. |
+| 16 | `typescript:S6759` props not read-only | Style. Free to fix, changes nothing at runtime. |
+| 13 | `typescript:S6819` prefer `<output>` to `role="status"` | **Mostly false positive.** `<output>` is for a form's calculated result; these are status banners, and `role="status"` is the correct ARIA for them. |
+| 10 | nested ternaries, template literals, `Math.trunc` | Readability. Judgement, no defect. |
+| 2 | `css:S7924` contrast | **Unverifiable today** — the line numbers point at a file 480 lines shorter than the current one. Re-check after a fresh analysis. DESIGN.md's decisions log already records a contrast judgement, so this one deserves a real answer rather than a dismissal. |
+
+**Fixed here** (the two that survived verification against current code):
+
+- `css:S4666` — `h1, h2, h3` was declared twice, 480 lines apart, the second
+  adding only `line-height`. Merged into one rule. Two rules for one selector is
+  how a cascade quietly starts fighting itself.
+- `javascript:S2871` — the one issue Sonar types as a **bug**: `.sort()` with no
+  comparator in `verify-db.mjs`. Benign for these ASCII strings, but the intent
+  is alphabetical and `localeCompare` says so without leaning on UTF-16 order.
+  `verify:db` still passes 11/11.
+
+**The single change that would make this list usable:** exclude
+`supabase/seed.sql` from analysis (SonarCloud → Administration → General
+Settings → Analysis Scope). That removes 69% of everything and leaves a list
+worth reading — which is the whole point of the gate.
