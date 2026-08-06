@@ -223,6 +223,22 @@ h1, h2, h3 {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
+/* N28: form rows had NO vertical rhythm at all — measured on /login at
+   1280x900, the email input sat 0px from the "Password" label and the password
+   input sat 0px from the Sign in button. There was a `.field label` rule and
+   never a `.field` one, so every form fell outside DESIGN.md's 4-8-12-16-24-32-48
+   scale.
+
+   SCOPED OUT OF .cols DELIBERATELY. Ten of the fifteen .field usages sit inside
+   .cols, which is `display: grid; gap: 16px` — and grid item margins do not
+   collapse. Applying this globally would have given the admin screens 16 + 14
+   = 30px between stacked rows (and 32px below 760px, where .cols folds to one
+   column), neither of which is on the scale this rule exists to restore. The
+   grid gap already provides that rhythm; this supplies it only where nothing
+   else does. */
+.field { margin-bottom: 16px; }
+.cols .field { margin-bottom: 0; }
+
 .field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
 .input {
   width: 100%; font: inherit; font-size: 14px; padding: 9px 11px;

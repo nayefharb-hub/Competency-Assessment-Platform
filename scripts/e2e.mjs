@@ -463,6 +463,34 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
 }
 
 /*
+ * N28: form rows have vertical rhythm.
+ *
+ * A 0px gap is invisible to every other check in this suite — nothing
+ * overflows, nothing is off screen, the form submits, the colours pass. That
+ * is exactly how it survived to be the first thing the pilot noticed. So it is
+ * asserted as a MEASURED gap: the rule cannot be deleted later without this
+ * going red.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+
+  const pw = await page.locator("#password").boundingBox();
+  const btn = await page.locator('form button[type="submit"]').boundingBox();
+  const toButton = btn.y - (pw.y + pw.height);
+  check("the sign-in button is not flush against the password field",
+    toButton > 0, `${Math.round(toButton)}px`);
+
+  const email = await page.locator("#email").boundingBox();
+  const pwLabel = await page.locator('label[for="password"]').boundingBox();
+  const betweenRows = pwLabel.y - (email.y + email.height);
+  check("and one form row is not flush against the next",
+    betweenRows > 0, `${Math.round(betweenRows)}px`);
+  await ctx.close();
+}
+
+/*
  * LANDING BY ROLE (D32) — a sign-in default, NOT a redirect on `/`.
  *
  * The distinction is the whole point and is asserted here. Redirecting an
