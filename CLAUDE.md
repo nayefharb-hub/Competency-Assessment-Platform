@@ -86,6 +86,21 @@ that was paid once already.
   `docs/deploy.md`** (Fluid Compute: instances serve interleaved requests).
   One exists — `viewerMemo`, token-keyed, 2s TTL. Retire it if Next ever
   provides a request store spanning a server action and its redirect render.
+- **A test must arrive the way the PM arrives, and must never await the commit
+  the product exists to not await.** The save and the navigation leave together
+  (D9), so every server render in a run lags one answer; that lag IS the
+  product. Three habits each engineered it away and each cost a defect that
+  reached the owner: `page.goto` onto the control under test with the earlier
+  answers seeded straight into Postgres (a page load postdates every write);
+  `await committed` before the next step (a PM who waits is not a PM); and
+  aborting the save POST to simulate a queue (a queue that never drains never
+  forgets, so it tests the failure path and not the successful one, which is
+  where N33 lived). Seeding is for PRIOR SITTINGS. The step under test is
+  walked. **Anything the app made asynchronous is tested in its
+  successful-but-still-settling state, not only its failed state** — success is
+  what deletes the evidence. Cost: six green milestone tests, one of them
+  written for this exact failure mode (FM3), against a build where the feature
+  did not work at all on the only path a PM takes.
 
 ## Domain rules that must not drift
 - Framework: IPMA ICB4 v4.0.1 — 3 areas, 28 competence elements, **133 controls
@@ -139,8 +154,20 @@ written tests.
 |---|---|
 | **Merging anything containing code** | `/review` on the diff |
 | A diff touching **auth, sessions, storage, or the allowlist** | `/cso` as well |
+| A **user-visible** change reaching a **preview someone is about to use** | `/qa` against that preview, before the merge |
 | A **user-visible** change reaching production | `/qa` after it deploys |
 | **Any push containing code** | Read the **SonarCloud** findings for it |
+
+**Why the preview row exists (added 2026-08-06, after N33).** The production
+row is right and it is also *late*: it fires after the nine PMs have the build.
+N33 — the milestone never rising on the path a PM walks — was invisible to 336
+green tests and to a full `/review` (five specialists, a red team, an
+adversarial pass), because a diff-reading pass can only check that the code does
+what the diff says. It cannot notice that every test describes a user who does
+not exist. It took ninety seconds of clicking to find, and the owner found it.
+`/qa` is the only gate that drives the running app, so it is the only one that
+would have caught it — and this branch carried three days of user-visible work
+without it ever running, because nothing had reached production.
 
 **SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
 one of two answers, and the answer is written down: *fix it*, or *why it is a
