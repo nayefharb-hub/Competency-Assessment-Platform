@@ -62,10 +62,30 @@ const a = await db.from("assessment").insert({
 }).select("id").single();
 if (a.error) throw new Error(a.error.message);
 
-// first 11 active control codes in order (10 saves, each needs a "next")
+/*
+ * Ten saves that each step to the NEXT CONTROL — which is no longer the same
+ * as "the first eleven controls".
+ *
+ * PR #23 made a competence element the unit of a sitting (D25): the last
+ * control in a CE sends the PM UP to the competency list instead of onward, so
+ * a naive walk down the ordered list stalls there waiting for a crumb that
+ * will never appear. That is correct product behaviour and wrong for this
+ * script, which exists to time the ordinary control→control save.
+ *
+ * So: take pairs that are adjacent AND inside the same CE, and skip the
+ * boundaries. Enough controls are fetched that ten such pairs exist.
+ */
 const { data: controls } = await db.from("control")
-  .select("code, active").eq("active", true).order("code").limit(11);
-const codes = controls.map((c) => c.code);
+  .select("code, active, competence_element:ce_id(code)")
+  .eq("active", true).order("sort_order").limit(40);
+
+const pairs = [];
+for (let i = 0; i < controls.length - 1 && pairs.length < 10; i++) {
+  const here = controls[i], next = controls[i + 1];
+  if (here.competence_element?.code !== next.competence_element?.code) continue;
+  pairs.push([here.code, next.code]);
+}
+if (pairs.length < 10) throw new Error(`only ${pairs.length} in-CE pairs found`);
 
 const browser = await chromium.launch({ executablePath: process.env.E2E_CHROMIUM || undefined });
 const ctx = await browser.newContext({ baseURL: BASE });
@@ -88,16 +108,24 @@ await page.fill("#password", PM.password);
 await page.click('form button[type="submit"]:has-text("Sign in")');
 await page.waitForFunction(() => !location.pathname.startsWith("/login"));
 
-await page.goto(`/assess?c=${codes[0]}`);
-await page.waitForSelector(".crumb");
-
 const rows = [];
 for (let i = 0; i < 10; i++) {
-  const next = codes[i + 1];
+  const [here, next] = pairs[i];
+  // Navigate explicitly: the pairs are not one continuous walk any more, since
+  // the CE boundaries between them are skipped.
+  await page.goto(`/assess?c=${here}`);
+  await page.waitForSelector(".optlist");
   await page.check('input[name="level"][value="3"]');
   reqs.length = 0;
   const t0 = Date.now();
-  await page.click('.assess-actions button[type="submit"]');
+  // `type="button"`, NOT submit. The save-UX change (PR #20) replaced the form
+  // post with a commit-and-navigate click, and this selector was left behind —
+  // so the one tool CLAUDE.md says performance claims must come from had been
+  // timing out for two PRs. A measurement script that cannot run is worse than
+  // none: the rule kept pointing at it and nobody noticed it was silent.
+  await page.click('.assess-actions button:has-text("Next control"), '
+    + '.assess-actions button:has-text("Finish this competency"), '
+    + '.assess-actions button:has-text("Back to the list")');
   // next control visibly on screen = what the user experiences as "done"
   await page.waitForFunction(
     (code) => document.querySelector(".crumb")?.textContent?.includes(code),
@@ -108,7 +136,7 @@ for (let i = 0; i < 10; i++) {
   const gets = reqs.filter((r) => r.method === "GET" && r.url.startsWith("/assess"));
   const postMs = post?.ms ?? 0;
   const getMs = gets.reduce((s, g) => s + (g.ms ?? 0), 0);
-  rows.push({ save: `${codes[i]}→${next}`, wall, post: postMs, gets: getMs, other: reqs.length - 1 - gets.length, gap: wall - postMs - getMs });
+  rows.push({ save: `${here}→${next}`, wall, post: postMs, gets: getMs, other: reqs.length - 1 - gets.length, gap: wall - postMs - getMs });
 }
 
 console.table(rows);

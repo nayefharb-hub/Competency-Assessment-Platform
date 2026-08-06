@@ -52,6 +52,25 @@ const check = (name, ok, detail = "") => {
   else { fail++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
+/**
+ * A block that did NOT run, counted rather than merely mentioned.
+ *
+ * Twice in one evening a check quietly skipped itself and the run still said
+ * "235 passed, 0 failed" — once because a security assertion was wrapped in
+ * `if (fixture)` and the fixture had been withdrawn by then, once because the
+ * round-trip budget is gated on E2E_SERVER_LOG and nobody had set it, so the
+ * one assertion behind CLAUDE.md's "round trips are counted, not estimated"
+ * had never executed. A `console.log` among 237 ticks is not a signal.
+ *
+ * So skips land in the final tally. "237 passed, 0 failed, 1 skipped" is a
+ * different sentence from "237 passed, 0 failed", and it is the true one.
+ */
+const skipped = [];
+const skip = (name, why) => {
+  skipped.push(name);
+  console.log(`  ⊘ SKIPPED: ${name} — ${why}`);
+};
+
 /* ------------------------------------------------------------- fixtures */
 
 /** Remove a QA account and everything it produced. `keepAccount` is for the
@@ -170,7 +189,7 @@ process.on("uncaughtException", (err) => {
   teardown()
     .catch((e) => console.log(`  ✗ cleanup after the crash ALSO failed — ${e.message}`))
     .finally(() => {
-      console.log(`\n${pass} passed, ${fail} failed`);
+      console.log(`\n${pass} passed, ${fail} failed${skipped.length ? `, ${skipped.length} SKIPPED (${skipped.join("; ")})` : ""}`);
       process.exit(1);
     });
 });
@@ -820,7 +839,8 @@ console.log("\n[4] Self-scoring persists to Postgres");
         revisedPace?.dwell_ms === paced.dwell_ms,
         `was ${paced.dwell_ms}, now ${revisedPace?.dwell_ms}`);
     } else {
-      console.log("  … pace not measured — migration 0005 not applied (answer still saved)");
+      skip("time on control reaches the database",
+        "migration 0005 not applied — the answer still saved, which is the fallback working");
     }
 
     /* AUTHORISATION, the check this block exists for. /analysis takes ?a=<id>,
@@ -1130,7 +1150,8 @@ console.log("\n[4] Self-scoring persists to Postgres");
       check("re-confirming an unchanged answer writes nothing",
         after.length === 0, `${after.length}`);
     } else {
-      console.log("  – round-trip budget not asserted: set E2E_SERVER_LOG to the next-start log path");
+      skip("the warm-save round-trip budget",
+        "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
     }
   }
 
@@ -2009,5 +2030,5 @@ console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
 /* ---------------------------------------------------------------- cleanup */
 await teardown();
 
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`\n${pass} passed, ${fail} failed${skipped.length ? `, ${skipped.length} SKIPPED (${skipped.join("; ")})` : ""}`);
 process.exit(fail === 0 ? 0 : 1);

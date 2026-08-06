@@ -38,12 +38,21 @@ accounts and needs no real credentials.
 ```bash
 npm install
 npm run verify:db          # expect 11/11
-npm run build && npm start &
-npm run e2e                # expect 235/235 — writes, then cleans up after itself
-npm run test:unit          # expect 47/47 — pure logic, no database
+npm run build
+npm start > /tmp/next.log 2>&1 &
+E2E_SERVER_LOG=/tmp/next.log npm run e2e   # writes, then cleans up after itself
+npm run test:unit                          # expect 50/50 — pure logic, no database
+npm run perf:save                          # 10 real saves, split by where the time goes
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
+
+**Read the tally, not just the ✗ count.** The suite reports skips: *"237 passed,
+0 failed, 2 SKIPPED (…)"*. A skip is not a pass. `E2E_SERVER_LOG` in particular
+gates the **warm-save round-trip budget** — the assertion behind CLAUDE.md's
+"round trips are counted, not estimated" — and without it that check silently
+does not run. It was found un-run on 2026-08-05 after several green runs had
+been reported, which is why skips are now counted rather than mentioned.
 
 **If `e2e` dies with "Executable doesn't exist at /opt/pw-browsers/…":** the
 cloud sandbox ships a pinned Chromium build that will not match whatever
