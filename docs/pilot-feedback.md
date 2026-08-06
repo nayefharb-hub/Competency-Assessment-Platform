@@ -2016,3 +2016,76 @@ precondition, which is the thing protecting against the skipped-controls case.
 **Severity:** confusing rather than harmful, on the screen a PM sees 132 times.
 Logged at the owner's request; deliberately **not fixed** while they are still
 working through the assessment.
+
+---
+
+### N31 — you cannot tell which competency you are being assessed on
+
+Owner, 2026-08-06, from the deployed app: *"the competency header is very subtle
+'4.3.4 Power and interest', need to make it more visible to the user which
+competency he is being assessed at the moment."*
+
+The scoring screen names the competency in the breadcrumb above the control
+title — `PEOPLE › 4.4.1 Self-reflection and self-management › Control 4.4.1.5`
+— rendered as a `.note`-weight crumb. It is the *only* place the competency
+appears, it sits above the largest text on the page, and it is set smaller and
+lighter than everything around it. The control title wins the eye completely.
+
+**Why this matters more than it looks.** A competence element is the unit of the
+sitting (D25) and the unit of the rollup — the assessor sees a mean per CE, and
+Role Ready / Minor Gap / Capability Deficit is decided per CE. So the thing the
+PM is least able to see on screen is the thing their answers are aggregated
+into. A PM who cannot feel which competency they are in cannot calibrate: "am I
+proficient at *this*?" needs a visible *this*.
+
+It also interacts with N30 and with feedback 3 — all three are the same missing
+signal, that the PM has no persistent sense of place.
+
+**Severity:** cosmetic in isolation, structural in aggregate. Wants a
+`/design-review` pass with DESIGN.md's type scale in hand rather than a blind
+size bump — the crumb is inside the N14 layout guarantee (answer and primary
+action on screen without scrolling, at three viewports, on the longest control
+in ICB4), so growing it moves the Save button down on every control.
+
+---
+
+### N32 — the assessment cannot be done in one continuous run
+
+Owner, 2026-08-06: *"currently the user has no way for continuous assessment
+without his journey being interrupted to go and select an area or another
+competency, we need to check design options for implementing such feature."*
+
+**Measured, because "interrupted" deserves a number.** The framework is 132
+active controls across **28 competence elements**, median **5** controls per CE
+(min 3, max 6). `nextAfter()` (`lib/shape.ts:154`) stops the PM at the last
+control of every CE:
+
+| Boundary | Count | Where the PM is sent |
+|---|---|---|
+| Last control of a CE, more CEs in the area | 25 | `/assess/area/<name>` |
+| Last CE of an area, another area follows | 2 | the hub (`/assess/areas`) |
+| Last control of the assessment | 1 | `/assess/controls?saved=1` |
+
+So a complete pass costs **28 forced navigations**, one roughly every five
+answers, each requiring the PM to find and click their next competency.
+
+**This is not a bug — it is D25 working as designed.** The comment at
+`app/assess/page.tsx:93` states it plainly: "A CE is the sitting, so its last
+control does not walk into the next CE's first — finishing is a moment, and
+continuing is a choice." D30 then accepted an additional click on every return.
+Both were deliberate.
+
+What the owner is reporting is that the *cumulative* cost of that choice, paid
+28 times, outweighs what it buys. That is a scope/strategy question rather than
+a defect, which is why they asked for `/plan-ceo-review` rather than a fix.
+
+**The tension to resolve, stated honestly.** D25 bought something real: a
+132-question form with no structure is exhausting, and a felt milestone every
+five answers is what makes it finishable. The cost is that the milestone is
+implemented as a *route change* — the PM is ejected from the flow and made to
+navigate. Those are separable. A milestone can be a moment without being an
+exit.
+
+**Severity:** the single biggest drag on the experience the nine PMs are about
+to have, and the one most likely to affect completion rate — which is the metric
+this tool exists to move.
