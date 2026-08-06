@@ -46,6 +46,28 @@ export default async function AreasPage() {
     ? remembered
     : nextUp?.firstUnscored?.code) ?? null;
 
+  /* This screen is now the only one a PM sees, so it has to represent every
+     state the assessment can be in — not just the one it was written for.
+
+     It previously asked `if (!mine)` and nothing else, which made it
+     accidentally correct for a draft and wrong for everything after. A PM who
+     had submitted was told to "Continue where you left off", and the control
+     page it offered locks itself the moment state leaves draft.
+
+     Four states, because DRAFT is two different situations. A PM who has
+     answered all 132 needs SUBMIT, and Submit lives on /assess/controls — the
+     only screen carrying SubmitButton. Without the complete branch, finishing
+     out of order (last answer landing mid-competency, so nextAfter's boundary
+     never fires) leaves a PM at 132 of 132 with no route to submit at all.
+
+     `complete` is the same predicate /assess/controls uses, over the same
+     active controls, so the two screens cannot disagree about whether a PM is
+     done. Active only — an inactive control contributes nothing to any rollup
+     and must not hold an assessment open. */
+  const state = mine.row.state;
+  const complete = fw.activeControls.every((ac) => done.has(ac.code));
+  const on = (ts: string | null) => (ts ? ` ${ts.slice(0, 10)}` : "");
+
   return (
     <div className="section">
       <div className="progress-head">
@@ -55,13 +77,39 @@ export default async function AreasPage() {
               "40 minutes left at your pace" is a promise the person falsifies;
               this is a fact, and it names the next action. */}
           <p className="note" style={{ margin: 0 }}>
-            <b className="tnum">{doneCes}</b> of <b className="tnum">{totalCes}</b> competencies complete
-            {nextUp && <> · next: <b>{nextUp.name}</b></>}
+            {state === "draft" && (
+              <>
+                <b className="tnum">{doneCes}</b> of <b className="tnum">{totalCes}</b> competencies
+                {complete ? " scored" : " complete"}
+                {nextUp && <> · next: <b>{nextUp.name}</b></>}
+              </>
+            )}
+            {state === "self_submitted" && (
+              <>Submitted{on(mine.row.submitted_at)} · with the Head of PMO for review</>
+            )}
+            {state === "approved" && <>Approved{on(mine.row.approved_at)}</>}
           </p>
         </div>
-        {resume && (
+        {/* One primary action per state. The draft-complete branch is the one
+            that keeps Submit reachable; see the note above. */}
+        {state === "draft" && complete && (
+          <Link className="btn btn-primary" href="/assess/controls">
+            Review and submit
+          </Link>
+        )}
+        {state === "draft" && !complete && resume && (
           <Link className="btn btn-primary" href={`/assess?c=${resume}`}>
             Continue where you left off
+          </Link>
+        )}
+        {state === "self_submitted" && (
+          <Link className="btn btn-secondary" href="/assess/controls">
+            View your answers
+          </Link>
+        )}
+        {state === "approved" && (
+          <Link className="btn btn-primary" href="/results">
+            See your results
           </Link>
         )}
       </div>

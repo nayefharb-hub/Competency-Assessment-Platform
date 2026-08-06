@@ -17,8 +17,32 @@
  * No credentials needed beyond the Supabase keys: the suite creates its own QA
  * admin and PMs, and deletes them afterwards.
  */
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
+
+/**
+ * The one way in, read from the app's own source rather than retyped here.
+ *
+ * The defect these nav checks exist to prevent was several screens holding
+ * their own copy of this path and drifting apart. A literal in the test would
+ * be one more copy — it would keep passing against a stale route while the app
+ * moved. Parsing lib/routes.ts means a rename is followed, and a deletion is a
+ * loud failure rather than a silently weakened test. (e2e.mjs runs under plain
+ * node with no type stripping, so this cannot be a real import.)
+ */
+const ASSESS_HUB = (() => {
+  const src = readFileSync(new URL("../lib/routes.ts", import.meta.url), "utf8");
+  const m = /export const ASSESS_HUB = "([^"]+)"/.exec(src);
+  if (!m) {
+    throw new Error(
+      "lib/routes.ts no longer exports ASSESS_HUB as a string literal — the "
+      + "navigation checks cannot verify the one-way-in rule. Fix the export "
+      + "or update this parser; do not hardcode the path here.",
+    );
+  }
+  return m[1];
+})();
 
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000";
 const CHROME = process.env.E2E_CHROMIUM ?? undefined;
@@ -435,6 +459,49 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
       await page.locator(".banner-error").innerText()));
   check("and nothing is written into the URL",
     !page.url().includes("error=") && !page.url().includes("email="), page.url());
+  await ctx.close();
+}
+
+/*
+ * LANDING BY ROLE (D32) — a sign-in default, NOT a redirect on `/`.
+ *
+ * The distinction is the whole point and is asserted here. Redirecting an
+ * assessee off `/` on every visit would also have swallowed the `denied=1`
+ * banner, which is the only explanation a blocked person ever gets; the three
+ * denial checks further down are what would have gone red. So this asserts
+ * both halves: the PM LANDS on the hub, and `/` still works if they go there.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+  await page.waitForLoadState("networkidle");
+  check("an assessee lands on the hub at sign-in",
+    new URL(page.url()).pathname === ASSESS_HUB, page.url());
+
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  check("and `/` is still theirs to visit — no redirect, so no lost banner",
+    new URL(page.url()).pathname === "/", page.url());
+  await ctx.close();
+}
+
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", BOSS.email);
+  await page.fill("#password", BOSS.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+  await page.waitForLoadState("networkidle");
+  // The owner holds assessor AND assessee. They keep the console, because it
+  // is the only screen carrying Review & approve. (N25 — whether one person
+  // should hold both — stays open; this takes no position on it.)
+  check("an assessor/admin still lands on the console",
+    new URL(page.url()).pathname === "/", page.url());
   await ctx.close();
 }
 
@@ -884,38 +951,80 @@ console.log("\n[4] Self-scoring persists to Postgres");
   }
 
   /*
-   * RESUMING (decision D12, as revised). /assess with no control named comes
-   * back to the control the PM was last on — including one they went back to
-   * re-read, which "first unanswered" would have overruled. Falls back to the
-   * first unanswered control when there is no cookie yet.
+   * RESUMING (decision D12, as revised, and D30).
+   *
+   * The rule is unchanged — come back to the control the PM was last on,
+   * including one they went back to re-read, falling back to the first
+   * unanswered control when there is no cookie. What moved is WHERE it is
+   * answered: the menu now lands on the hub, and the hub's primary button
+   * carries the resume target. So these read the button's href instead of the
+   * crumb of a control page.
+   *
+   * They used to navigate to /assess and read `.crumb`. That page no longer
+   * renders for an addressless request, and `.crumb` does not exist on the hub
+   * — left unchanged, the locator would have hung to the action timeout and
+   * aborted the whole suite rather than failing as a red check.
    */
   {
+    const resumeHref = async () =>
+      (await pm.page.locator(".progress-head a.btn-primary").getAttribute("href")) ?? "(no button)";
+
     await pm.page.goto("/assess?c=4.3.2.2");
     await pm.page.waitForSelector(".optlist");
-    await pm.page.goto("/assess");                       // as the menu link does
+    await pm.page.goto(ASSESS_HUB);                      // as the menu link does
     await pm.page.waitForLoadState("networkidle");
-    check("the menu returns to the control the PM was last on",
-      (await pm.page.locator(".crumb").innerText()).includes("4.3.2.2"),
-      await pm.page.locator(".crumb").innerText());
+    check("the hub resumes from the control the PM was last on",
+      (await resumeHref()).includes("4.3.2.2"), await resumeHref());
 
     // Re-reading an ANSWERED control is a deliberate act, so it must be
     // remembered too — this is the case that separates this rule from
     // "first unanswered", which would send them back to the work instead.
     await pm.page.goto("/assess?c=4.3.1.1");
     await pm.page.waitForSelector(".optlist");
-    await pm.page.goto("/assess");
+    await pm.page.goto(ASSESS_HUB);
     await pm.page.waitForLoadState("networkidle");
     check("even when that control is already answered",
-      (await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
-      await pm.page.locator(".crumb").innerText());
+      (await resumeHref()).includes("4.3.1.1"), await resumeHref());
 
-    // No cookie (a new device) falls back to where the work is.
+    // No cookie (a new device) falls back to where the work is. This is the
+    // only coverage of that fallback, and it is the case a PM's FIRST sitting
+    // always takes — there is no cap.last yet.
     await pm.page.context().clearCookies({ name: "cap.last" });
+    await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
+    check("with no remembered position, it resumes at the first unanswered control",
+      !(await resumeHref()).includes("4.3.1.1"), await resumeHref());
+
+    // An addressless /assess is a question, not a screen (D30).
     await pm.page.goto("/assess");
     await pm.page.waitForLoadState("networkidle");
-    check("with no remembered position, it opens the first unanswered control",
-      !(await pm.page.locator(".crumb").innerText()).includes("4.3.1.1"),
-      await pm.page.locator(".crumb").innerText());
+    check("a bookmarked /assess redirects to the hub",
+      new URL(pm.page.url()).pathname === ASSESS_HUB, pm.page.url());
+
+    // ...and the hub itself is terminal. A redirect here would be a loop.
+    check("the hub itself does not redirect",
+      new URL(pm.page.url()).pathname === ASSESS_HUB, pm.page.url());
+  }
+
+  /*
+   * ONE WAY IN (D30/D31). Every entry point resolves to the SAME path, compared
+   * against the app's own constant rather than a literal. Three screens each
+   * holding a copy of this path, drifting apart unnoticed, is the defect the
+   * hub exists to fix; these are what make the fix hold.
+   */
+  {
+    await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
+    const navHref = await pm.page.locator('nav.nav a:has-text("Self-assessment")').getAttribute("href");
+    check("the menu's Self-assessment points at the hub", navHref === ASSESS_HUB, navHref);
+
+    await pm.page.goto("/results");
+    await pm.page.waitForLoadState("networkidle");
+    const pickUp = pm.page.locator('a:has-text("Pick up where you left off")');
+    if (await pickUp.count()) {
+      const href = await pickUp.getAttribute("href");
+      check("Results' pick-up link points at the hub", href === ASSESS_HUB, href);
+    }
   }
 
   /*
@@ -1209,6 +1318,38 @@ console.log("\n[5] Submit: draft -> self_submitted");
   const { error } = await db.from("score").upsert(rows, { onConflict: "assessment_id,control_id" });
   if (error) throw new Error(error.message);
 
+  /*
+   * THE DEAD END THIS PREVENTS.
+   *
+   * Every control is answered and the PM's last position is MID-competency —
+   * which is what happens to anyone who works out of order, or who skips a
+   * control and circles back to it at the end. nextAfter()'s boundary branch
+   * never fires for them, so they are never handed to the list that carries
+   * Submit. Before the hub learned this state they arrived at 132 of 132 with
+   * "Continue where you left off" pointing at a control they had already
+   * answered, and no route to Submit at all.
+   *
+   * Answering all 132 IN ORDER would pass straight through the boundary branch
+   * and prove nothing, which is why the position is set deliberately here.
+   */
+  await pm.page.goto("/assess?c=4.3.1.2");             // mid-CE: sets cap.last
+  await pm.page.waitForSelector(".optlist");
+  await pm.page.goto(ASSESS_HUB);
+  await pm.page.waitForLoadState("networkidle");
+  {
+    const head = await pm.page.locator(".progress-head").innerText();
+    check("everything scored: the hub offers Review and submit",
+      /Review and submit/i.test(head), JSON.stringify(head));
+    check("everything scored: the hub does NOT offer Continue",
+      !/Continue where you left off/i.test(head), JSON.stringify(head));
+
+    const href = await pm.page.locator(".progress-head a.btn-primary").getAttribute("href");
+    await pm.page.goto(href);
+    await pm.page.waitForLoadState("networkidle");
+    check("and that button lands somewhere Submit actually exists",
+      (await pm.page.locator('button:has-text("Submit for review")').count()) > 0, href);
+  }
+
   await pm.page.goto("/assess/controls");
   const text = await pm.page.locator(".progress-head").innerText();
   check("progress reads 132 / 132", text.includes("132 / 132 controls scored"), JSON.stringify(text));
@@ -1221,6 +1362,22 @@ console.log("\n[5] Submit: draft -> self_submitted");
   check("state = self_submitted", after.state === "self_submitted", after.state);
   check("completed_at stamped (the finished flag)", after.completed_at !== null);
   check("started_at preserved", after.started_at !== null);
+
+  /* The hub is the only screen a PM lands on now, so it has to say the true
+     thing here. cap.last is still set from the run above — that is precisely
+     the state in which it used to invite someone to "continue" scoring that
+     the control page would then refuse to accept. */
+  {
+    await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
+    const head = await pm.page.locator(".progress-head").innerText();
+    check("submitted: the hub does NOT offer Continue",
+      !/Continue where you left off/i.test(head), JSON.stringify(head));
+    check("submitted: the hub says so, and who has it",
+      /submitted/i.test(head) && /head of pmo/i.test(head), JSON.stringify(head));
+    check("submitted: the hub offers a read-only way back in",
+      /View your answers/i.test(head), JSON.stringify(head));
+  }
 
   const { data: prefilled } = await db.from("score")
     .select("self_level, assessor_level, assessor_touched").eq("assessment_id", after.id).limit(5000);
@@ -1351,6 +1508,20 @@ console.log("\n[7] Approval snapshots targets and locks the record");
 
   await pm.page.goto("/results");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
+
+  /* The fourth and last hub state. cap.last is STILL set from the scoring run,
+     so without a state check this is the third place a stale "Continue" would
+     have appeared — this time to someone whose assessment is finished and
+     approved. */
+  {
+    await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
+    const head = await pm.page.locator(".progress-head").innerText();
+    check("approved: the hub does NOT offer Continue",
+      !/Continue where you left off/i.test(head), JSON.stringify(head));
+    check("approved: the hub sends them to their results",
+      /See your results/i.test(head), JSON.stringify(head));
+  }
 }
 
 /* --------------------------------------- 8. locked record, cross-user read */

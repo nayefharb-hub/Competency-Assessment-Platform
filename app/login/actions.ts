@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { authClient } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { db } from "@/lib/supabase/server";
 
 /** One message for every failure — see the note on the sign-in page. */
@@ -41,9 +42,11 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
 
   // Allowlist first: app_user is the invitation list, so an account that Supabase
   // Auth would happily authenticate still gets no session if it is not invited.
+  // `role` rides along on a select that already runs — no extra round trip on
+  // the sign-in path. It decides the landing below.
   const invited = await db()
     .from("app_user")
-    .select("id")
+    .select("id, role")
     .eq("email", email)
     .maybeSingle();
   if (invited.error || !invited.data) return { error: GENERIC, email };
@@ -55,5 +58,19 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   // Only ever bounce to an in-app path. `//host` and `/\host` are both read as
   // protocol-relative by browsers, so a bare startsWith("/") is not enough.
   const safe = /^\/(?![/\\])/.test(next) ? next : "/";
-  redirect(safe);
+
+  /* Land by role, AT SIGN-IN — which is what D32 asks for, and deliberately
+     not a redirect on `/`.
+     Redirecting an assessee off `/` on every visit was the first design, and
+     it silently ate the one explanation a blocked person ever gets: requireRole
+     bounces to `/?denied=1` and the console renders that banner. A PM following
+     a colleague's link to /review would have landed on the hub with no idea
+     why. /login already carries the same exemption for the same reason.
+     Doing it here removes the mechanism instead of patching around it: `/` stays
+     reachable by anyone who navigates or is bounced there, and the banner
+     cannot stop rendering.
+     Only the bare default is overridden. An explicit `next` — the path someone
+     was trying to reach before being asked to sign in — always wins. */
+  const landing = safe === "/" && invited.data.role === "assessee" ? ASSESS_HUB : safe;
+  redirect(landing);
 }
