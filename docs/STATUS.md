@@ -40,6 +40,25 @@ they are not network problems:
   variable, never pasted into chat.
 - **Production runs `main`,** so it only ever shows merged work.
 
+**Reaching a PREVIEW deployment.** The owner created a Vercel *Protection
+Bypass for Automation* secret (named "claude QA testing") and added it to this
+Claude Code environment as **`Vercel_deployment_ByPass`** on 2026-08-06. Send it
+as a header on any preview URL:
+
+```bash
+curl -H "x-vercel-protection-bypass: $Vercel_deployment_ByPass" <preview-url>/login
+# Playwright: extraHTTPHeaders: { "x-vercel-protection-bypass": process.env.Vercel_deployment_ByPass }
+```
+
+**It only appears in a session whose container started AFTER the variable was
+added** — environment variables are injected at container start, so the session
+that requests one never sees it. Check with `printenv Vercel_deployment_ByPass`;
+if it is empty, the fix is a new session, not a new variable.
+
+Designating it a *System Environment Variable* in Vercel does NOT help an agent:
+that injects it into the deployment's own runtime, for the app to read. The
+caller needs the raw value locally, which is why it lives here too.
+
 Re-measure rather than trusting this paragraph: `curl -s -o /dev/null -w '%{http_code}' https://competency-assessment-platform.vercel.app/login`.
 
 Note one good property found while probing: the middleware redirects EVERY
