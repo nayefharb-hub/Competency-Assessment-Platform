@@ -1884,3 +1884,44 @@ next needs work.
 
 **Still open:** where this screen lives once an admin role exists (blocked on
 N25's role-model review).
+
+---
+
+### N28 — the Sign in button sits flush against the password field
+
+Owner, 2026-08-06, from the deployed sign-in screen: *"sign in button seems to
+be overlapping and very close to the password fields, needs fixing."*
+
+**Measured, not eyeballed** (Playwright, 1280×900, `/login`):
+
+| Gap | Actual |
+|---|---|
+| Email input → "Password" label | **0px** |
+| "Password" label → password input | 6px |
+| Password input → Sign in button | **0px** |
+
+So it is not "very close", it is touching, in two places. The screenshot only
+shows one of them because a label's line box supplies a few pixels of optical
+leading that an input does not.
+
+**Cause.** There is no `.field` rule in `app/globals.css` — only
+`.field label { … margin-bottom: 6px }`. The wrapper every form row uses has no
+bottom margin, so vertical rhythm in forms is whatever the elements happen to
+produce, which is nothing. `DESIGN.md` specifies a 4px base unit and a
+4·8·12·16·24·32·48 scale; forms are currently outside it entirely.
+
+**Why this is logged rather than hot-fixed.** The one-line fix — give `.field` a
+bottom margin — is not scoped to the sign-in screen. `.field` is used in **15
+places across 5 files**: `/admin` (5), `/admin/people` (5),
+`/change-password` (2), `/login` (2), and the evidence input on the scoring
+panel (1). That last one is on the hottest screen in the app, and the N14 layout
+guarantee — the answer and the primary action both on screen without scrolling,
+at three viewports on the longest control in ICB4 — is measured against the
+current spacing. Adding a margin there moves the Save button down on every
+control.
+
+So this wants a `/design-review` pass with the measurement in hand, not a blind
+edit. Cheap to fix, easy to fix in a way that quietly breaks a guarantee that
+was expensive to establish.
+
+**Severity:** cosmetic, on the first screen all nine PMs will ever see.
