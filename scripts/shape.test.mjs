@@ -55,24 +55,96 @@ test("area order follows the framework, not the order controls arrive in", () =>
   assert.deepEqual(areas.map((a) => a.name), ["People", "Practice"]);
 });
 
-test("a competency finished by skipping is not called complete", () => {
+/* ------------------------------------------------ nextAfter / the milestone */
+
+test("a milestone appears only at the LAST control of a competency", () => {
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set());
+  assert.equal(nextAfter(areas, controls[0]), null, "mid-competency is an ordinary next");
+  assert.ok(nextAfter(areas, controls[1]), "the last control ends the competency");
+});
+
+test("a competency finished by skipping reports the gap, and the card must not call it complete", () => {
+  /* FM1, the worst outcome: telling a PM they finished something they did not,
+     and pointing them at a Submit the server will refuse. nextAfter reports
+     scored/total and never a verdict, so the caller cannot round it up. */
   const controls = [
     ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
     ctl("1.1.2.1", "People", "1.1.2", 10),
   ];
   // last control of the CE scored, the first skipped
   const areas = shapeOf(controls, ceOf, [], new Set(["1.1.1.2"]));
-  const b = nextAfter(areas, controls[1]);
-  assert.equal(b.complete, false);
-  assert.match(b.label, /1 of 2 scored/);
+  const m = nextAfter(areas, controls[1]);
+  assert.equal(m.ce.scored, 1);
+  assert.equal(m.ce.total, 2);
+  assert.ok(m.ce.scored < m.ce.total, "one skipped control leaves the competency open");
 });
 
-test("the end of the assessment carries the save confirmation", () => {
+test("the milestone reports PERSISTED scores, so the client can add the pending answer", () => {
+  /* FM2 — this is N30. The fifth answer is on screen and uncommitted, so the
+     server sees 4 of 5. If nextAfter decided completeness itself it would be
+     wrong here, every time, on the one screen where it matters. The contract
+     is that it reports and does not decide. */
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set(["1.1.1.1"]));
+  const m = nextAfter(areas, controls[1]);
+  assert.equal(m.ce.scored, 1, "the uncommitted answer is not persisted yet");
+  assert.equal(m.ce.total, 2);
+  // The client adds 1 for the answer it is holding, and only then is it complete.
+  assert.equal(m.ce.scored + 1, m.ce.total);
+});
+
+test("continue points at the next competency's first control, across an area boundary", () => {
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10),
+    ctl("2.1.1.1", "Practice", "2.1.1", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set(), ["People", "Practice"]);
+
+  const withinArea = nextAfter(areas, controls[0]);
+  assert.equal(withinArea.done, "ce");
+  assert.equal(withinArea.nextControl, "1.1.2.1");
+  assert.equal(withinArea.nextCe.name, "Governance");
+  assert.equal(withinArea.areaDone, null);
+
+  const acrossAreas = nextAfter(areas, controls[1]);
+  assert.equal(acrossAreas.done, "area", "the last competency of an area ends the area too");
+  assert.equal(acrossAreas.areaDone, "People");
+  assert.equal(acrossAreas.nextControl, "2.1.1.1", "continue crosses into the next area");
+  assert.equal(acrossAreas.nextCe.name, "Design");
+});
+
+test("the end of the assessment has nowhere to continue to, and carries the save confirmation", () => {
   const controls = [ctl("1.1.1.1", "People", "1.1.1", 10)];
   const areas = shapeOf(controls, ceOf, [], new Set(["1.1.1.1"]));
-  const b = nextAfter(areas, controls[0]);
-  assert.equal(b.done, "assessment");
-  assert.match(b.href, /saved=1/, "the 132nd answer must not land silently");
+  const m = nextAfter(areas, controls[0]);
+  assert.equal(m.done, "assessment");
+  assert.equal(m.nextControl, null, "there is no next control to continue to");
+  assert.equal(m.nextCe, null);
+  assert.match(m.listHref, /saved=1/, "the 132nd answer must not land silently");
+});
+
+test("the milestone carries the whole competency, in order, for the recap", () => {
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set());
+  const m = nextAfter(areas, controls[1]);
+  assert.deepEqual(m.controls.map((c) => c.code), ["1.1.1.1", "1.1.1.2"]);
+  assert.ok(m.controls[0].indicator, "the recap needs something readable, not just a code");
+});
+
+test("a control outside the shape produces no milestone rather than throwing", () => {
+  const areas = shapeOf([ctl("1.1.1.1", "People", "1.1.1", 10)], ceOf, [], new Set());
+  assert.equal(nextAfter(areas, ctl("9.9.9.9", "Nowhere", "9.9.9", 10)), null);
 });
 
 test("shape groups by area then competency, in framework order", () => {
@@ -96,24 +168,27 @@ test("progress counts scored controls at both levels", () => {
   assert.equal(areas[0].ces[0].firstUnscored.code, "1.1.1.2");
 });
 
-test("the last control of a competency stops at the competency, not the next one", () => {
+test("the last control of a competency ends the competency, and Continue carries on", () => {
   const controls = [
     ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.2.1", "People", "1.1.2", 10),
   ];
   const areas = shapeOf(controls, ceOf, [], new Set());
-  const b = nextAfter(areas, controls[0]);
-  assert.equal(b.done, "ce", "finishing a competency is a boundary");
-  assert.match(b.href, /\/assess\/area\//);
+  const m = nextAfter(areas, controls[0]);
+  assert.equal(m.done, "ce", "finishing a competency is a moment");
+  assert.equal(m.nextControl, "1.1.2.1", "but the run continues — N32");
+  // Taking a break still lands on the list that names what was just finished.
+  assert.match(m.listHref, /\/assess\/area\//);
 });
 
-test("the last competency of an area steps up to the areas screen", () => {
+test("the last competency of an area ends the area, and taking a break goes to the hub", () => {
   const controls = [
     ctl("1.1.1.1", "People", "1.1.1", 10), ctl("2.1.1.1", "Practice", "2.1.1", 10),
   ];
   const areas = shapeOf(controls, ceOf, [], new Set());
-  const b = nextAfter(areas, controls[0]);
-  assert.equal(b.done, "area");
-  assert.equal(b.href, "/assess/areas");
+  const m = nextAfter(areas, controls[0]);
+  assert.equal(m.done, "area");
+  assert.equal(m.areaDone, "People");
+  assert.equal(m.listHref, "/assess/areas");
 });
 
 test("a control mid-competency is not a boundary", () => {

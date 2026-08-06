@@ -280,6 +280,57 @@ h1, h2, h3 {
 }
 .crumb .sep { opacity: 0.5; }
 
+/* N31 — the competency, made legible.
+   It was carried only inside .crumb at 12px/muted, above a 17px control title,
+   so the unit the rollup aggregates into was the least visible thing on the
+   screen. Sized between the crumb and the control title on DESIGN.md's scale:
+   the control is still what you read, but you can no longer lose track of what
+   you are being assessed ON. */
+.ce-name {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  font-size: 14.5px; font-weight: 650; color: var(--selected);
+  margin: 0 0 8px;
+}
+/* E4 — how far the nearest stopping point is. Deliberately quiet: it is
+   orientation, not an instruction, and it sits beside the name rather than
+   competing with it. */
+.ce-progress {
+  font-size: 12px; font-weight: 500; color: var(--ink-muted);
+}
+
+/* ---------- the milestone (N32) ----------
+   Swaps into the answer panel's place when a competency is finished. It must
+   not be taller than the panel it replaces: the N14 guarantee is that the
+   primary action is reachable without scrolling, and this card carries one. */
+.milestone { text-align: left; }
+.milestone-tick {
+  font-size: 22px; line-height: 1; color: var(--ok, var(--accent));
+  margin: 0 0 6px;
+}
+.milestone-title { font-size: 17px; font-weight: 650; margin: 0 0 4px; }
+.milestone-sub { margin: 0 0 12px; }
+.milestone-next { margin: 12px 0 0; }
+.milestone-offline { margin: 12px 0 0; color: var(--ink-muted); }
+
+.milestone-recap { list-style: none; margin: 0; padding: 0; }
+.milestone-recap li + li { border-top: 1px solid var(--border); }
+/* Every row is a button: this is the last easy moment to change an answer
+   before moving on, and a recap you cannot act on is decoration. */
+.milestone-revise {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: baseline;
+  gap: 10px; width: 100%; text-align: left;
+  appearance: none; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; color: var(--ink);
+  padding: 8px 4px; border-radius: 6px;
+}
+.milestone-revise:hover { background: var(--bg); }
+.milestone-revise:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.milestone-code { color: var(--ink-muted); font-size: 11.5px; }
+.milestone-indicator {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.milestone-level { color: var(--ink-muted); font-size: 11.5px; white-space: nowrap; }
+
 .assess-nav {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 16px; flex-wrap: wrap;

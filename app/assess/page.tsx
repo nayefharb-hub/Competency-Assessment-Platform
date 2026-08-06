@@ -97,7 +97,31 @@ export default async function AssessPage({
      fetched; no extra round trip on the path two PRs were spent making fast. */
   const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
     fw.data.areas.map((a) => a.name));
-  const boundary = nextAfter(areas, control);
+  const milestone = nextAfter(areas, control);
+
+  /* The recap needs the PM's answers for the competency that just ended. No new
+     query: findAssessmentWithScores already returned every score for the
+     assessment in one embedded select, so this is a lookup over data in hand. */
+  const byCode = new Map(scores.map((s) => [s.control_code, s.self_level ?? null]));
+  const ceLevels: Record<string, number | null> = {};
+  for (const c of milestone?.controls ?? []) ceLevels[c.code] = byCode.get(c.code) ?? null;
+
+  /* E4 — where the PM is inside THIS competency, so the nearest natural
+     stopping point is always visible. Same in-memory shape, no extra cost. */
+  const here = areas.find((a) => a.name === control.area)?.ces
+    .find((c) => c.code === control.ce_code);
+  const ceProgress = here
+    ? {
+        code: here.code,
+        name: here.name,
+        /* POSITION, not answered-count. "3 of 5 in this competency" has to mean
+           "you are on the third of five", which is what tells a PM how far the
+           nearest stopping point is. An answered-count would jump around when
+           they skip, and read as progress they have not made. */
+        position: here.controls.findIndex((c) => c.code === control.code) + 1,
+        total: here.controls.length,
+      }
+    : null;
 
   const score = scores.find((s) => s.control_code === code);
   const answered = scores.filter((s) => s.self_level !== null).length;
@@ -132,17 +156,32 @@ export default async function AssessPage({
       <div className="assess-grid">
         {/* ---- what the control asks: ICB4 source text, capped at --measure ---- */}
         <div className="card pad">
+          {/* N31 — the competency was the least visible thing on this screen,
+              which is backwards: it is the unit the rollup aggregates into and
+              the unit a PM has to calibrate against ("am I proficient at
+              THIS?"). It now leads, at heading weight, with the area and the
+              control code demoted to the line above and below it. */}
           <div className="crumb">
             <span className="area">{control.area}</span>
-            <span className="sep">›</span>
-            <span>
-              {ce?.code} {ce?.name}
-            </span>
             <span className="sep">›</span>
             <span>
               Control <b>{control.code}</b>
             </span>
           </div>
+
+          <p className="ce-name">
+            <span className="tnum">{ce?.code}</span> {ce?.name}
+            {ceProgress && (
+              /* E4 — how far the nearest natural stopping point is. A PM who
+                 can see the end of the current stretch does not need to be
+                 ejected to a list to feel one. */
+              <span className="ce-progress">
+                <b className="tnum">{ceProgress.position}</b>
+                {" of "}
+                <b className="tnum">{ceProgress.total}</b> in this competency
+              </span>
+            )}
+          </p>
 
           <h2 style={{ fontSize: 17, fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
           {control.description && (
@@ -185,7 +224,8 @@ export default async function AssessPage({
             savedLevel={score?.self_level ?? null}
             savedEvidence={score?.evidence ?? ""}
             locked={locked}
-            boundary={boundary}
+            milestone={milestone}
+            ceLevels={ceLevels}
           />
         </div>
       </div>

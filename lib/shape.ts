@@ -145,16 +145,54 @@ export function shapeOf(
 }
 
 /**
- * Where "Next" goes at the end of a control, given the shape (D25).
+ * What sits at the end of a competency — the facts, not the verdict.
  *
- * A competence element is the sitting, so its last control does NOT walk into
- * the next CE's first — finishing is a moment, and continuing is a choice. The
- * last CE of an area steps up one further, to the area screen.
+ * WHY THERE IS NO `complete` FIELD HERE, which is the whole point of the
+ * rewrite. This function runs on the server, from PERSISTED scores. The answer
+ * the PM is looking at has not been committed yet when the label is chosen, so
+ * a `complete` computed here is always one answer behind at exactly the moment
+ * it matters — the last control of a competency. That was N30: the same screen
+ * said "Back to the list" on the visit where the fifth answer was still
+ * uncommitted, and "Finish this competency" on a later visit.
+ *
+ * So the server reports `scored` and `total` and the CLIENT adds the pending
+ * answer, because the client is the only place that knows about it. See
+ * `ceComplete` in app/assess/score-panel.tsx.
+ *
+ * This does NOT relax the submit precondition. `submitSelfAssessment` still
+ * refuses an incomplete assessment from its own count, which is what protects
+ * against the case the old comment here recorded: a PM who skipped four of five
+ * controls, scored the last one, and was told "Finish this competency".
+ */
+export interface Milestone {
+  /** The competency that just ended. `scored` counts PERSISTED answers only. */
+  ce: { code: string; name: string; scored: number; total: number };
+  /** Every control in it, in order — the recap the milestone card shows. */
+  controls: { code: string; indicator: string | null }[];
+  /** Where Continue goes: the next control in framework order, or null at the end. */
+  nextControl: string | null;
+  /** What the PM is about to start, for the "next up" line. */
+  nextCe: { code: string; name: string } | null;
+  /** Which boundary this is — a competency, an area, or the whole assessment. */
+  done: "ce" | "area" | "assessment";
+  /** Named only when an AREA also ended here, so the card can say so. */
+  areaDone: string | null;
+  /** Where "take a break" goes. Also the fallback if Continue cannot run. */
+  listHref: string;
+}
+
+/**
+ * Where the PM is at the end of a control, given the shape (D25, revised).
+ *
+ * A competence element is still the sitting and finishing it is still a moment
+ * — but the moment now happens IN PLACE rather than as a route change, so the
+ * PM is not ejected from the flow 28 times per assessment (N32). This returns
+ * the facts that milestone needs; the card decides how to present them.
  */
 export function nextAfter(
   areas: AreaShape[],
   control: Control,
-): { href: string; done: "ce" | "area" | "assessment"; complete: boolean; label: string } | null {
+): Milestone | null {
   const area = areas.find((a) => a.name === control.area);
   const ce = area?.ces.find((c) => c.code === control.ce_code);
   if (!area || !ce) return null;
@@ -162,42 +200,43 @@ export function nextAfter(
   const isLastInCe = ce.controls[ce.controls.length - 1]?.code === control.code;
   if (!isLastInCe) return null;                       // ordinary next control
 
-  // "Complete" has to be true. Positional was not enough: a PM who skipped
-  // four of five controls and scored the last one was told "Finish this
-  // competency" and shown 1/5, and at the end of the assessment was pointed
-  // at a Submit the server would refuse.
-  const ceComplete = ce.scored === ce.controls.length;
-
   const ceIndex = area.ces.indexOf(ce);
+  const areaIndex = areas.indexOf(area);
   const isLastInArea = ceIndex === area.ces.length - 1;
+  const nextArea = areas[areaIndex + 1];
+
+  /* The next competency in FRAMEWORK order, crossing into the next area when
+     this one is finished. Being at the last control of a CE means the linear
+     next control is exactly the next CE's first — so one lookup answers both
+     "what comes next" and "where does Continue go". */
+  const nextCe = !isLastInArea ? area.ces[ceIndex + 1] : (nextArea?.ces[0] ?? null);
+
+  const base = {
+    ce: { code: ce.code, name: ce.name, scored: ce.scored, total: ce.controls.length },
+    controls: ce.controls.map((c) => ({ code: c.code, indicator: c.indicator })),
+    nextControl: nextCe?.controls[0]?.code ?? null,
+    nextCe: nextCe ? { code: nextCe.code, name: nextCe.name } : null,
+  };
 
   if (!isLastInArea) {
     return {
-      href: `/assess/area/${encodeURIComponent(area.name)}`,
+      ...base,
       done: "ce",
-      complete: ceComplete,
-      label: ceComplete
-        ? `${ce.name} complete — next: ${area.ces[ceIndex + 1].name}`
-        : `${ce.name} — ${ce.scored} of ${ce.controls.length} scored`,
+      areaDone: null,
+      listHref: `/assess/area/${encodeURIComponent(area.name)}`,
     };
   }
-
-  const areaIndex = areas.indexOf(area);
-  const nextArea = areas[areaIndex + 1];
-  const areaComplete = area.scored === area.controls;
   if (nextArea) {
-    return {
-      href: ASSESS_HUB, done: "area", complete: areaComplete,
-      label: areaComplete
-        ? `${area.name} complete — next: ${nextArea.name}`
-        : `${area.name} — ${area.scored} of ${area.controls} scored`,
-    };
+    return { ...base, done: "area", areaDone: area.name, listHref: ASSESS_HUB };
   }
-  // ?saved=1 is what raises the save confirmation on the controls list. The
-  // boundary branch pre-empts the panel's fallback, so it has to carry it —
-  // otherwise the 132nd answer lands silently, right before Submit.
+  // ?saved=1 raises the save confirmation on the controls list. The last answer
+  // of the assessment must not land silently, right before Submit.
   return {
-    href: "/assess/controls?saved=1", done: "assessment",
-    complete: areaComplete, label: "Every competency scored",
+    ...base,
+    done: "assessment",
+    areaDone: area.name,
+    nextControl: null,
+    nextCe: null,
+    listHref: "/assess/controls?saved=1",
   };
 }

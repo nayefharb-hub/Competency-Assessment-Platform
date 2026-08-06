@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "@/app/link";
 import { commit, pendingFor } from "@/lib/outbox";
 import { createDwellClock, type DwellClock } from "@/lib/dwell";
+import type { Milestone } from "@/lib/shape";
+import MilestoneCard from "./milestone-card";
 
 interface Level {
   level: number;
@@ -34,7 +36,8 @@ export default function ScorePanel({
   savedLevel,
   savedEvidence,
   locked,
-  boundary,
+  milestone,
+  ceLevels,
 }: {
   control: string;
   nextControl: string | null;
@@ -43,14 +46,18 @@ export default function ScorePanel({
   savedLevel: number | null;
   savedEvidence: string;
   locked: boolean;
-  /** Set when this control ends a competency or an area (D25). */
-  boundary?: {
-    href: string; done: "ce" | "area" | "assessment"; complete: boolean; label: string;
-  } | null;
+  /** Set when this control ends a competency or an area (D25, revised by N32). */
+  milestone?: Milestone | null;
+  /** Persisted levels for the competency this control belongs to — the recap. */
+  ceLevels?: Record<string, number | null>;
 }) {
   const router = useRouter();
   const [level, setLevel] = useState<number | null>(savedLevel);
   const [evidence, setEvidence] = useState(savedEvidence);
+  /* The milestone is shown INSTEAD of the panel, after the answer is committed
+     and without navigating. Keyed off the control below so that arriving at a
+     new control — including via Back — never lands on a stale milestone (FM7). */
+  const [reached, setReached] = useState(false);
 
   // Re-mounting is not guaranteed between controls (React reuses the tree when
   // only the query string changes), so the fields are re-seeded from the server
@@ -65,6 +72,10 @@ export default function ScorePanel({
     const queued = pendingFor(control);
     setLevel(queued ? queued.level : savedLevel);
     setEvidence(queued ? (queued.evidence ?? "") : savedEvidence);
+    // A milestone belongs to the answer that produced it. Landing on any
+    // control — forwards, or backwards with the browser button — starts from
+    // the panel, never from a milestone someone already passed through.
+    setReached(false);
   }, [control, savedLevel, savedEvidence]);
 
   // Remember where they are, so "Self-assessment" in the menu comes back HERE
@@ -123,6 +134,32 @@ export default function ScorePanel({
 
   const dirty = level !== savedLevel || evidence !== savedEvidence;
 
+  /*
+   * IS THE COMPETENCY FINISHED — counting the answer on screen. This is N30.
+   *
+   * `milestone.ce.scored` is what the SERVER persisted, and the answer the PM
+   * is looking at has not been committed yet. Deciding from the server's count
+   * alone made the last control of a competency read "Back to the list" while
+   * the fifth answer sat uncommitted, and "Finish this competency" on a later
+   * visit — the same screen, two different promises, which is exactly what the
+   * owner reported.
+   *
+   * So add the pending answer here, where it is known. `savedLevel === null`
+   * means the server has nothing for this control, so a level on screen is one
+   * the server has not counted — whether it was just picked or is sitting in
+   * the outbox waiting to send (the effect above seeds from the queue).
+   *
+   * This changes a LABEL and nothing else. `submitSelfAssessment` still counts
+   * for itself server-side, which is what stops a PM who skipped four of five
+   * controls being pointed at a Submit that would be refused.
+   */
+  const answeredNow = level !== null && savedLevel === null ? 1 : 0;
+  const ceComplete = milestone
+    ? milestone.ce.scored + answeredNow >= milestone.ce.total
+    : false;
+
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+
   function goNext() {
     if (level !== null && dirty) {
       /*
@@ -161,11 +198,91 @@ export default function ScorePanel({
     // costs nothing and keeps them inside the app.
     // The app-wide OfflineBanner explains this; app/link.tsx does the same for
     // every other navigation, so all of them behave alike when offline.
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    // A competency boundary sends the PM back to the list that names what they
-    // just finished, rather than into the next competency's first control.
-    if (boundary) { router.push(boundary.href); return; }
+    /* Finishing a competency raises the milestone IN PLACE — no navigation, so
+       this happens whether or not the browser is online. The card itself
+       disables Continue when offline and explains why (review decision A1);
+       withholding the milestone would deny the PM the one moment that makes
+       132 controls feel finishable, precisely when the app is already
+       frustrating them. */
+    if (milestone && ceComplete) { setReached(true); return; }
+
+    // Never ask the browser to navigate when it has told us it cannot (D13).
+    if (offline) return;
     router.push(nextControl ? `/assess?c=${nextControl}` : "/assess/controls?saved=1");
+  }
+
+  /** Continue, from the milestone. Always a navigation, so never offline. */
+  function continueRun() {
+    if (offline) return;
+    const next = milestone?.nextControl;
+    router.push(next ? `/assess?c=${next}` : (milestone?.listHref ?? "/assess/controls?saved=1"));
+  }
+
+  /*
+   * KEYBOARD SCORING (E2). 0-5 pick a level, Enter confirms and moves on.
+   *
+   * A PM answers 132 questions; reaching for the mouse on every one of them is
+   * the bulk of the physical effort in a sitting. Additive — nothing about the
+   * pointer path changes — and it is the same accessibility win.
+   *
+   * GUARDED ON THE EVENT TARGET, which is the whole subtlety: the evidence
+   * field is one tab away, and typing "3" in it must write a 3, not silently
+   * re-score the control. Anything originating in a form field or a button is
+   * left entirely alone.
+   */
+  useEffect(() => {
+    if (locked || reached) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName)) return;
+      if (el?.isContentEditable) return;
+
+      if (/^[0-5]$/.test(e.key)) {
+        const n = Number(e.key);
+        if (levels.some((l) => l.level === n)) {
+          e.preventDefault();
+          setLevel(n);
+        }
+        return;
+      }
+      if (e.key === "Enter" && level !== null) {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
+  /*
+   * ONE label, used by both the button and the hint above it.
+   *
+   * They used to be computed separately — the hint from `nextControl`, the
+   * button from the boundary — so at a competency boundary the hint said
+   * "Next control saves it" above a button reading "Back to the list". It named
+   * a button that was not on screen. Two notions of "what happens next",
+   * rendered side by side; deriving both from this removes the possibility
+   * rather than fixing the symptom.
+   */
+  const commitLabel = milestone && ceComplete
+    ? (milestone.done === "assessment" ? "Review before submitting" : "Finish this competency")
+    : (nextControl ? "Next control" : "Review before submitting");
+
+  if (reached && milestone) {
+    return (
+      <MilestoneCard
+        milestone={milestone}
+        levels={levels}
+        /* The recap shows what the PM actually answered, which for the control
+           they just finished is the value on screen — the server has not seen
+           it yet. Same optimism as ceComplete, for the same reason. */
+        levelFor={(code) => (code === control ? level : ceLevels?.[code] ?? null)}
+        offline={offline}
+        onContinue={continueRun}
+        onRevise={(code) => router.push(`/assess?c=${code}`)}
+      />
+    );
   }
 
   return (
@@ -214,7 +331,7 @@ export default function ScorePanel({
           to infer the rule from the button's behaviour. */}
       {!locked && dirty && level !== null && (
         <p className="note" style={{ marginTop: 10 }} role="status">
-          Not saved yet — <b>{nextControl ? "Next control" : "Review before submitting"}</b> saves it.
+          Not saved yet — <b>{commitLabel}</b> saves it.
         </p>
       )}
 
@@ -231,13 +348,7 @@ export default function ScorePanel({
             type="button"
             onClick={goNext}
           >
-            {level === null
-              ? "Skip for now →"
-              : boundary
-                ? (boundary.done === "assessment"
-                    ? (boundary.complete ? "Review before submitting →" : "Back to the list →")
-                    : (boundary.complete ? "Finish this competency →" : "Back to the list →"))
-                : "Next control →"}
+            {level === null ? "Skip for now →" : `${commitLabel} →`}
           </button>
         )}
         {prevControl && (
