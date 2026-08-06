@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
+import { ASSESS_HUB, safeNext } from "@/lib/routes";
 import SignInForm from "./form";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +33,21 @@ export default async function LoginPage({
    * redirecting on it would bounce them to a page they cannot use and swallow
    * the reason. It is reachable while signed out, so this never loops.
    *
-   * Same in-app-path guard as the sign-in action: `//host` and `/\host` are
-   * read as protocol-relative by browsers, so startsWith("/") is not enough.
+   * Same in-app-path guard as the sign-in action, and now literally the same
+   * function: both copies of the old inline regex admitted "/\t/evil.com",
+   * which resolves cross-origin. See safeNext in lib/routes.ts.
+   *
+   * Role-aware for the same reason the action is (D32): an assessee who is
+   * already signed in and revisits /login is in exactly the position a fresh
+   * sign-in puts them, so they land in the same place. Without this the two
+   * doors disagreed, which is the defect this whole change exists to remove.
    */
-  if (!denied && (await currentUser())) {
-    redirect(/^\/(?![/\\])/.test(next ?? "") ? (next as string) : "/");
+  if (!denied) {
+    const who = await currentUser();
+    if (who) {
+      const safe = safeNext(next);
+      redirect(safe === "/" && who.role === "assessee" ? ASSESS_HUB : safe);
+    }
   }
 
   return (

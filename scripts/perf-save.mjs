@@ -9,6 +9,7 @@
  * Uses a disposable QA account (qa.perf@example.test), inserts the assessment
  * row directly (state draft), and deletes everything afterwards.
  */
+import { randomBytes } from "node:crypto";
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 
@@ -16,7 +17,16 @@ const BASE = "http://127.0.0.1:3000";
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
-const PM = { email: "qa.perf@example.test", name: "QA Perf PM", password: "QaPerf1!pass" };
+/**
+ * Per-run password, not a literal — see the same note in scripts/e2e.mjs. This
+ * script creates a real account on the real allowlist, and until the cleanup
+ * below was made crash-proof it could outlive the run with a password printed
+ * in a public repository.
+ */
+const PM = {
+  email: "qa.perf@example.test", name: "QA Perf PM",
+  password: `Qa${randomBytes(15).toString("base64url")}1!`,
+};
 
 async function purge() {
   const { data: u } = await db.from("app_user").select("id").eq("email", PM.email).maybeSingle();
@@ -31,6 +41,39 @@ async function purge() {
   const { data: au } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const stray = (au?.users ?? []).find((x) => x.email === PM.email);
   if (stray) await db.auth.admin.deleteUser(stray.id);
+}
+
+/**
+ * Cleanup that a crash cannot skip.
+ *
+ * This script is top-level sequential code with a `purge()` at the very bottom,
+ * so any throw between here and there — a selector that moved, a timeout, Ctrl-C
+ * on a run that is dragging — left qa.perf@example.test alive on the REAL
+ * allowlist. That is the mechanism a /cso pass caught on 2026-08-06, in the
+ * database rather than in theory: two accounts from an interrupted ad-hoc run,
+ * one an admin, still authenticating against production hours later.
+ *
+ * scripts/e2e.mjs learned this as N21 and grew a teardown; this file was left
+ * behind. Same lesson, same shape.
+ */
+/* A PROMISE, not a boolean — same reason as scripts/e2e.mjs. A boolean guard
+   returns instantly on re-entry, and every signal handler below calls
+   process.exit() straight after, so a second Ctrl-C during a slow purge kills
+   the process mid-cleanup and abandons the account this exists to remove. */
+let teardownRun = null;
+const teardown = (label, err) => (teardownRun ??= doTeardown(label, err));
+
+async function doTeardown(label, err) {
+  if (err) console.log(`\n✗ ${label} — ${String(err?.message ?? err).split("\n")[0]}`);
+  await browserRef?.close().catch(() => {});
+  await purge().catch((e) => console.log(`  ✗ cleanup ALSO failed — ${e.message}`));
+  console.log("cleaned up");
+}
+let browserRef = null;
+process.on("uncaughtException", (e) => teardown("CRASHED", e).finally(() => process.exit(1)));
+process.on("unhandledRejection", (e) => teardown("UNHANDLED REJECTION", e).finally(() => process.exit(1)));
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
+  process.on(sig, () => teardown("INTERRUPTED", new Error(`received ${sig}`)).finally(() => process.exit(1)));
 }
 
 await purge();
@@ -88,6 +131,7 @@ for (let i = 0; i < controls.length - 1 && pairs.length < 10; i++) {
 if (pairs.length < 10) throw new Error(`only ${pairs.length} in-CE pairs found`);
 
 const browser = await chromium.launch({ executablePath: process.env.E2E_CHROMIUM || undefined });
+browserRef = browser;   // so teardown can close it on a crash
 const ctx = await browser.newContext({ baseURL: BASE });
 const page = await ctx.newPage();
 
@@ -143,6 +187,4 @@ console.table(rows);
 const med = (k) => { const v = rows.map((r) => r[k]).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
 console.log(`\nMEDIANS  wall=${med("wall")}ms  post=${med("post")}ms  gets=${med("gets")}ms  gap(client)=${med("gap")}ms`);
 
-await browser.close();
-await purge();
-console.log("cleaned up");
+await teardown();

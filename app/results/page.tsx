@@ -1,5 +1,6 @@
 import Link from "@/app/link";
 import { canAssess, requireUser } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { getFramework } from "@/lib/framework";
 import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
@@ -230,7 +231,7 @@ async function NotYet({
           ) : assessment.state === "draft" ? (
             <>
               Your self-assessment is still in progress.{" "}
-              <Link href="/assess/controls">Pick up where you left off</Link>. Results appear
+              <Link href={ASSESS_HUB}>Pick up where you left off</Link>. Results appear
               once the Head of PMO has reviewed and approved your scores.
             </>
           ) : (

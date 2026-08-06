@@ -1925,3 +1925,28 @@ edit. Cheap to fix, easy to fix in a way that quietly breaks a guarantee that
 was expensive to establish.
 
 **Severity:** cosmetic, on the first screen all nine PMs will ever see.
+
+
+---
+
+### N29 — "the journey now is very confusing to the user"
+
+Owner, 2026-08-06, after using the deployed app: three different screens claim
+to be the assessment, login lands on one, the nav goes to another, and clicking
+an area shows a third.
+
+**Measured.** `/assess/areas` — the hub PR #23 built as "the way in" — has
+**one inbound link in the whole app**, the `← All areas` back button on the
+area page. Nothing in the nav, nothing on the landing, nothing from Results.
+Meanwhile three entry points all say "continue" and go to three different
+places: the nav to a single control, the landing and Results to the flat
+132-row list.
+
+**Root cause, and it is mine.** PR #23 introduced a new model — the competence
+element is the unit of work — and never retired the old one. Both are live, so
+each button picks a model arbitrarily. The confusion is not in any screen; it
+is that the product cannot say what "the assessment" is.
+
+**Settled in `/office-hours` as D29–D32** (`docs/design-assessment-navigation.md`),
+including a deliberate reversal of the owner's earlier D12. Next step is
+`/plan-eng-review`; nothing is built yet.

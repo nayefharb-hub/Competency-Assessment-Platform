@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
@@ -47,7 +48,7 @@ export default async function AreaPage({
   return (
     <div className="section">
       <div className="assess-nav">
-        <Link className="btn btn-secondary btn-sm" href="/assess/areas">← All areas</Link>
+        <Link className="btn btn-secondary btn-sm" href={ASSESS_HUB}>← All areas</Link>
         <span className="note">
           <b className="tnum">{area.scored}</b> of <b className="tnum">{area.controls}</b> controls scored
           {area.scored < area.controls && <> · {estimateLabel(area.estimate)} remaining in full</>}

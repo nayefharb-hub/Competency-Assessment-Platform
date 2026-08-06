@@ -1,5 +1,6 @@
 import Link from "@/app/link";
 import { canAdmin, canAssess, requireUser } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { getFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
@@ -47,7 +48,7 @@ export default async function Home({
             {archived ? (
               <>
                 Your {cycle} assessment was withdrawn by the Head of PMO.{" "}
-                <Link href="/assess/controls">See what that means</Link>.
+                <Link href={ASSESS_HUB}>See what that means</Link>.
               </>
             ) : (
               <>
@@ -59,7 +60,7 @@ export default async function Home({
         )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
           {mine && (
-            <Link className="btn btn-primary" href="/assess/controls">
+            <Link className="btn btn-primary" href={ASSESS_HUB}>
               {mine.row.state === "draft"
                 ? scored === 0
                   ? "Start self-assessment"

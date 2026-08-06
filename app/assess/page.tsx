@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
@@ -34,6 +35,17 @@ export default async function AssessPage({
 }) {
   const { c, error } = await searchParams;
   const user = await requireUser();
+  /* An addressless /assess is not a screen, it is a question — "where was I?"
+     — and the hub is where that is answered now (D30). Bookmarks and typed
+     URLs land here; the menu no longer does.
+
+     Placed before the fetch below on purpose: a redirected request pays for
+     neither the framework nor the assessment, so the no-parameter path costs
+     less than it did. The per-journey cost is a different question and it went
+     UP — nav click, redirect, hub render, then a human click to get here,
+     where it used to be one render. That is the click D30 accepted, recorded
+     rather than claimed away. */
+  if (!c) redirect(ASSESS_HUB);
   // The row and its scores in one request. This screen renders nothing from the
   // person, the profile or the target snapshot, and a PM loads it 132 times.
   const [fw, mine] = await Promise.all([getAssesseeFramework(), findAssessmentWithScores(user)]);
@@ -44,10 +56,13 @@ export default async function AssessPage({
   }
   const { row, scores } = mine;
 
-  /* Where an unaddressed /assess lands (decision D12, revised by the owner).
-     The menu used to open control 1 every time, so a PM sixty controls in had
-     to find their own place. It now returns them to the control they were last
-     on — including one they had gone back to re-read, which "first unanswered"
+  /* Where an `?c=` naming an unknown or inactive control lands (D12, revised).
+     An ADDRESSLESS /assess no longer reaches this code at all — it redirected
+     to the hub above — and the menu no longer points here either. What is left
+     is the narrower case of a stale bookmark or a hand-typed code.
+
+     The rule itself is unchanged: return the PM to the control they were last
+     on, including one they had gone back to re-read, which "first unanswered"
      would have overruled.
 
      The position is a cookie: a per-device convenience, not part of the
@@ -63,7 +78,9 @@ export default async function AssessPage({
   const remembered = (await cookies()).get("cap.last")?.value;
   const resume = (remembered && fw.controlByCode(remembered)?.active ? remembered : null)
     ?? firstUnanswered?.code;
-  if (!c && !resume && row.state === "draft") redirect("/assess/controls");
+  // (The old `!c` bail-out to /assess/controls lived here. It is unreachable
+  // now that an addressless /assess redirects to the hub above, and the hub
+  // owns that decision for every state including "everything is answered".)
   const code = c && fw.controlByCode(c)?.active
     ? c
     : (resume ?? fw.activeControls[0].code);

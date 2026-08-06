@@ -59,9 +59,15 @@ that was paid once already.
   service "to be safe"; the allowlist select in `lib/auth.ts` is the
   per-request revocation check, and it is already paid for. This one habit
   cost ~290ms on every save until it was measured.
-- **Round trips are counted, not estimated.** A warm save is exactly 4
-  Supabase calls, asserted by e2e from the server's own log. Any change that
-  adds a per-request call must move that number knowingly, in the same PR.
+- **Round trips are counted, not estimated.** A warm commit + navigation is
+  exactly 5 Supabase calls — 3 for the commit (app_user, find assessment,
+  write) and 2 for the navigation GET — asserted by e2e from the server's own
+  log. Any change that adds a per-request call must move that number knowingly,
+  in the same PR. (This rule said "a warm save is exactly 4" until 2026-08-06.
+  That figure was true of PR #19 and was superseded by PR #20, which made the
+  commit a server action with the navigation beside it; the e2e assertion moved
+  and this line did not. A review pass caught the two disagreeing. The number
+  to trust is the one in `scripts/e2e.mjs`, because it is the one that runs.)
 - **Performance claims come from `npm run perf:save` (or the phase logs),
   never from reasoning about where time "must" be going.** Four asserted
   mechanisms in a row were wrong before measurement; the rule exists because

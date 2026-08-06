@@ -264,6 +264,10 @@ auth round trip is gone; **one JWKS fetch** (66ms, then module-globally
 cached); **15 viewer-memo hits at 2–3ms** — the memo works under Fluid.
 Save action median **194ms** (baseline 229–276ms); the render after a save
 **8–88ms** (baseline 130–210ms); round trips per save **4, as the e2e
-asserts**. Server work per save ≈ **280ms**, from ~450–550ms. The sign-in
+asserts**. (Superseded: PR #20 made the commit a server action with the
+navigation beside it, and the e2e now asserts **5** for commit + navigation —
+3 for the commit, 2 for the navigation GET. The 4 above is the correct
+historical record of THIS arc and is left standing; `scripts/e2e.mjs` is the
+current number.) Server work per save ≈ **280ms**, from ~450–550ms. The sign-in
 POST itself remains slow (~1.4s) — cold instance plus Supabase's deliberate
 password hashing, once per session, out of scope here.

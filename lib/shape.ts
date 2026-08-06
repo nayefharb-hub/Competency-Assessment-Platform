@@ -1,5 +1,6 @@
 import type { Control, Measure, Score } from "./types.ts";
 import { estimateMinutes, measureIndex, type Estimate } from "./duration.ts";
+import { ASSESS_HUB } from "./routes.ts";
 
 /**
  * The shape of the work: areas → competence elements → controls.
@@ -38,6 +39,35 @@ export interface AreaShape {
 /** Controls whose self_level is set, as a set of codes. */
 export function scoredCodes(scores: Score[]): Set<string> {
   return new Set(scores.filter((s) => s.self_level !== null).map((s) => s.control_code));
+}
+
+/**
+ * Has this PM answered everything they are being asked to answer?
+ *
+ * Extracted because the hub and the control list were computing it separately,
+ * and a review found the hub's copy carrying a comment asserting they "cannot
+ * disagree". They agreed by coincidence, not by construction. That is the same
+ * defect this change set exists to remove from navigation, so it should not be
+ * reintroduced one file over.
+ *
+ * THE SERVER'S SUBMIT PRECONDITION IS DELIBERATELY NOT A THIRD CALLER.
+ * `submitSelfAssessment` works from `control_id` (it has the score rows, not
+ * the framework), while this works from `code`. Two of three share the seam;
+ * the third would need a key extractor to join them, and pretending otherwise
+ * in this comment is how the last "cannot disagree" claim got written.
+ *
+ * ACTIVE CONTROLS ONLY. ICB4 ships 133 controls and one is inactive; an
+ * inactive control contributes nothing to any rollup and must never be able to
+ * hold an assessment open.
+ *
+ * AN EMPTY FRAMEWORK IS NOT A FINISHED ASSESSMENT. `[].every()` is `true`, so
+ * without the length guard a framework fetch that came back empty would put
+ * "Review and submit" in front of a PM who has answered nothing — the hub
+ * offering to hand a zero-control assessment to the Head of PMO. Caught by a
+ * /review pass reading the boundary rather than the happy path.
+ */
+export function isComplete(active: Control[], scored: Set<string>): boolean {
+  return active.length > 0 && active.every((c) => scored.has(c.code));
 }
 
 /**
@@ -157,7 +187,7 @@ export function nextAfter(
   const areaComplete = area.scored === area.controls;
   if (nextArea) {
     return {
-      href: "/assess/areas", done: "area", complete: areaComplete,
+      href: ASSESS_HUB, done: "area", complete: areaComplete,
       label: areaComplete
         ? `${area.name} complete — next: ${nextArea.name}`
         : `${area.name} — ${area.scored} of ${area.controls} scored`,

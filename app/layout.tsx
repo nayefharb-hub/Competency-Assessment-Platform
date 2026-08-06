@@ -3,6 +3,7 @@ import Link from "@/app/link";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { currentUser } from "@/lib/auth";
+import { ASSESS_HUB } from "@/lib/routes";
 import { currentTheme } from "./theme-server";
 import ThemeToggle from "./theme-toggle";
 import OutboxBanner from "./outbox-banner";
@@ -51,7 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
             {user && (
               <nav className="nav" aria-label="Main">
-                <Link href="/assess">Self-assessment</Link>
+                <Link href={ASSESS_HUB}>Self-assessment</Link>
                 <Link href="/results">Results</Link>
                 {/* Shown to everyone, on purpose (D21). This is where a PM
                     reads their own pace, and a measurement of someone's
