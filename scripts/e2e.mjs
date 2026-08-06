@@ -17,6 +17,7 @@
  * No credentials needed beyond the Supabase keys: the suite creates its own QA
  * admin and PMs, and deletes them afterwards.
  */
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { createClient } from "@supabase/supabase-js";
@@ -57,8 +58,28 @@ const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
   auth: { persistSession: false },
 });
 
-const PM = { email: "qa.pm1@example.test", name: "QA Test PM One", password: "QaTestPm1!pass" };
-const OTHER = { email: "qa.pm2@example.test", name: "QA Test PM Two", password: "QaTestPm2!pass" };
+/**
+ * Fixture passwords are GENERATED PER RUN, never written down here.
+ *
+ * They used to be literals, and this repository is public. That is only safe
+ * for as long as cleanup never misses, because a fixture account that outlives
+ * its run is a real, sign-in-able account on the real allowlist whose password
+ * anyone can read on GitHub — and one of these fixtures is an admin. A /cso
+ * pass on 2026-08-06 found exactly that shape already sitting in the database:
+ * two accounts from an interrupted pace run, one of them admin, still
+ * authenticating. Those came from an ad-hoc script rather than this file, which
+ * is the point — the convention published here is what makes any such leftover
+ * guessable.
+ *
+ * A per-run secret makes a leftover account inert: nobody, including us, knows
+ * its password once the process exits. Cleanup still has to work (see
+ * teardown), but it is no longer the only thing standing between a crashed test
+ * run and an admin login on a public URL.
+ */
+const qaPassword = () => `Qa${randomBytes(15).toString("base64url")}1!`;
+
+const PM = { email: "qa.pm1@example.test", name: "QA Test PM One", password: qaPassword() };
+const OTHER = { email: "qa.pm2@example.test", name: "QA Test PM Two", password: qaPassword() };
 /**
  * The suite brings its own admin rather than borrowing a real one. Two reasons:
  * a real account gets `must_change_password` set and would be redirected out of
@@ -67,7 +88,7 @@ const OTHER = { email: "qa.pm2@example.test", name: "QA Test PM Two", password: 
  */
 const BOSS = {
   email: "qa.admin@example.test", name: "QA Assessor",
-  password: "QaAdmin1!passw", role: "admin",
+  password: qaPassword(), role: "admin",
 };
 
 let pass = 0, fail = 0;
@@ -191,9 +212,36 @@ async function teardown() {
   if (tornDown) return;
   tornDown = true;
   console.log("\nCleaning up QA data and accounts…");
-  await purge(PM.email);
-  await purge(OTHER.email);
-  await purge(BOSS.email);
+
+  /*
+   * Purge by PATTERN, not by the three names this file happens to know.
+   *
+   * The named purges below cover the fixtures declared at the top. They do NOT
+   * cover the transient accounts created inside a test block (qa.added,
+   * qa.orphan), which purge themselves at both ends of their own block and are
+   * therefore stranded by a crash in the middle. They also do not cover a
+   * fixture from some OTHER script pointed at the same database.
+   *
+   * Both gaps were real. A /cso pass on 2026-08-06 found qa.pace.pm and
+   * qa.pace.boss — an interrupted ad-hoc pace run, one of them an admin whose
+   * password still authenticated against production, sitting on the allowlist
+   * for hours. This teardown had already NOTICED them: the two checks below
+   * were red, naming both accounts, run after run. It reported and moved on.
+   *
+   * A cleanup step that can see the mess and is not allowed to clear it just
+   * teaches everyone to skim the red line. So sweep every @example.test
+   * account, then assert. The assertions stay: they now catch a purge that
+   * FAILED rather than one that was never attempted.
+   */
+  const { data: allQa } = await db.from("app_user").select("email").like("email", "%@example.test");
+  const { data: authAll } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const qaEmails = new Set([
+    PM.email, OTHER.email, BOSS.email,
+    ...(allQa ?? []).map((u) => u.email),
+    ...(authAll?.users ?? []).map((u) => u.email).filter((e) => e?.endsWith("@example.test")),
+  ]);
+  for (const email of qaEmails) await purge(email);
+
   const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
   check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
     (leftovers ?? []).map((u) => u.email).join(","));
@@ -205,9 +253,9 @@ async function teardown() {
   await browser.close().catch(() => {});
 }
 
-process.on("uncaughtException", (err) => {
+function crashed(label, err) {
   fail++;
-  console.log(`\n  ✗ SUITE CRASHED — ${String(err?.message ?? err).split("\n")[0]}`);
+  console.log(`\n  ✗ SUITE ${label} — ${String(err?.message ?? err).split("\n")[0]}`);
   const where = String(err?.stack ?? "").split("\n").find((l) => l.includes("e2e.mjs"));
   if (where) console.log(`    ${where.trim()}`);
   teardown()
@@ -216,7 +264,23 @@ process.on("uncaughtException", (err) => {
       console.log(`\n${pass} passed, ${fail} failed${skipped.length ? `, ${skipped.length} SKIPPED (${skipped.join("; ")})` : ""}`);
       process.exit(1);
     });
-});
+}
+
+process.on("uncaughtException", (err) => crashed("CRASHED", err));
+
+/*
+ * The other three ways this process can die, all of which used to skip cleanup
+ * and leave live accounts on the real allowlist.
+ *
+ * `uncaughtException` alone was never the whole set. A rejected promise nobody
+ * awaited, and Ctrl-C — the ordinary way a human ends a run that is taking too
+ * long — both walked straight past teardown. That is the likeliest route by
+ * which the qa.pace accounts survived.
+ */
+process.on("unhandledRejection", (err) => crashed("HIT AN UNHANDLED REJECTION", err));
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => crashed("INTERRUPTED", new Error(`received ${sig}`)));
+}
 
 /**
  * Chromium intermittently aborts a main-frame navigation with
@@ -2021,7 +2085,9 @@ console.log("\n[12] People screen (A1)");
   const ORPHAN = "qa.orphan@example.test";
   await purge(ORPHAN);
   const madeOrphan = await db.auth.admin.createUser({
-    email: ORPHAN, password: "OrphanOld1!aa", email_confirm: true,
+    // Per-run, like every other fixture password: an orphan that survives a
+    // crash must not be sign-in-able by anyone reading this file.
+    email: ORPHAN, password: qaPassword(), email_confirm: true,
   });
   check("fixture: an orphaned sign-in account exists", !madeOrphan.error, madeOrphan.error?.message);
   const { data: noRow } = await db.from("app_user").select("id").eq("email", ORPHAN).maybeSingle();

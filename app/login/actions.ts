@@ -15,6 +15,23 @@ export interface SignInState {
 }
 
 /**
+ * Long enough to cover both branches with headroom (the slower was ~249ms when
+ * measured from outside the region; production runs in the same region as the
+ * database and is faster). Short enough that a mistyped password does not feel
+ * broken. See the note on signIn for what this defends.
+ */
+const FAILURE_FLOOR_MS = 600;
+
+/** One refusal, one duration, whatever the reason underneath. */
+async function refuse(startedAt: number, email: string): Promise<SignInState> {
+  const spent = Date.now() - startedAt;
+  if (spent < FAILURE_FLOOR_MS) {
+    await new Promise((resolve) => setTimeout(resolve, FAILURE_FLOOR_MS - spent));
+  }
+  return { error: GENERIC, email };
+}
+
+/**
  * Sign in — returns failure, redirects on success.
  *
  * WHY IT RETURNS RATHER THAN REDIRECTS ON FAILURE (N23). It used to bounce to
@@ -32,28 +49,63 @@ export interface SignInState {
  * The message stays IDENTICAL for wrong password, no such account, and not
  * invited. Distinguishing them would let an outsider enumerate the pilot's
  * staff list one address at a time.
+ *
+ * WHY THE ALLOWLIST IS CHECKED SECOND, AND WHY FAILURE HAS A FLOOR (/cso
+ * finding 2, 2026-08-06). The identical message used to be undone by the clock.
+ * The allowlist select ran FIRST and returned on a miss, so an uninvited address
+ * never reached signInWithPassword and came back roughly a quarter of a second
+ * sooner than an invited one. Measured against the live project: the password
+ * verification the fast path skipped cost ~249ms median against ~135ms for an
+ * address with no account at all. An attacker posts candidate addresses with any
+ * password, times the replies, and reads the pilot's roster off the difference —
+ * no password guessed, and no auth rate limit touched, because the fast path
+ * never reached Supabase Auth.
+ *
+ * So the password is now verified FIRST, for every address, and the allowlist is
+ * consulted afterwards. Round trips are unchanged on the success path (two
+ * either way) and one FEWER on a wrong password.
+ *
+ * The floor covers what reordering cannot. Supabase Auth is itself measurably
+ * slower for an address it knows than one it does not, and in this app knowing
+ * the address and being on the allowlist are the same fact, so the oracle would
+ * survive at reduced volume. Padding every refusal to a fixed minimum flattens
+ * it. It is a floor rather than a fixed duration: a refusal already slower than
+ * FAILURE_FLOOR_MS is not padded, so a loaded database can still leak a little.
+ * Closing that completely means answering on a timer regardless of when the work
+ * finishes, which costs every honest typo the full delay.
  */
 export async function signIn(_prev: SignInState, formData: FormData): Promise<SignInState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/");
 
+  // Not padded: this answer depends on nothing but what the caller sent, so it
+  // discloses nothing about who exists. Padding it would only make an empty
+  // field feel slow.
   if (!email || !password) return { error: GENERIC, email };
 
-  // Allowlist first: app_user is the invitation list, so an account that Supabase
-  // Auth would happily authenticate still gets no session if it is not invited.
-  // `role` rides along on a select that already runs — no extra round trip on
-  // the sign-in path. It decides the landing below.
+  const startedAt = Date.now();
+
+  // The password is verified for EVERY address, invited or not. That is what
+  // makes the two outcomes cost the same; see the note above.
+  const auth = await authClient();
+  const { error } = await auth.auth.signInWithPassword({ email, password });
+  if (error) return refuse(startedAt, email);
+
+  // Now the allowlist. app_user is the invitation list, so an account Supabase
+  // Auth was happy to authenticate still gets no session if it is not invited —
+  // and the session just created has to be thrown away, or an uninvited account
+  // would leave here holding a cookie. `role` rides along and decides the
+  // landing below.
   const invited = await db()
     .from("app_user")
     .select("id, role")
     .eq("email", email)
     .maybeSingle();
-  if (invited.error || !invited.data) return { error: GENERIC, email };
-
-  const auth = await authClient();
-  const { error } = await auth.auth.signInWithPassword({ email, password });
-  if (error) return { error: GENERIC, email };
+  if (invited.error || !invited.data) {
+    await auth.auth.signOut();
+    return refuse(startedAt, email);
+  }
 
   // Only ever bounce to an in-app path. See safeNext: the old inline regex let
   // "/\t/evil.com" through, which the browser resolves to https://evil.com/.
