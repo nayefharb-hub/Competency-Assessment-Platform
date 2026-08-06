@@ -283,12 +283,15 @@ h1, h2, h3 {
 /* N31 — the competency, made legible.
    It was carried only inside .crumb at 12px/muted, above a 17px control title,
    so the unit the rollup aggregates into was the least visible thing on the
-   screen. Sized between the crumb and the control title on DESIGN.md's scale:
-   the control is still what you read, but you can no longer lose track of what
-   you are being assessed ON. */
+   screen. Now at 14px — the top of DESIGN.md's "small 13–14" step — in --ink,
+   between the 12px crumb and the 17px control title: the control is still what
+   you read, but you can no longer lose track of what you are being assessed ON.
+   Not --selected: that token means "interactive / chosen", and in dark theme it
+   resolves to the same value as --accent, so a semibold line in it directly
+   above the heading read as a link that is not one. */
 .ce-name {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
-  font-size: 14.5px; font-weight: 650; color: var(--selected);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  font-size: 14px; font-weight: 650; color: var(--ink);
   margin: 0 0 8px;
 }
 /* E4 — how far the nearest stopping point is. Deliberately quiet: it is
@@ -303,11 +306,21 @@ h1, h2, h3 {
    not be taller than the panel it replaces: the N14 guarantee is that the
    primary action is reachable without scrolling, and this card carries one. */
 .milestone { text-align: left; }
+/* --accent, not a success green. There was a `var(--ok, var(--accent))` here
+   pointing at a token that exists nowhere, so the fallback always won and the
+   next reader would have believed a success token existed. DESIGN.md reserves
+   green (--ready) for the health tiers, and a finished competency is not a
+   health signal — it is a completed step. */
 .milestone-tick {
-  font-size: 22px; line-height: 1; color: var(--ok, var(--accent));
-  margin: 0 0 6px;
+  font-size: 22px; line-height: 1; color: var(--accent);
+  margin: 0 0 8px;
 }
 .milestone-title { font-size: 17px; font-weight: 650; margin: 0 0 4px; }
+/* Focused programmatically when the card swaps in, so the heading announces
+   itself and Tab starts here rather than at the top of the document. The ring
+   would otherwise be the browser default on a heading nobody clicked. */
+.milestone-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.milestone-title:focus:not(:focus-visible) { outline: none; }
 .milestone-sub { margin: 0 0 12px; }
 .milestone-next { margin: 12px 0 0; }
 .milestone-offline { margin: 12px 0 0; color: var(--ink-muted); }
@@ -318,18 +331,35 @@ h1, h2, h3 {
    before moving on, and a recap you cannot act on is decoration. */
 .milestone-revise {
   display: grid; grid-template-columns: auto 1fr auto; align-items: baseline;
-  gap: 10px; width: 100%; text-align: left;
+  gap: 8px; width: 100%; text-align: left;
   appearance: none; background: none; border: 0; cursor: pointer;
   font: inherit; font-size: 12.5px; color: var(--ink);
   padding: 8px 4px; border-radius: 6px;
+  /* --surface-2 and a 150ms ease, matching .opt — the closest analogue, a row
+     you click to change an answer. --bg is the page canvas, which is DARKER
+     than the card in light theme and would have moved this row the opposite
+     way from every other hover in the app under dark theme. */
+  transition: background 0.15s;
 }
-.milestone-revise:hover { background: var(--bg); }
+.milestone-revise:hover:not(:disabled) { background: var(--surface-2); }
 .milestone-revise:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.milestone-revise:disabled { cursor: default; opacity: 0.55; }
 .milestone-code { color: var(--ink-muted); font-size: 11.5px; }
 .milestone-indicator {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .milestone-level { color: var(--ink-muted); font-size: 11.5px; white-space: nowrap; }
+.milestone-just { color: var(--accent); }
+
+/* Touch: these rows are the only revise affordance on the card, and below
+   1100px they are the primary touch targets on a screen whose radio rows are
+   ~57px. 8px padding gave ~35px — over WCAG 2.5.8's 24px floor but well under
+   the 44px guideline, and noticeably finer-grained than the control the PM was
+   just using. The largest competence element is 6 controls, so this costs at
+   most ~54px on a card that is already shorter than the panel it replaces. */
+@media (max-width: 1099px) {
+  .milestone-revise { min-height: 44px; padding: 11px 6px; }
+}
 
 .assess-nav {
   display: flex; align-items: center; justify-content: space-between;

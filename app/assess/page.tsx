@@ -90,21 +90,31 @@ export default async function AssessPage({
   const pos = fw.controlPosition(code);
   const { prev, next } = fw.neighbours(code);
 
-  /* Where "Next" goes at the end of a competence element (D25). A CE is the
-     sitting, so its last control does not walk into the next CE's first —
-     finishing is a moment, and continuing is a choice. The last CE of an area
-     steps up one further. shapeOf() derives this in memory from data already
-     fetched; no extra round trip on the path two PRs were spent making fast. */
+  /* What sits at the end of a competence element (D25, revised by N32). A CE is
+     still the sitting and finishing it is still a moment — but the moment now
+     happens IN PLACE, and Continue carries the run into the next competency
+     rather than ejecting the PM to a list 28 times per assessment. `nextAfter`
+     reports counts and never decides completeness; the client adds the answers
+     the server has not seen. shapeOf() derives all of it in memory from data
+     already fetched — no extra round trip on the path two PRs were spent
+     making fast. */
   const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
     fw.data.areas.map((a) => a.name));
   const milestone = nextAfter(areas, control);
 
   /* The recap needs the PM's answers for the competency that just ended. No new
      query: findAssessmentWithScores already returned every score for the
-     assessment in one embedded select, so this is a lookup over data in hand. */
-  const byCode = new Map(scores.map((s) => [s.control_code, s.self_level ?? null]));
+     assessment in one embedded select, so this is a lookup over data in hand.
+
+     Built only when there IS a milestone. `nextAfter` returns null for every
+     control that is not last-in-CE — 104 of the 132 — so without the guard four
+     of five loads of this route allocated a 132-entry array and a 132-entry Map
+     and then read nothing out of either. */
   const ceLevels: Record<string, number | null> = {};
-  for (const c of milestone?.controls ?? []) ceLevels[c.code] = byCode.get(c.code) ?? null;
+  if (milestone) {
+    const byCode = new Map(scores.map((s) => [s.control_code, s.self_level ?? null]));
+    for (const c of milestone.controls) ceLevels[c.code] = byCode.get(c.code) ?? null;
+  }
 
   /* E4 — where the PM is inside THIS competency, so the nearest natural
      stopping point is always visible. Same in-memory shape, no extra cost. */
@@ -112,19 +122,20 @@ export default async function AssessPage({
     .find((c) => c.code === control.ce_code);
   const ceProgress = here
     ? {
-        code: here.code,
-        name: here.name,
         /* POSITION, not answered-count. "3 of 5 in this competency" has to mean
            "you are on the third of five", which is what tells a PM how far the
            nearest stopping point is. An answered-count would jump around when
-           they skip, and read as progress they have not made. */
+           they skip, and read as progress they have not made.
+
+           The name and code are NOT carried here — the heading below renders
+           them from `fw.ceOf`, and two sources for one fact is the defect this
+           whole change set exists to remove. */
         position: here.controls.findIndex((c) => c.code === control.code) + 1,
         total: here.controls.length,
       }
     : null;
 
   const score = scores.find((s) => s.control_code === code);
-  const answered = scores.filter((s) => s.self_level !== null).length;
   const locked = row.state !== "draft";
 
   return (
@@ -133,10 +144,18 @@ export default async function AssessPage({
         <Link className="btn btn-secondary btn-sm" href={`/assess/area/${encodeURIComponent(control.area)}`}>
           ← {control.area}
         </Link>
+        {/* "N scored so far" used to sit here. It was dropped when the
+            milestone stopped navigating: this line is rendered by the server,
+            the milestone now appears without a navigation, and the save action
+            deliberately calls no revalidatePath — so the count sat one behind
+            reality, on screen, directly above a card announcing the competency
+            was complete. The competency-scoped "3 of 5" added below does the
+            orientation job better and locally, and the assessment-wide count
+            still leads the hub and the controls list, which are the screens
+            whose job is reporting progress. */}
         <span className="note">
           Control <b className="tnum">{pos}</b> of{" "}
-          <b className="tnum">{fw.activeControls.length}</b> ·{" "}
-          <b className="tnum">{answered}</b> scored so far · you can jump back to any control
+          <b className="tnum">{fw.activeControls.length}</b> · you can jump back to any control
         </span>
       </div>
 

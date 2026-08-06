@@ -482,7 +482,14 @@ const assessmentOf = async (email) =>
     .is("deleted_at", null).maybeSingle()).data;
 
 const { data: activeControls } = await db
-  .from("control").select("id, code, target_level").eq("active", true).order("sort_order").limit(5000);
+  /* ce_id is needed by [16] to find the largest competence element and to skip
+     a control OUTSIDE the one under test. It is `ce_id` on this table — the app
+     exposes `ce_code`, which lib/framework.ts maps. Selecting the wrong name
+     left every value undefined, so a filter meant to pick one competency
+     silently matched all 132 controls and a test meant to skip one seeded every
+     one of them, and still reported green. */
+  .from("control").select("id, code, ce_id, target_level")
+  .eq("active", true).order("sort_order").limit(5000);
 
 /* ---------------------------------------------------- 1. invite-only auth */
 console.log("\n[1] Invite-only auth");
@@ -2626,11 +2633,17 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
   const asmt = await assessmentOf(PM.email);
   const idFor = (code) => activeControls.find((c) => c.code === code).id;
 
+  /* Captured BEFORE seed() mutates it, and restored at the end of the block.
+     "Safe because nothing after [16] reads it" made this section permanently
+     order-last by comment rather than by construction. */
+  const { data: fixtureState } = await db.from("assessment")
+    .select("state, submitted_at, approved_at").eq("id", asmt.id).single();
+
   const seed = async (codes) => {
     /* Back to DRAFT first. By this section the suite has already submitted and
        approved this assessment, and a locked panel has no radio to click — the
        first run of this block died in page.check with a 30s timeout rather
-       than a useful failure. Safe here because nothing after [16] reads it. */
+       than a useful failure. */
     await db.from("assessment")
       .update({ state: "draft", submitted_at: null, approved_at: null })
       .eq("id", asmt.id);
@@ -2654,24 +2667,27 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     await seed([]);
     const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
     const page = await open(ctx, "4.3.1.3");
-    const ceName = await page.locator(".ce-name").innerText();
+    const ceEl = page.locator(".ce-name");
+    check("E1: the competency line is on the page at all", (await ceEl.count()) === 1);
+    const ceName = await ceEl.innerText();
     check("E1: the competency is named at heading weight, not buried in the crumb",
       /4\.3\.1\s+Strategy/.test(ceName), JSON.stringify(ceName));
     check("E4: and says where in it the PM is",
       /3\s+of\s+5\s+in this competency/i.test(ceName), JSON.stringify(ceName));
-    const weight = await page.locator(".ce-name").evaluate((el) =>
-      Number(getComputedStyle(el).fontWeight));
+    const weight = await ceEl.evaluate((el) => Number(getComputedStyle(el).fontWeight));
     check("E1: at a weight that actually reads as a heading", weight >= 600, String(weight));
     await ctx.close();
   }
 
   /* --- FM1: a competency finished by SKIPPING must not claim to be complete --- */
   {
-    await seed(["4.3.1.1"]);                       // 4.3.1.2-.4 skipped
+    await seed(CE.slice(0, 1));                    // 4.3.1.2-.4 skipped
     const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
     const page = await open(ctx, "4.3.1.5");
     await page.check('input[name="level"][value="3"]');
-    const label = await page.locator(".assess-actions button").first().innerText();
+    const act = page.locator(".assess-actions button").first();
+    check("FM1: there is an action button to read", (await act.count()) === 1);
+    const label = await act.innerText();
     check("FM1: skipping leaves the competency open — no finish, no milestone",
       !/finish this competency/i.test(label), JSON.stringify(label));
     await page.click('.assess-actions button');
@@ -2683,16 +2699,18 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
 
   /* --- FM2 (N30): the answer ON SCREEN counts, before it is committed --- */
   {
-    await seed(["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4"]);   // all but the last
+    await seed(CE.slice(0, 4));                    // all but the last
     const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
     const page = await open(ctx, "4.3.1.5");
 
-    const before = await page.locator(".assess-actions button").first().innerText();
+    const action = page.locator(".assess-actions button").first();
+    check("N30: there is an action button to read", (await action.count()) === 1);
+    const before = await action.innerText();
     check("N30: with nothing picked yet, the button does not promise a finish",
       !/finish this competency/i.test(before), JSON.stringify(before));
 
     await page.check('input[name="level"][value="4"]');
-    const after = await page.locator(".assess-actions button").first().innerText();
+    const after = await action.innerText();
     /* THIS IS THE REGRESSION. Before the fix the label was computed from
        persisted scores only, so picking the fifth answer changed nothing and
        the button still read "Back to the list" — the same screen promising
@@ -2700,7 +2718,9 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     check("N30: picking the fifth answer completes the competency, immediately",
       /finish this competency/i.test(after), JSON.stringify(after));
 
-    const hint = await page.locator('.note[role="status"]').first().innerText();
+    const hintEl = page.locator('.note[role="status"]').first();
+    check("N30: the commit hint is on screen", (await hintEl.count()) === 1);
+    const hint = await hintEl.innerText();
     check("N30: and the hint names the button that is actually on screen",
       /finish this competency/i.test(hint), JSON.stringify(hint));
 
@@ -2715,20 +2735,24 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
       page.url());
     const card = await page.locator(".milestone").innerText();
     check("the milestone names what was finished", /Strategy complete/i.test(card), JSON.stringify(card.slice(0, 80)));
-    check("E3: it recaps every control in the competency",
-      (await page.locator(".milestone-recap li").count()) === 5,
-      `${await page.locator(".milestone-recap li").count()} rows`);
+    const rows = page.locator(".milestone-recap li");
+    const rowCount = await rows.count();
+    check("E3: it recaps every control in the competency", rowCount === 5, `${rowCount} rows`);
+    const lastRow = rowCount ? await rows.last().innerText() : "";
     check("E3: including the answer just given, which the server has not seen yet",
-      /Proficient/i.test(await page.locator(".milestone-recap li").last().innerText()),
-      await page.locator(".milestone-recap li").last().innerText());
+      /Proficient/i.test(lastRow), JSON.stringify(lastRow));
+    check("E3: and marks which one was just answered", /just now/i.test(lastRow), JSON.stringify(lastRow));
     check("it names what comes next", /4\.3\.2/.test(card), JSON.stringify(card.slice(0, 200)));
     check("E4: taking a break is offered beside continuing",
       (await page.locator('.milestone a:has-text("Take a break")').count()) === 1);
+    check("every recap row is actionable while online",
+      (await page.locator(".milestone-revise:disabled").count()) === 0);
 
     /* N14 still holds on the card that replaced the panel. */
     for (const [w, h] of [[1280, 900], [1024, 768], [390, 844]]) {
       await page.setViewportSize({ width: w, height: h });
-      const btn = await page.locator('.milestone button:has-text("Continue")').boundingBox();
+      const cont = page.locator('.milestone button:has-text("Continue")');
+      const btn = (await cont.count()) === 1 ? await cont.boundingBox() : null;
       check(`the milestone's Continue is on screen without scrolling at ${w}x${h}`,
         !!btn && btn.y + btn.height <= h, btn ? `bottom ${Math.round(btn.y + btn.height)} > ${h}` : "no button");
     }
@@ -2737,7 +2761,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     /* Continue carries the run on, into the NEXT competency's first control. */
     await page.click('.milestone button:has-text("Continue")');
     await page.waitForSelector(".optlist");
-    check("N32: Continue lands on the next competency's first control",
+    check("N32: Continue lands on the next competency's first UNANSWERED control",
       page.url().includes("c=4.3.2.1"), page.url());
     check("...and the milestone does not survive the move",
       (await page.locator(".milestone").count()) === 0);
@@ -2779,27 +2803,307 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     await ctx.close();
   }
 
-  /* --- A1: offline, the milestone still appears and says why Continue cannot --- */
+  /* --- E3: a recap row goes to the control it names --- */
   {
-    await seed(["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4"]);
+    await seed(CE.slice(0, 4));
     const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
     const page = await open(ctx, "4.3.1.5");
-    await page.check('input[name="level"][value="3"]');
-    await ctx.setOffline(true);
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
     await page.click('.assess-actions button:has-text("Finish this competency")');
-    await page.waitForSelector(".milestone", { timeout: 10_000 });
-    check("A1: offline, the milestone still appears — they did finish it",
-      (await page.locator(".milestone").count()) === 1);
-    check("A1: Continue is disabled rather than dead",
-      await page.locator('.milestone button:has-text("Continue")').isDisabled());
-    check("A1: and the card says why",
-      /offline/i.test(await page.locator(".milestone").innerText()));
-    await ctx.setOffline(false);
+    await committed;
+    await page.waitForSelector(".milestone");
+
+    /* The rows had no coverage at all: one that rendered but navigated nowhere
+       passed the whole suite. */
+    const row2 = page.locator(".milestone-recap li:nth-child(2) .milestone-revise");
+    check("E3: a recap row exists to click", (await row2.count()) === 1);
+    await row2.click();
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("E3: it goes to the control it names", page.url().includes("c=4.3.1.2"), page.url());
+    check("E3: and the answer already given is shown, not a blank panel",
+      await page.locator('input[name="level"][value="3"]').isChecked());
     await ctx.close();
   }
 
-  // Leave the fixture as the rest of the suite expects it.
+  /* --- the row for the control you are STANDING on dismisses the card ---
+     It is always the last row, because the milestone only rises on the last
+     control of a competency — so it is the answer just given and the one most
+     likely to be revised. It used to push its own URL, which is a no-op, while
+     `reached` stayed true because none of its effect's deps had changed. The
+     most clickable row on the card did nothing. */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone");
+
+    const last = page.locator(".milestone-recap li:last-child .milestone-revise");
+    check("the row for the current control is present", (await last.count()) === 1);
+    await last.click();
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("clicking it returns to the panel rather than doing nothing",
+      (await page.locator(".milestone").count()) === 0);
+    check("…without leaving the control", page.url().includes("c=4.3.1.5"), page.url());
+    check("…and the answer just given is still selected",
+      await page.locator('input[name="level"][value="4"]').isChecked());
+    await ctx.close();
+  }
+
+  /* --- FM3: answers still in the OUTBOX count toward the milestone ---
+     The regression this section exists for. The outbox enqueues and navigates
+     in the same breath, so the save POST races the next page's render; the
+     first cut corrected the server's count by +1, for one control, and a PM
+     answering at speed got no milestone at all. Reproduced deterministically by
+     mirroring a queued answer into localStorage — which is exactly what the
+     outbox does — while the tab is offline so it cannot drain. */
+  {
+    await seed(CE.slice(0, 3));                    // .4 queued, .5 on screen
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.4");
+
+    /* THE RACE, REPRODUCED HONESTLY. Failing only the save POST leaves the
+       answer in the outbox exactly as a slow network would, while GETs still
+       work so the run can carry on — which is the situation the first cut got
+       wrong. Seeding localStorage instead would have tested the mirror, not
+       the race, and taking the tab offline would have stopped the navigation
+       that puts the PM in front of the next control at all. */
+    await page.route("**/assess**", (route) =>
+      route.request().method() === "POST" ? route.abort() : route.continue());
+
+    await page.check('input[name="level"][value="3"]');
+    await page.click('.assess-actions button:has-text("Next control")');
+    await page.waitForURL(/c=4\.3\.1\.5/, { timeout: 15_000 });
+    await page.waitForSelector(".optlist");
+
+    const { data: unsent } = await db.from("score").select("control_id")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.4")).maybeSingle();
+    check("FM3: the fourth answer really is unsent — the server has no row for it",
+      unsent === null, JSON.stringify(unsent));
+
+    const btn = page.locator(".assess-actions button").first();
+    await page.check('input[name="level"][value="4"]');
+    check("FM3: a queued answer counts — the button promises the finish",
+      /finish this competency/i.test(await btn.innerText()), await btn.innerText());
+    await btn.click();
+    await page.waitForSelector(".milestone", { timeout: 10_000 });
+    check("FM3: …and the milestone actually appears", (await page.locator(".milestone").count()) === 1);
+
+    const recap = await page.locator(".milestone-recap").innerText();
+    check("FM3: the queued answer reads as answered, not 'not answered'",
+      !/not answered/i.test(recap), JSON.stringify(recap));
+
+    /* A1, on the same card: the connection drops WHILE the milestone is up.
+       This is the direction the first cut could not handle at all — `offline`
+       was read once during render and closed over, so the card never learned
+       the connection had gone and Continue stayed live all the way to Chrome's
+       error page. Asserting the transition, not the initial state. */
+    await ctx.setOffline(true);
+    const cont = page.locator('.milestone button:has-text("Continue")');
+    await page.waitForFunction(
+      () => document.querySelector(".milestone button.btn-primary")?.disabled === true,
+      null, { timeout: 10_000 },
+    ).catch(() => {});
+    check("A1: the milestone stays up — they did finish the competency",
+      (await page.locator(".milestone").count()) === 1);
+    check("A1: Continue goes disabled when the connection drops under it",
+      (await cont.count()) === 1 && await cont.isDisabled());
+    const revise = page.locator(".milestone-revise").first();
+    check("A1: the recap rows are disabled too — they navigate the same way",
+      (await revise.count()) === 1 && await revise.isDisabled());
+    const brk = page.locator('.milestone button:has-text("Take a break")');
+    check("A1: and taking a break says it cannot, rather than silently doing nothing",
+      (await brk.count()) === 1 && await brk.isDisabled());
+    check("A1: the card says why", /offline/i.test(await page.locator(".milestone").innerText()));
+
+    /* A1 recovery — the half the card promises and nothing asserted. */
+    await ctx.setOffline(false);
+    await page.waitForFunction(
+      () => !document.querySelector(".milestone button.btn-primary")?.disabled,
+      null, { timeout: 10_000 },
+    ).catch(() => {});
+    check("A1: Continue comes back when the connection does",
+      (await cont.count()) === 1 && await cont.isEnabled());
+    await page.unroute("**/assess**");
+    await ctx.close();
+  }
+
+  /* --- the assessment is not 'finished' because you stood on its last control --- */
+  {
+    /* Everything answered EXCEPT one control in an earlier competency. The PM
+       then answers the very last control of the framework. Positionally that is
+       the end; actually it is not, and the card must not say it is. */
+    const last = activeControls[activeControls.length - 1];
+    const lastCe = activeControls.filter((c) => c.ce_id === last.ce_id);
+    const skipped = activeControls[0];
+    const rest = activeControls.filter(
+      (c) => c.code !== skipped.code && !lastCe.some((l) => l.code === c.code));
+    await db.from("score").delete().eq("assessment_id", asmt.id);
+    await db.from("score").insert(
+      [...rest, ...lastCe.slice(0, -1)].map((c) => ({
+        assessment_id: asmt.id, control_id: c.id, self_level: 3,
+      })));
+
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, last.code);
+    await page.check('input[name="level"][value="3"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click(".assess-actions button");
+    await committed;
+    await page.waitForSelector(".milestone", { timeout: 10_000 });
+    const card = await page.locator(".milestone").innerText();
+    check("a control skipped elsewhere means the card does NOT claim the assessment is done",
+      !/every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+    check("…and it says how many are still owed",
+      /still need a score|needs a score/i.test(card), JSON.stringify(card.slice(0, 200)));
+    await ctx.close();
+  }
+
+  /* --- FM6: N14 holds on the TALLEST card the framework can produce --- */
+  {
+    const byCe = new Map();
+    for (const c of activeControls) byCe.set(c.ce_id, (byCe.get(c.ce_id) ?? 0) + 1);
+    const [biggestCe, size] = [...byCe.entries()].sort((a, b) => b[1] - a[1])[0];
+    const inCe = activeControls.filter((c) => c.ce_id === biggestCe);
+    await db.from("score").delete().eq("assessment_id", asmt.id);
+    await db.from("score").insert(inCe.slice(0, -1).map((c) => ({
+      assessment_id: asmt.id, control_id: c.id, self_level: 3,
+    })));
+
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, inCe[inCe.length - 1].code);
+    await page.check('input[name="level"][value="3"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click(".assess-actions button");
+    await committed;
+    await page.waitForSelector(".milestone");
+    check(`FM6: the tallest competency has ${size} controls`,
+      size >= 5 && size <= 10, `${size} — expected the ICB4 maximum, 3-6`);
+    for (const [w, h] of [[1280, 900], [1024, 768], [390, 844]]) {
+      await page.setViewportSize({ width: w, height: h });
+      const primary = page.locator(".milestone .assess-actions .btn").first();
+      const box = (await primary.count()) === 1 ? await primary.boundingBox() : null;
+      check(`FM6: the ${size}-control card keeps its action on screen at ${w}x${h}`,
+        !!box && box.y + box.height <= h,
+        box ? `bottom ${Math.round(box.y + box.height)} > ${h}` : "no action button");
+    }
+    await ctx.close();
+  }
+
+  /* --- FM5: time spent ON the milestone is not charged to the control --- */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await new Promise((r) => setTimeout(r, 1_500));          // read the control
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone");
+    await new Promise((r) => setTimeout(r, 4_000));          // linger on the card
+    await page.click('.milestone button:has-text("Continue")');
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+
+    const { data: row } = await db.from("score").select("dwell_ms")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.5")).maybeSingle();
+    /* The clock is read at commit, before the card exists, so four seconds of
+       admiring it must not land on the control. Cheap to break silently — a
+       later refactor that read the clock in `continueRun` would sail through
+       every other assertion here. */
+    check("FM5: dwell is the time on the CONTROL, not the time on the milestone",
+      row?.dwell_ms != null && row.dwell_ms < 4_000,
+      `dwell_ms=${row?.dwell_ms}`);
+    await ctx.close();
+  }
+
+  /* --- E2: Enter continues from the card, and auto-repeat does not skip it --- */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="4"]');
+    // check() leaves focus on the radio, and the handler ignores anything
+    // originating in a form control — as it must, so digits typed into the
+    // evidence field are text rather than a silent re-score.
+    await page.evaluate(() => document.activeElement?.blur());
+
+    /* Hold Enter. The panel commits on the first keydown and the card mounts
+       within a frame; without the card arming only after a keyup, the repeat
+       lands on Continue and the milestone flashes past — defeating the feature
+       via the keyboard support built to serve it. */
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.keyboard.down("Enter");
+    await new Promise((r) => setTimeout(r, 600));            // OS auto-repeat window
+    await committed;
+    check("E2: a held Enter does not skip straight past the milestone",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    await page.keyboard.up("Enter");
+
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("E2: a fresh Enter continues the run", page.url().includes("c=4.3.2"), page.url());
+    await ctx.close();
+  }
+
+  /* --- the boundary commit's round-trip cost, counted rather than assumed ---
+     CLAUDE.md: "Round trips are counted, not estimated." This PR creates a
+     SECOND commit shape — no navigation — on 28 of 132 commits, and the
+     existing budget assertion runs mid-competency where `nextAfter` returns
+     null, so it never touches this path. */
+  {
+    const LOG = process.env.E2E_SERVER_LOG;
+    if (LOG) {
+      const { readFileSync } = await import("node:fs");
+      await seed(CE.slice(0, 4));
+      const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+      const page = await open(ctx, "4.3.1.5");
+      await page.check('input[name="level"][value="4"]');
+      await new Promise((r) => setTimeout(r, 2_200));        // past the viewer-memo TTL
+      const mark = readFileSync(LOG, "utf8").length;
+      const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+      await page.click('.assess-actions button:has-text("Finish this competency")');
+      await committed;
+      await page.waitForSelector(".milestone");
+      await new Promise((r) => setTimeout(r, 500));
+      const commitLines = readFileSync(LOG, "utf8").slice(mark)
+        .split("\n").filter((l) => l.includes("[supabase "));
+      check("a boundary commit costs 3 round trips — it navigates nowhere",
+        commitLines.length === 3, `${commitLines.length}: ${commitLines.join(" | ")}`);
+
+      /* Past the viewer-memo TTL before measuring, matching the warm-save
+         budget above. Inside it Continue costs 1, not 2, because the auth call
+         is still memoized — real and pleasant, but timing-dependent. The steady
+         state is what gets pinned: a human who pauses on the milestone long
+         enough to read the recap is past 2s by definition. */
+      await new Promise((r) => setTimeout(r, 2_200));
+      const mark2 = readFileSync(LOG, "utf8").length;
+      await page.click('.milestone button:has-text("Continue")');
+      await page.waitForSelector(".optlist", { timeout: 10_000 });
+      await page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 500));
+      const navLines = readFileSync(LOG, "utf8").slice(mark2)
+        .split("\n").filter((l) => l.includes("[supabase "));
+      check("and Continue costs the navigation's 2 — 5 across the pair, as before",
+        navLines.length === 2, `${navLines.length}: ${navLines.join(" | ")}`);
+      await ctx.close();
+    } else {
+      skip("the boundary commit's round-trip budget",
+        "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
+    }
+  }
+
+  /* Leave the fixture as the rest of the suite expects it. The state reset in
+     seed() is undone here rather than described in a comment, so appending a
+     section after this one does not inherit a draft assessment. */
   await db.from("score").delete().eq("assessment_id", asmt.id);
+  await db.from("assessment").update({ state: fixtureState.state,
+    submitted_at: fixtureState.submitted_at, approved_at: fixtureState.approved_at })
+    .eq("id", asmt.id);
 }
 
 /* ---------------------------------------------------------------- cleanup */

@@ -169,14 +169,32 @@ export interface Milestone {
   ce: { code: string; name: string; scored: number; total: number };
   /** Every control in it, in order — the recap the milestone card shows. */
   controls: { code: string; indicator: string | null }[];
-  /** Where Continue goes: the next control in framework order, or null at the end. */
+  /** Where Continue goes: the next competency's first UNANSWERED control. */
   nextControl: string | null;
   /** What the PM is about to start, for the "next up" line. */
   nextCe: { code: string; name: string } | null;
-  /** Which boundary this is — a competency, an area, or the whole assessment. */
+  /** Which boundary this is POSITIONALLY — a competency, an area, or the end. */
   done: "ce" | "area" | "assessment";
-  /** Named only when an AREA also ended here, so the card can say so. */
-  areaDone: string | null;
+  /**
+   * COUNTS, NOT VERDICTS, at the two wider scopes — for the same reason `ce` is
+   * a count. `done` is POSITIONAL: it says the PM stood on the last control of
+   * the last competency of an area, not that the area is finished.
+   *
+   * The first cut of N32 set `areaDone: area.name` unconditionally and rendered
+   * "· Perspective finished", and decided "Every competency scored" from
+   * `done === "assessment"` alone. The guard that had prevented exactly that
+   * (`area.scored === area.controls`) existed before N32 and was deleted rather
+   * than moved, so a PM who skipped one control in week one and then worked
+   * through the other 131 in order was told the assessment was finished and
+   * sent to a Submit the server refuses. Found by the review pass on this PR.
+   *
+   * These are PERSISTED counts. The client adds the answers it holds that the
+   * server has not seen, which can only ever understate: unseen answers outside
+   * this competency make the card say "Strategy complete" where it could have
+   * said more. Understating is a quieter card; overstating is a lie.
+   */
+  area: { name: string; scored: number; total: number };
+  assessment: { scored: number; total: number };
   /** Where "take a break" goes. Also the fallback if Continue cannot run. */
   listHref: string;
 }
@@ -206,35 +224,40 @@ export function nextAfter(
   const nextArea = areas[areaIndex + 1];
 
   /* The next competency in FRAMEWORK order, crossing into the next area when
-     this one is finished. Being at the last control of a CE means the linear
-     next control is exactly the next CE's first — so one lookup answers both
-     "what comes next" and "where does Continue go". */
+     this one is finished. */
   const nextCe = !isLastInArea ? area.ces[ceIndex + 1] : (nextArea?.ces[0] ?? null);
 
+  /* CONTINUE MEANS "THE NEXT THING YOU OWE ME", not "the next control in
+     order". Every other resume path in the app lands on `firstUnscored`
+     (app/assess/page.tsx, and the hub), and the assessment header explicitly
+     invites jumping around — "you can jump back to any control" — so a PM who
+     took that invitation would otherwise press Continue and land on a
+     pre-filled panel with no explanation. Falls back to the first control when
+     the next competency is already finished, which is the only sensible place
+     left to stand. */
   const base = {
     ce: { code: ce.code, name: ce.name, scored: ce.scored, total: ce.controls.length },
     controls: ce.controls.map((c) => ({ code: c.code, indicator: c.indicator })),
-    nextControl: nextCe?.controls[0]?.code ?? null,
+    nextControl: (nextCe?.firstUnscored ?? nextCe?.controls[0])?.code ?? null,
     nextCe: nextCe ? { code: nextCe.code, name: nextCe.name } : null,
+    area: { name: area.name, scored: area.scored, total: area.controls },
+    assessment: {
+      scored: areas.reduce((n, a) => n + a.scored, 0),
+      total: areas.reduce((n, a) => n + a.controls, 0),
+    },
   };
 
   if (!isLastInArea) {
-    return {
-      ...base,
-      done: "ce",
-      areaDone: null,
-      listHref: `/assess/area/${encodeURIComponent(area.name)}`,
-    };
+    return { ...base, done: "ce", listHref: `/assess/area/${encodeURIComponent(area.name)}` };
   }
   if (nextArea) {
-    return { ...base, done: "area", areaDone: area.name, listHref: ASSESS_HUB };
+    return { ...base, done: "area", listHref: ASSESS_HUB };
   }
   // ?saved=1 raises the save confirmation on the controls list. The last answer
   // of the assessment must not land silently, right before Submit.
   return {
     ...base,
     done: "assessment",
-    areaDone: area.name,
     nextControl: null,
     nextCe: null,
     listHref: "/assess/controls?saved=1",

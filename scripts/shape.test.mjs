@@ -112,13 +112,52 @@ test("continue points at the next competency's first control, across an area bou
   assert.equal(withinArea.done, "ce");
   assert.equal(withinArea.nextControl, "1.1.2.1");
   assert.equal(withinArea.nextCe.name, "Governance");
-  assert.equal(withinArea.areaDone, null);
 
   const acrossAreas = nextAfter(areas, controls[1]);
   assert.equal(acrossAreas.done, "area", "the last competency of an area ends the area too");
-  assert.equal(acrossAreas.areaDone, "People");
+  assert.equal(acrossAreas.area.name, "People");
   assert.equal(acrossAreas.nextControl, "2.1.1.1", "continue crosses into the next area");
   assert.equal(acrossAreas.nextCe.name, "Design");
+});
+
+test("Continue skips ahead to what the PM still owes, not to a control they answered", () => {
+  /* The header invites jumping around ("you can jump back to any control"), so
+     landing on the next competency's FIRST control drops a PM who took that
+     invitation onto a pre-filled panel with no explanation. Every other resume
+     path in the app uses firstUnscored; this is the same rule. */
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10), ctl("1.1.2.2", "People", "1.1.2", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set(["1.1.2.1"]));
+  const m = nextAfter(areas, controls[0]);
+  assert.equal(m.nextControl, "1.1.2.2", "1.1.2.1 is already answered — skip it");
+
+  // When the whole next competency is answered there is nowhere better to go.
+  const allDone = shapeOf(controls, ceOf, [], new Set(["1.1.2.1", "1.1.2.2"]));
+  assert.equal(nextAfter(allDone, controls[0]).nextControl, "1.1.2.1");
+});
+
+test("the milestone reports AREA and ASSESSMENT counts, and never a verdict", () => {
+  /* `done` is positional. The first cut set `areaDone: area.name` on that basis
+     alone and rendered "· People finished", so a PM who skipped a control in an
+     earlier competency was told the area was done. The guard that had prevented
+     exactly this was deleted rather than moved. These counts are what replaced
+     it — the client decides, from persisted + queued. */
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10),
+    ctl("2.1.1.1", "Practice", "2.1.1", 10),
+  ];
+  //                                 1.1.1.1 skipped, so the area is NOT finished
+  const areas = shapeOf(controls, ceOf, [], new Set(["1.1.1.2", "1.1.2.1"]), ["People", "Practice"]);
+  const m = nextAfter(areas, controls[2]);          // last control of 1.1.2 → ends People
+  assert.equal(m.done, "area", "positionally, yes");
+  assert.equal(m.area.total, 3);
+  assert.equal(m.area.scored, 2, "…but one control in this area has no answer");
+  assert.equal(m.assessment.total, 4);
+  assert.equal(m.assessment.scored, 2);
+  assert.ok(!("areaDone" in m), "no field may carry a verdict the server cannot know");
 });
 
 test("the end of the assessment has nowhere to continue to, and carries the save confirmation", () => {
@@ -187,8 +226,42 @@ test("the last competency of an area ends the area, and taking a break goes to t
   const areas = shapeOf(controls, ceOf, [], new Set());
   const m = nextAfter(areas, controls[0]);
   assert.equal(m.done, "area");
-  assert.equal(m.areaDone, "People");
+  assert.equal(m.area.name, "People");
   assert.equal(m.listHref, "/assess/areas");
+});
+
+test("the final competency still recaps itself and reports the assessment's own counts", () => {
+  /* The terminal branch used to be tested against a framework of ONE control,
+     so the fields the card leans on hardest at the very end — the recap rows
+     and the assessment count behind "Every competency scored" — were never
+     asserted at all. */
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10), ctl("1.1.1.2", "People", "1.1.1", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set(["1.1.1.1", "1.1.1.2"]));
+  const m = nextAfter(areas, controls[1]);
+  assert.equal(m.done, "assessment");
+  assert.equal(m.area.name, "People");
+  assert.deepEqual(m.controls.map((c) => c.code), ["1.1.1.1", "1.1.1.2"]);
+  assert.equal(m.assessment.scored, 2);
+  assert.equal(m.assessment.total, 2);
+  assert.equal(m.nextControl, null);
+  assert.equal(m.nextCe, null);
+});
+
+test("a skipped control elsewhere keeps the assessment count short of its total", () => {
+  /* This is the number that decides whether the card says "Every competency
+     scored". A PM who skipped one control in week one and then worked through
+     the rest in order reaches the last control positionally — and must not be
+     told they are finished, then handed to a Submit the server refuses. */
+  const controls = [
+    ctl("1.1.1.1", "People", "1.1.1", 10),
+    ctl("1.1.2.1", "People", "1.1.2", 10), ctl("1.1.2.2", "People", "1.1.2", 10),
+  ];
+  const areas = shapeOf(controls, ceOf, [], new Set(["1.1.2.1", "1.1.2.2"]));
+  const m = nextAfter(areas, controls[2]);
+  assert.equal(m.done, "assessment", "positionally the end");
+  assert.equal(m.assessment.total - m.assessment.scored, 1, "…with one control still owed");
 });
 
 test("a control mid-competency is not a boundary", () => {

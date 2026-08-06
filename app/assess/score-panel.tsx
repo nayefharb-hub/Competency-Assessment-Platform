@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/app/link";
 import { commit, pendingFor } from "@/lib/outbox";
@@ -58,6 +58,11 @@ export default function ScorePanel({
      and without navigating. Keyed off the control below so that arriving at a
      new control — including via Back — never lands on a stale milestone (FM7). */
   const [reached, setReached] = useState(false);
+  /* Answers for this competency sitting in the outbox, unseen by the server. */
+  const [queued, setQueued] = useState<Record<string, number>>({});
+  /* A navigation from the milestone is in flight. Without this, a held Enter or
+     a second click pushes the same URL twice and Back appears to do nothing. */
+  const [navigating, startNavigating] = useTransition();
 
   // Re-mounting is not guaranteed between controls (React reuses the tree when
   // only the query string changes), so the fields are re-seeded from the server
@@ -69,14 +74,61 @@ export default function ScorePanel({
     // the PM could look at it, accept it, and change nothing — and then the
     // queued answer would land on top of the choice they just made, with
     // nothing ever telling them. Seed from the queue when it has something.
-    const queued = pendingFor(control);
-    setLevel(queued ? queued.level : savedLevel);
-    setEvidence(queued ? (queued.evidence ?? "") : savedEvidence);
+    const queuedHere = pendingFor(control);
+    setLevel(queuedHere ? queuedHere.level : savedLevel);
+    setEvidence(queuedHere ? (queuedHere.evidence ?? "") : savedEvidence);
+
+    /* THE WHOLE COMPETENCY'S QUEUE, not just this control's.
+     *
+     * The outbox enqueues and navigates in the same breath (D9), so the save
+     * POST races the next page's RSC GET. A PM answering five controls at speed
+     * arrives at the fifth with only the first three landed — and the first cut
+     * of N32 corrected the server's count by exactly +1, for this control only.
+     * `3 + 1 >= 5` is false, so the milestone silently did not happen. Same PM,
+     * faster connection, it did. The design doc named this in advance (FM3, "a
+     * queued-but-unsent answer still counts toward the milestone") and the e2e
+     * missed it because it seeds prior scores straight into Postgres.
+     *
+     * Read in an EFFECT rather than during render: the outbox is client-only,
+     * so consulting it while rendering would make the server's HTML and the
+     * first client render disagree about the button's label. */
+    const q: Record<string, number> = {};
+    for (const c of milestone?.controls ?? []) {
+      const p = pendingFor(c.code);
+      if (p && p.level !== null) q[c.code] = p.level;
+    }
+    if (queuedHere && queuedHere.level !== null) q[control] = queuedHere.level;
+    setQueued(q);
+
     // A milestone belongs to the answer that produced it. Landing on any
     // control — forwards, or backwards with the browser button — starts from
     // the panel, never from a milestone someone already passed through.
     setReached(false);
-  }, [control, savedLevel, savedEvidence]);
+  }, [control, savedLevel, savedEvidence, milestone]);
+
+  /* Connectivity is STATE, not a value read once while rendering.
+   *
+   * The first cut read `navigator.onLine` in the render body and closed over
+   * it. Nothing in this component subscribes to anything, and once the
+   * milestone card is up there are no state updates at all, so the value froze
+   * at whatever it was when the card mounted: go offline and Continue stayed
+   * enabled (the exact D13 hard-navigation failure the card's own comments are
+   * organised around); come back online and it stayed disabled forever, beside
+   * copy promising the PM they could carry on. Mirrors app/offline-banner.tsx,
+   * which had this right already. */
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const sync = () => setOffline(navigator.onLine === false);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    window.addEventListener("pageshow", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+      window.removeEventListener("pageshow", sync);
+    };
+  }, []);
 
   // Remember where they are, so "Self-assessment" in the menu comes back HERE
   // (decision D12). A cookie rather than a database column: it is a per-device
@@ -135,30 +187,40 @@ export default function ScorePanel({
   const dirty = level !== savedLevel || evidence !== savedEvidence;
 
   /*
-   * IS THE COMPETENCY FINISHED — counting the answer on screen. This is N30.
+   * WHAT THE PM HAS ACTUALLY ANSWERED — server, then outbox, then this screen.
    *
-   * `milestone.ce.scored` is what the SERVER persisted, and the answer the PM
-   * is looking at has not been committed yet. Deciding from the server's count
-   * alone made the last control of a competency read "Back to the list" while
-   * the fifth answer sat uncommitted, and "Finish this competency" on a later
-   * visit — the same screen, two different promises, which is exactly what the
-   * owner reported.
+   * This is N30. The server render is always one answer behind at exactly the
+   * moment it matters (the last control of a competency), so the client has to
+   * add what it holds. The mistake worth not repeating is doing that with
+   * arithmetic: `scored + 1` can only ever correct for ONE control, and the
+   * outbox routinely holds several. Asking each control what its answer is
+   * makes the count and the recap agree by construction rather than by two
+   * expressions that happen to match.
    *
-   * So add the pending answer here, where it is known. `savedLevel === null`
-   * means the server has nothing for this control, so a level on screen is one
-   * the server has not counted — whether it was just picked or is sitting in
-   * the outbox waiting to send (the effect above seeds from the queue).
-   *
-   * This changes a LABEL and nothing else. `submitSelfAssessment` still counts
-   * for itself server-side, which is what stops a PM who skipped four of five
-   * controls being pointed at a Submit that would be refused.
+   * `submitSelfAssessment` still counts for itself server-side. This decides
+   * what the screen SAYS, never what the record holds.
    */
-  const answeredNow = level !== null && savedLevel === null ? 1 : 0;
+  const effectiveLevel = (code: string): number | null =>
+    code === control ? level : (ceLevels?.[code] ?? queued[code] ?? null);
+
   const ceComplete = milestone
-    ? milestone.ce.scored + answeredNow >= milestone.ce.total
+    ? milestone.controls.every((c) => effectiveLevel(c.code) !== null)
     : false;
 
-  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  /* Answers this client holds that the server has not counted. Only this
+     competency's are knowable here, which is why the wider claims can only
+     ever UNDERSTATE — see the Milestone docstring in lib/shape.ts. */
+  const ceNewlyAnswered = milestone
+    ? milestone.controls.filter(
+        (c) => (ceLevels?.[c.code] ?? null) === null && effectiveLevel(c.code) !== null,
+      ).length
+    : 0;
+  const areaRemaining = milestone
+    ? Math.max(0, milestone.area.total - milestone.area.scored - ceNewlyAnswered)
+    : 0;
+  const assessmentRemaining = milestone
+    ? Math.max(0, milestone.assessment.total - milestone.assessment.scored - ceNewlyAnswered)
+    : 0;
 
   function goNext() {
     if (level !== null && dirty) {
@@ -189,7 +251,18 @@ export default function ScorePanel({
         evidence: evidence.trim() || null,
         dwellMs: firstAnswer ? clock.current?.read(performance.now()) ?? null : null,
       });
+      // The queue is now newer than the server for this control. Record it here
+      // rather than re-reading the outbox during render, which would make the
+      // server's HTML and the first client render disagree.
+      setQueued((q) => ({ ...q, [control]: level }));
     }
+    /* Finishing a competency raises the milestone IN PLACE — no navigation, so
+       this happens whether or not the browser is online. The card disables
+       every action while offline and says why (review decision A1); withholding
+       the milestone would deny the PM the one moment that makes 132 controls
+       feel finishable, precisely when the app is already frustrating them. */
+    if (milestone && ceComplete) { setReached(true); return; }
+
     // Never ask the browser to navigate when it has told us it cannot
     // (decision D13). Measured: router.push falls back to a hard navigation,
     // which lands on Chrome's own error page — the app disappears, taking the
@@ -198,24 +271,52 @@ export default function ScorePanel({
     // costs nothing and keeps them inside the app.
     // The app-wide OfflineBanner explains this; app/link.tsx does the same for
     // every other navigation, so all of them behave alike when offline.
-    /* Finishing a competency raises the milestone IN PLACE — no navigation, so
-       this happens whether or not the browser is online. The card itself
-       disables Continue when offline and explains why (review decision A1);
-       withholding the milestone would deny the PM the one moment that makes
-       132 controls feel finishable, precisely when the app is already
-       frustrating them. */
-    if (milestone && ceComplete) { setReached(true); return; }
-
-    // Never ask the browser to navigate when it has told us it cannot (D13).
-    if (offline) return;
+    // Re-read rather than trusting the render-time value: the click can be
+    // arbitrarily long after the render that produced it.
+    if (offline || navigator.onLine === false) return;
     router.push(nextControl ? `/assess?c=${nextControl}` : "/assess/controls?saved=1");
   }
 
-  /** Continue, from the milestone. Always a navigation, so never offline. */
+  /** Every navigation out of the milestone. Offline, none of them may run. */
+  function leaveMilestone(href: string) {
+    if (offline || navigator.onLine === false || navigating) return;
+    /* Carry the resume cookie forward. It is written by the effect above from
+       `control`, which at a milestone is the competency the PM just FINISHED —
+       so without this, taking a break and coming back via the menu lands on
+       that last control, whose competency is now complete, whose only forward
+       action is "Finish this competency", and whose milestone therefore rises
+       again for work done days ago. The design doc lists honouring `cap.last`
+       as an explicit constraint of this flow. */
+    const target = milestone?.nextControl;
+    if (target) {
+      const secure = location.protocol === "https:" ? "; Secure" : "";
+      document.cookie =
+        `cap.last=${encodeURIComponent(target)}; path=/; max-age=${60 * 60 * 24 * 120}; SameSite=Lax${secure}`;
+    }
+    startNavigating(() => router.push(href));
+  }
+
+  /** Continue, from the milestone. */
   function continueRun() {
-    if (offline) return;
     const next = milestone?.nextControl;
-    router.push(next ? `/assess?c=${next}` : (milestone?.listHref ?? "/assess/controls?saved=1"));
+    leaveMilestone(next ? `/assess?c=${encodeURIComponent(next)}` : (milestone?.listHref ?? "/assess/controls?saved=1"));
+  }
+
+  /**
+   * Revise a control from the recap.
+   *
+   * THE ROW FOR THE CONTROL YOU ARE STANDING ON IS THE COMMON CASE, and it was
+   * the one that did not work: the milestone only ever renders on the last
+   * control of a competency, so that control is always the last recap row —
+   * the answer just given, the most likely one to want back. Pushing its own
+   * URL is a no-op, and `reached` is cleared only by the effect keyed on
+   * [control, savedLevel, savedEvidence], none of which change while the write
+   * is still in flight. So the button did nothing, precisely during the window
+   * where changing your mind matters.
+   */
+  function reviseControl(code: string) {
+    if (code === control) { setReached(false); return; }
+    leaveMilestone(`/assess?c=${encodeURIComponent(code)}`);
   }
 
   /*
@@ -230,10 +331,16 @@ export default function ScorePanel({
    * re-score the control. Anything originating in a form field or a button is
    * left entirely alone.
    */
+  /* NO DEPENDENCY ARRAY, DELIBERATELY. `onKey` reads `level` and calls
+     `goNext`, which reads `evidence` and `dirty` — all of which change every
+     render. Any partial array (`[level]`, `[locked, reached]`) would leave a
+     stale closure that commits the wrong evidence text, and no test would
+     necessarily catch it. The cost is one listener swap per render, against a
+     page whose floor is a ~31ms database call. Do not "tidy" this to `[]`. */
   useEffect(() => {
     if (locked || reached) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName)) return;
       if (el?.isContentEditable) return;
@@ -266,7 +373,9 @@ export default function ScorePanel({
    * rather than fixing the symptom.
    */
   const commitLabel = milestone && ceComplete
-    ? (milestone.done === "assessment" ? "Review before submitting" : "Finish this competency")
+    ? (milestone.done === "assessment" && assessmentRemaining === 0
+        ? "Review before submitting"
+        : "Finish this competency")
     : (nextControl ? "Next control" : "Review before submitting");
 
   if (reached && milestone) {
@@ -274,13 +383,16 @@ export default function ScorePanel({
       <MilestoneCard
         milestone={milestone}
         levels={levels}
-        /* The recap shows what the PM actually answered, which for the control
-           they just finished is the value on screen — the server has not seen
-           it yet. Same optimism as ceComplete, for the same reason. */
-        levelFor={(code) => (code === control ? level : ceLevels?.[code] ?? null)}
+        /* One function for the recap and for `ceComplete` above, so the card's
+           rows and its heading cannot disagree about the same answer. */
+        levelFor={effectiveLevel}
+        currentControl={control}
         offline={offline}
+        busy={navigating}
+        areaRemaining={areaRemaining}
+        assessmentRemaining={assessmentRemaining}
         onContinue={continueRun}
-        onRevise={(code) => router.push(`/assess?c=${code}`)}
+        onRevise={reviseControl}
       />
     );
   }
@@ -331,7 +443,14 @@ export default function ScorePanel({
           to infer the rule from the button's behaviour. */}
       {!locked && dirty && level !== null && (
         <p className="note" style={{ marginTop: 10 }} role="status">
-          Not saved yet — <b>{commitLabel}</b> saves it.
+          {/* Offline, a confirmed answer goes to the outbox and the screen does
+              not move — so the hint kept saying "Not saved yet" about an answer
+              that was already safe, and clicking again changed nothing visible.
+              `dirty` compares against the SERVER's value, which no navigation
+              refreshed; the queue is the other half of the truth. */}
+          {queued[control] === level
+            ? <>Saved on this device — it will send when you are back online.</>
+            : <>Not saved yet — <b>{commitLabel}</b> saves it.</>}
         </p>
       )}
 
