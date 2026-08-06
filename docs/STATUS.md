@@ -1,14 +1,19 @@
 # Project status & handoff
 
-Last updated: 2026-08-05 (the shape-of-the-work arc: PRs #22–#24 — areas/competencies, durations, stalls, and pace). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-06 (the navigation-and-security arc: PR #25 — one front door, form spacing, and two rounds of security fixes). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
 `0005` are applied (`0005` on 2026-08-05, by the owner, in the SQL Editor).
 Access-token lifetime was cut 60 min → 15 min the same day, and measured at
 900s rather than taken on trust. Pilot feedback from using it is logged in
-`docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
+`docs/pilot-feedback.md` (N1–N29, triaged); the plan for the rest is
 `docs/eng-plan-admin-and-ux.md`.
+
+Security posture was audited on 2026-08-06 (`/cso`, full pass) and the report is
+in `.gstack/security-reports/` — local only, gitignored, since it names live
+findings. Two were found and both are fixed; see the navigation-and-security arc
+below. Nothing outstanding above the reporting bar.
 
 ---
 
@@ -219,11 +224,13 @@ the single seam; it queries Supabase instead of `data/seed/icb4-framework.json`.
 The seed JSON stays in the repo as the source `supabase/seed.sql` was generated
 from — it is no longer read at runtime.
 
-Verified 2026-08-05 against the live database:
+Verified 2026-08-06 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **235/235** through a real browser against the running app,
+- `npm run test:unit` — **60/60** (TTL map, shape, pace, and the `safeNext`
+  redirect guard).
+- `npm run e2e` — **279 passed, 0 failed, 0 skipped** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
@@ -294,6 +301,61 @@ the rule above, the *outcome* is recorded and the *cause* is not claimed:
 Fluid's prewarming and the prefetch removal cannot be separated by this
 measurement. Full numbers and the two dead ends in `docs/pilot-feedback.md` →
 "Resolution (2026-08-05)".
+
+## The navigation-and-security arc (PR #25, D29–D32, N28)
+
+**One front door.** Three screens each claimed to "continue the assessment" and
+pointed at three different paths. `/assess/areas` was built as the way in and
+then left with a single inbound link, so nothing went red when the others
+drifted. Every entry point now resolves to `ASSESS_HUB` in `lib/routes.ts`, and
+the e2e reads that constant out of the app's own source rather than retyping the
+path — a literal in the test would have been one more copy to drift.
+
+The hub also grew from one state to four. It used to ask "is there an
+assessment?" and nothing else, which made it accidentally right for a draft and
+wrong for everything after. The draft-complete branch is the one that matters:
+Submit lives on a single screen, and the automatic hand-off at the end of scoring
+only fires when the last answer happens to land at the end of the final
+competency. Anyone finishing out of order reached 132 of 132 with a Continue
+button pointing at a question they had already answered and **no route to submit
+at all**.
+
+**Two security passes, and the second one mattered more.**
+
+`/cso` found a leftover QA fixture holding **admin on the production allowlist**,
+password still working, from an interrupted measurement run. It also found the
+identical sign-in error message undone by the clock: the allowlist was checked
+first and returned early, so an address that had never been invited answered
+~250ms sooner than one that had — the staff roster, one address at a time, no
+password guessed.
+
+`/review` then found that **the fixes for those were themselves broken.** Read
+this part, because it is the reusable lesson:
+
+- The open-redirect guard had been rewritten from a regex to URL parsing. That
+  closed the control-character bypass and reopened the hole one input over:
+  `/..//evil.com` → `//evil.com` → `https://evil.com/`. The origin check passed
+  honestly — it was asked about the *input*, and the escape happens in the
+  *output*. **Both checks are needed; neither is sufficient alone.**
+- Its test could not fail. Four hostile payloads driven through a real browser,
+  every one of them refused by the regex being replaced. The comment named the
+  escaping input and the test used a different one.
+- The new allowlist check collapsed "the query failed" with "no such row" and
+  called `signOut()`, which defaults to `scope: 'global'`. One slow moment on the
+  database would have told a legitimate user they were never invited and revoked
+  every session on every device. **That is N19, rebuilt on the sign-in path with
+  a wider blast radius** — see `lib/auth.ts`, which already carries the lesson.
+- "Fixture passwords are generated per run" was not true: six literals remained,
+  one of which overwrote a generated password and cleared the must-change flag.
+
+**What to take from it:** a fix for a security defect deserves the same
+adversarial pass as the original code, and a security test that has never been
+run against the vulnerable version is not evidence. Both fixes here were
+confirmed end to end by reading the actual redirect header before and after —
+not by reasoning about what the code should do. The first two attempts at that
+confirmation hit a **stale server** (`pkill -f "next start"` kills the parent,
+not the `next-server` child holding the port) and would have supported the
+opposite conclusion.
 
 ## Next step
 
@@ -402,6 +464,27 @@ Full rationale is in the design doc and `CLAUDE.md`; the short version:
 - **Targets snapshot at approval, never before.** Editing a target in the admin
   screen changes future rollups only; approved assessments keep their frozen
   values.
+- **There is exactly one way into the assessment** (D29/D30, 2026-08-06):
+  `ASSESS_HUB` in `lib/routes.ts`. An addressless `/assess` redirects there; the
+  menu points there; `/assess/controls` is a finder, not a front door. Do not add
+  a second entry point — three of them disagreeing is the defect this closed.
+- **`cap.last` powers the hub's Continue button, not a redirect** (D30). This
+  reversed the earlier D12, which resumed the menu straight into the remembered
+  control. The extra click is accepted, not a regression to fix.
+- **Landing by role happens at sign-in, not as a redirect on `/`** (D32).
+  Redirecting an assessee off the console on every visit would swallow the one
+  explanation a blocked person gets — `requireRole` bounces to `/?denied=1` and
+  the console renders that banner. Both doors (the sign-in action and the
+  already-signed-in `/login` visit) apply the same rule, deliberately.
+- **Fixture accounts get per-run passwords and are swept by pattern**
+  (2026-08-06). Never reintroduce a literal password for an `@example.test`
+  account: this repository is public, and a fixture that outlives its run is a
+  real login on the real allowlist. Cleanup must survive an unhandled rejection,
+  Ctrl-C, a dropped terminal and a second interrupt arriving mid-purge.
+- **`safeNext()` applies BOTH a parse and a shape check, to the OUTPUT.**
+  Removing either one reopens an open redirect on the page that has just asked
+  for a password. `scripts/routes.test.mjs` is the guard; it must keep at least
+  one payload that the *previous* implementation let through.
 - **Preview deployments reuse the production Supabase project, and are safe only
   because Vercel Authentication guards them** (2026-08-05). Environment variables
   are scoped to `Preview` as well as `Production` so preview URLs actually work —
