@@ -1,25 +1,31 @@
 # Eng plan: one front door, and form rows that are not touching
 
-Status: **NOT BUILT — NOT READY TO BUILD.** Derived from
+Status: **NOT BUILT — READY TO BUILD.** Derived from
 `docs/design-assessment-navigation.md` (decisions D29–D32, settled with the
 owner in `/office-hours`) and N28 in `docs/pilot-feedback.md`.
 
-**`/plan-eng-review` ran 2026-08-06 and found 7 issues. 3 decisions are still
-open — do not start Part 1 or Part 2 until they are answered.**
+**`/plan-eng-review` ran 2026-08-06, found 7 issues, and all 7 are now
+resolved. The owner answered the 3 open decisions the same day.**
 
-| # | Finding | Severity | State |
+| # | Finding | Severity | Resolution |
 |---|---|---|---|
-| 1 | Hub has no notion of a submitted assessment | P1 | **Resolved** → Part 1b, state-aware hub |
-| 2 | Hub URL hardcoded in 5 places | P2 | **Resolved** → Part 1c, `ASSESS_HUB` |
-| 3 | Submit becomes effectively unreachable | **P1, highest** | **OPEN** → Part 1bb |
-| 4 | `denied=1` banner swallowed; 3 e2e checks redden | P1 | **OPEN** → Part 2 |
-| 5 | Part 3's N14 risk analysis aimed at the wrong screen | P2 | **Corrected** in place |
-| 6 | Bundling rationale for Part 3 is factually false | P2 | **OPEN** → split PR? |
-| 7 | Three D12 checks, not two; they throw, not fail | P2 | **Corrected** in place |
+| 1 | Hub has no notion of a submitted assessment | P1 | Part 1b — state-aware hub |
+| 2 | Hub URL hardcoded in 5 places | P2 | Part 1c — `ASSESS_HUB` |
+| 3 | Submit becomes effectively unreachable | **P1, highest** | Part 1bb — **option A**, draft-complete state |
+| 4 | `denied=1` banner swallowed; 3 e2e checks redden | P1 | Part 2 — **option B**, login `next` default |
+| 5 | Part 3's N14 risk analysis aimed at the wrong screen | P2 | Corrected in place; `.field` scoped out of `.cols` |
+| 6 | Bundling rationale for Part 3 is factually false | P2 | **Split** — Part 3 ships as its own PR |
+| 7 | Three D12 checks, not two; they throw, not fail | P2 | Corrected in place |
 
 Findings 3, 4 and 5 came from an adversarial pass and were verified against the
 code before being written down. Finding 5 corrects an error made by this plan's
 own first review pass.
+
+**Build order, now that finding 6 is settled:**
+
+1. **PR one — Parts 1, 1b, 1bb, 1c and 2.** The routing change.
+2. **PR two — Part 3.** One CSS rule plus one assertion. Independent; can go
+   first or second, but not in the same diff.
 
 ## What is being built, in one line
 
@@ -27,7 +33,12 @@ Make every "start / continue the assessment" route land on the same hub, land
 people by role at sign-in, and give form rows the vertical spacing they have
 never had.
 
-## Why these two together
+## Why these two together — SUPERSEDED by finding 6, kept as record
+
+**Do not act on this section.** The argument below was shown to be false and
+the owner has agreed to split the two parts into separate PRs. It is retained
+so the next reader can see the reasoning that was rejected and why, rather than
+rediscovering it.
 
 Both are first-impression defects on the screens all nine PMs meet on day one,
 and the pilot has not started. The completion metric the prototype exists to
@@ -110,7 +121,7 @@ APPROVED   Your self-assessment
 Archived stays as it is — `NotAssigned` already distinguishes "never assigned"
 from "withdrawn", and remains the hub's answer for both.
 
-## Part 1bb — OPEN (finding 3): Submit becomes effectively unreachable
+## Part 1bb — RESOLVED (finding 3): Submit becomes effectively unreachable
 
 **The most severe finding, and it is not the same as 1b.** 1b fixes a wrong
 *label*; this is a **dead end at the terminal step** of the workflow whose
@@ -135,19 +146,38 @@ off"** pointing at an already-answered control. No Submit, no "you're done".
 Today `/` rescues them with "Continue self-assessment (132/132)". That rescue is
 what this plan deletes.
 
-Four options; **recommendation: A.**
+**Owner chose A (2026-08-06).** Add a fourth hub state, *draft-complete*: every
+active control answered, not yet submitted. The primary action becomes
+**"Review and submit"** pointing at `/assess/controls`, where `SubmitButton`
+already lives. Nothing is duplicated and the outbox-drain gate stays in one
+place.
 
-- **A** — add a fourth hub state, *draft-complete*: all 132 answered, not yet
-  submitted → primary action becomes "Review and submit" → `/assess/controls`.
-  Folds into the 1b state work.
-- **B** — put `SubmitButton` on the hub. Most direct, but duplicates a
-  component carrying the outbox-drain gate; two places must stay in step.
-- **C** — make `nextAfter`'s terminal branch fire on the 132nd answer
-  regardless of position. Fixes the common path, still strands a PM who
-  navigates away mid-flow.
-- **D** — leave it; the footnote is the route.
+Rejected: putting `SubmitButton` on the hub (duplicates the gate); changing
+`nextAfter`'s terminal branch (fixes the common path only, still strands a PM
+who navigates away mid-flow); leaving the footnote as the route.
 
-Awaiting owner.
+So the hub renders **four** states, not three:
+
+```
+DRAFT, incomplete    2 of 28 competencies · next: Perspective
+                     [Continue where you left off]
+
+DRAFT, complete      28 of 28 competencies scored
+                     [Review and submit →]
+
+SUBMITTED            Submitted 6 Aug · with the Head of PMO for review
+                     [View your answers]
+
+APPROVED             Approved 12 Aug
+                     [See your results]
+```
+
+Completeness is counted over **active** controls only — 132, not 133 — per the
+standing rule that an inactive control contributes nothing to any rollup. The
+hub already has what it needs: `shapeOf` returns per-area progress, and the
+existing `complete` flag on `/assess/controls` (`app/assess/controls/page.tsx:101`)
+is the same predicate. Reuse it rather than recomputing, so the hub and the
+list can never disagree about whether a PM is done.
 
 ## Part 1c — one route constant (review finding 2)
 
@@ -161,17 +191,24 @@ convention someone has to remember.
 
 ## Part 2 — land by role at sign-in (D32)
 
-`app/page.tsx`: an **assessee-only** user is redirected to `/assess/areas`.
-Anyone holding `assessor` or `admin` — including the owner, who holds both —
-keeps the console.
+**REVISED by finding 4 — this is a sign-in default, not a redirect on `/`.**
 
-The role check runs **before** `getFramework()` and `findAssessmentWithScores`,
-so a redirected PM pays for neither.
+The first draft redirected an assessee-only user off `app/page.tsx` on *every*
+visit, for the whole session. That is a different rule from the one the header
+describes, and it broke the denial banner (below). What lands instead:
+
+`app/login/form.tsx:28` — the post-sign-in `next` default becomes `ASSESS_HUB`
+for an **assessee-only** user. Anyone holding `assessor` or `admin` — including
+the owner, who holds both — keeps the console as their landing.
+
+`/` stays reachable for everyone. A PM who navigates there deliberately, or who
+is bounced there by `requireRole`, still gets the console and still gets the
+banner.
 
 This takes no position on whether one person should hold both roles. That is
 N25 and it stays open.
 
-### OPEN (finding 4) — this swallows the `denied=1` banner and reddens 3 e2e checks
+### RESOLVED (finding 4) — the first draft swallowed the `denied=1` banner
 
 `requireRole` redirects a blocked user to `/?denied=1` (`lib/auth.ts:223`), and
 `app/page.tsx:31` renders **the only explanation a PM ever gets** for being
@@ -192,16 +229,14 @@ Breaking now, and absent from both the test plan and the regression surface:
 
 All three assert `url().includes("denied=1")`.
 
-Two fixes. **Recommendation: the second.**
+**Owner chose the second fix (2026-08-06):** move the role landing to the
+`next` default in `app/login/form.tsx:28`, as written at the top of Part 2.
 
-1. Exempt `denied` from the redirect in `app/page.tsx`, mirroring the login page.
-2. Move the role landing to the `next` default in `app/login/form.tsx:28`.
-   This is what the header "land by role **at sign-in**" actually describes —
-   the current design is a redirect on *every* visit to `/` for the whole
-   session, which is a different rule and is what produces the bug. It leaves
-   `/` reachable and the banner intact.
-
-Awaiting owner.
+This is preferred over exempting `denied` in `app/page.tsx` because it removes
+the mechanism rather than patching around it. There is no redirect on `/` left
+to leak through, so the three checks above keep passing **unmodified** — they
+are regression surface, not tests to rewrite. Nothing new is needed to protect
+the banner; it simply never stops rendering.
 
 ## Part 3 — N28, form rows have no spacing at all
 
@@ -254,7 +289,7 @@ The six N14 checks still re-run, as the regression surface. The e2e must also
 assert the `/login` gap is non-zero, so the rule cannot be deleted later
 without a test going red — a 0px gap is invisible to every existing check.
 
-### OPEN (finding 6) — the stated reason for bundling Part 3 with Part 1 is false
+### RESOLVED (finding 6) — Part 3 ships as its own PR
 
 "Why these two together" claims both defects contaminate the completion metric.
 They do not: `started_at` is stamped on the **first save**
@@ -266,7 +301,12 @@ construction.
 That matters because the bundling drags a **global CSS change** onto the same
 diff as a **routing change on the hottest route**, mixing two unrelated blast
 radii into one `/review` and one bisect. Part 3 alone is ~1 rule plus 1
-assertion. **Recommendation: ship Part 3 as its own PR.** Awaiting owner.
+assertion.
+
+**Owner agreed (2026-08-06): Part 3 ships as its own PR.** The two are
+independent and can land in either order. "Why these two together" at the top
+of this document is retained only as the record of a rejected rationale — it is
+not a reason to bundle them.
 
 ## Test plan
 
@@ -296,32 +336,50 @@ The resume *behaviour* still exists — it moved to the hub's button — so the
 checks become: the nav lands on the hub, and the hub's Continue goes to the
 remembered control including one already answered.
 
-**New — 13 gaps from the coverage audit:**
+**New — 15 gaps from the coverage audit** (13 from the first pass, plus 2 that
+the owner's answers to findings 3 and 4 introduced). PR one carries 1–14; PR
+two carries 15.
 
 | # | Assertion | Why |
 |---|---|---|
-| 1 | assessee-only sign-in lands on the hub | D32 |
+| 1 | assessee-only **sign-in** lands on the hub | D32, via the login `next` default |
 | 2 | assessor/admin sign-in lands on the console | D32 |
 | 3 | dual-role sign-in lands on the console | D32, the owner's own case |
-| 4 | nav "Self-assessment" resolves to `ASSESS_HUB` | D30 |
-| 5 | landing "Continue" resolves to `ASSESS_HUB` | D31 |
-| 6 | Results "Pick up where you left off" resolves to `ASSESS_HUB` | D31 |
-| 7 | **a submitted assessment shows NO Continue button** | finding 1 — CRITICAL |
-| 8 | a submitted assessment names its submitted date and offers "View your answers" | finding 1 |
-| 9 | an approved assessment offers Results | finding 1 |
-| 10 | the hub itself returns 200 and does not redirect | loop guard |
-| 11 | hub still renders `NotAssigned` for never-assigned | it is now the only route to that message |
-| 12 | hub still renders `NotAssigned` + reason for withdrawn | same |
-| 13 | `/login` password-input → button gap is **> 0px** | N28; a 0px gap is invisible to every existing check |
+| 4 | **`/` still renders the console for an assessee who navigates there** | finding 4 — the mechanism is a sign-in default, not a redirect |
+| 5 | nav "Self-assessment" resolves to `ASSESS_HUB` | D30 |
+| 6 | landing "Continue" resolves to `ASSESS_HUB` | D31 |
+| 7 | Results "Pick up where you left off" resolves to `ASSESS_HUB` | D31 |
+| 8 | **all 132 answered → hub offers "Review and submit", NOT "Continue"** | finding 3 — CRITICAL, this is the dead end |
+| 9 | that button reaches a page carrying `SubmitButton` | finding 3 — the whole point is Submit stays reachable |
+| 10 | **a submitted assessment shows NO Continue button** | finding 1 — CRITICAL |
+| 11 | a submitted assessment names its submitted date and offers "View your answers" | finding 1 |
+| 12 | an approved assessment offers Results | finding 1 |
+| 13 | the hub itself returns 200 and does not redirect | loop guard |
+| 14 | hub renders `NotAssigned` for never-assigned **and** for withdrawn + reason | it is now the only route to those messages |
+| 15 | `/login` password-input → button gap is **> 0px** | N28; a 0px gap is invisible to every existing check |
 
-Assertions 4-6 compare against the exported `ASSESS_HUB`, not a literal, so a
+Assertions 5–7 compare against the exported `ASSESS_HUB`, not a literal, so a
 rename cannot leave a test agreeing with a stale copy of the route.
+
+**Assertion 8 is the one to write first.** It is the check that would have
+caught finding 3, and the scenario it must reproduce is a PM finishing *out of
+order* — answer the last control of Practice early, then complete a mid-CE
+control last. A test that simply answers all 132 in order passes through
+`nextAfter`'s terminal branch and proves nothing.
 
 **Re-point, do not rewrite:** the archive e2e checks ("the assessee is told it
 was withdrawn", "the reason is shown to them") currently navigate to `/assess`.
 That now redirects to the hub, which renders the same `NotAssigned`. They
 should pass unchanged — confirm rather than assume, and re-point the
 navigation if they do not.
+
+**Now regression surface, not new work (finding 4, option B):** the three
+`denied=1` checks at `scripts/e2e.mjs:583`, `:585` and `:1625`. Because the
+role landing moved to the login `next` default, `/` is never redirected away
+from and the banner never stops rendering — so these keep passing untouched.
+They are listed here because the first draft of this plan would have reddened
+all three, and their staying green is the proof that option B did what it
+claimed.
 
 **Unmodified regression surface:** the six N14 checks, the warm-save
 round-trip budget (5 round trips, one write), the blinding guards, and the
