@@ -131,14 +131,19 @@ one of two answers, and the answer is written down: *fix it*, or *why it is a
 false positive here*. A finding left un-triaged is the same as an unread
 warning — it trains the next reader to skip the list.
 
-**Access, as of 2026-08-05:** `sonarcloud.io` is **not reachable from the
-Claude Code environment** — the network policy blocks it and there is no
-`SONAR_TOKEN`, so findings cannot be fetched here. Until that changes the
-owner pastes them in, the same way Vercel log exports have been handled all
-along. To close the gap properly: allow `sonarcloud.io` in the environment's
-network policy and set `SONAR_TOKEN`, after which
-`GET /api/issues/search?componentKeys=<project>&resolved=false` can be read
-directly.
+**Access, re-measured 2026-08-06 — the previous entry here was wrong.**
+`sonarcloud.io` **is** reachable from this environment, and the project is
+public, so findings can be read with no `SONAR_TOKEN` at all:
+
+    curl -s "https://sonarcloud.io/api/issues/search?componentKeys=nayefharb-hub_Competency-Assessment-Platform&resolved=false&ps=100"
+
+So triage no longer waits on the owner pasting a list. What DOES still gate it:
+**the last analysis was 2026-08-04**, before PRs #19–#24, and SonarCloud only
+applies exclusions on the next run. Until Automatic Analysis is switched on (or
+a CI scanner is wired up), the API returns a stale list and reading it would be
+worse than not reading it — it describes a codebase four PRs ago.
+
+Re-measure rather than trusting this paragraph; it has been wrong once.
 
 Deliberately **not** "before every push". Most pushes here are documentation,
 and a full adversarial pass on a `STATUS.md` edit teaches everyone to skim the

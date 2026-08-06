@@ -20,12 +20,31 @@ script fails with "Missing SUPABASE_URL". Copy `.env.example` and fill in the
 four values from Supabase → Project Settings → API. Nothing else works until
 this exists.
 
-**2. Network access.** `*.supabase.co` must be in the environment's Network
-access allowlist (Custom + "include default package managers"), or the session
-cannot reach the database at all. `*.vercel.app` is **not** reachable from the
-agent sandbox and probably cannot be — so nothing an agent says about the
-deployed site is verified. Test the code locally against the real database;
-confirming production is the owner's step.
+**2. Network access — RE-MEASURED 2026-08-06, and the old claim was wrong.**
+`*.supabase.co` must be in the environment's Network access allowlist (Custom +
+"include default package managers"), or the session cannot reach the database
+at all.
+
+`*.vercel.app` **is now reachable** — production `/login` answers 200 with the
+real sign-in page. This file previously said it was not reachable "and probably
+cannot be"; that is retired. `sonarcloud.io` is reachable too (public project
+reads work with no token), which closes the access gap CLAUDE.md describes.
+
+Two things still limit what an agent can verify against the deployed site, and
+they are not network problems:
+
+- **Preview deployments are behind Vercel Deployment Protection.** Any preview
+  URL 302s to `vercel.com/sso-api`. Since a PR's preview is the only place
+  unmerged work runs, an agent cannot QA a PR's own deployment without a
+  Protection Bypass for Automation token — which belongs in an environment
+  variable, never pasted into chat.
+- **Production runs `main`,** so it only ever shows merged work.
+
+Re-measure rather than trusting this paragraph: `curl -s -o /dev/null -w '%{http_code}' https://competency-assessment-platform.vercel.app/login`.
+
+Note one good property found while probing: the middleware redirects EVERY
+unauthenticated path to `/login`, including routes that do not exist, so an
+outsider cannot fingerprint which build is live by probing for new routes.
 
 **3. The password gate is live.** Every account carries
 `must_change_password = true` until its owner replaces the password. On first
