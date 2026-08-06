@@ -1,7 +1,9 @@
 # Design: the assessment as one continuous run
 
-Status: **SCOPED — READY FOR `/plan-eng-review`.** Output of `/plan-ceo-review`
-on 2026-08-06, run at the owner's request against N32. Not built.
+Status: **APPROVED TO BUILD.** Output of `/plan-ceo-review` and
+`/plan-eng-review`, both run on 2026-08-06 at the owner's request against N32.
+Not built. See the review report at the end for the three engineering decisions
+and the fixed build order.
 
 Supersedes the navigation half of **D25** (see "What this reverses").
 
@@ -161,6 +163,51 @@ Every failure mode above gets an assertion. Specifically:
 - Pace: `dwell_ms` for the last control of a CE is unaffected by time spent on
   the milestone card.
 
+## Decisions from `/plan-eng-review` (2026-08-06)
+
+**A1 — the milestone renders offline, with Continue disabled.** `goNext()`
+returns at `score-panel.tsx:164` when `navigator.onLine === false`, *before* any
+navigation — correct today, because the boundary is a navigation. But the
+milestone's Continue is a navigation too, so an offline PM finishing a
+competency would have got a card whose primary action was dead.
+
+They genuinely completed the competency and the outbox genuinely holds their
+answers, so hiding the milestone would be the less honest option. The card
+renders, Continue is disabled and says why (answers saved, will send when the
+connection returns), and "take a break" stays live because leaving costs
+nothing. Consistent with D13 and with the reason the outbox exists.
+
+**C1 — extract `MilestoneCard` before building it.** `score-panel.tsx` is
+already 256 lines carrying the dwell clock, the position cookie, outbox seeding,
+dirty tracking and the commit path. The four items land it near 450. Two
+commits: a pure refactor with no behaviour change, proved by the existing tests,
+then the feature. `ScorePanel` keeps the timing and commit machinery;
+`MilestoneCard` owns completion, recap and Continue. The dwell-clock comments in
+`ScorePanel` are load-bearing documentation and a 450-line file buries them.
+
+**T1 — unit-test the boundary logic, keep e2e thin.** `nextAfter()` is a pure
+function, so every failure mode that matters is decidable without a browser:
+the false milestone on a skipped control, all four boundary shapes, the empty
+competency, the last control of the assessment. Those go in
+`scripts/shape.test.mjs` (currently 324ms). The e2e asserts only what unit tests
+cannot see — the card renders, Continue advances, Continue is disabled offline,
+and the layout holds at three viewports.
+
+Precedent: `scripts/routes.test.mjs` was created for exactly this reason after a
+review pass found the browser tests guarding `safeNext` had no power to fail.
+
+**Correction to this document:** it previously offered "defer to TODOS.md" as an
+option. There is no `TODOS.md` in this repository — the intake is
+`docs/pilot-feedback.md`. Deferred items go there.
+
+**Round trips.** This change DELETES 28 full page renders per assessment, each
+costing `requireUser` plus the framework plus `findAssessmentWithScores`. Per
+CLAUDE.md the number must move knowingly: the plan asserts it goes DOWN.
+Verified during review that none of the four expansions adds a query —
+`findAssessmentWithScores` (`lib/db/assessment.ts:402`) already returns every
+score for the assessment in one embedded select, and `shapeOf` already computes
+per-competency counts, so the recap and the counter are free.
+
 ## NOT in scope
 
 - Any change to scoring, the scale, submit/review/approve, the rollup, or the
@@ -186,3 +233,31 @@ cheap option that keeps that reachable without building it now.
 particular attention to failure modes 1, 2 and 6 — the first two because they
 have already bitten this codebase once each, the third because it is a
 guarantee that was expensive to establish and is easy to break by accident.
+
+## GSTACK REVIEW REPORT
+
+| Run | Status | Findings |
+|---|---|---|
+| `/plan-ceo-review` (2026-08-06) | COMPLETE | Approach B chosen over A and C; selective expansion; 4 expansions accepted (E1–E4); 7 failure modes recorded |
+| `/plan-eng-review` (2026-08-06) | COMPLETE | 3 findings raised, 3 decided; Step 0 complexity check did not trigger (6 files, 0 new services) |
+
+**Findings, by section**
+
+| # | Sev | Conf | Location | Finding | Outcome |
+|---|---|---|---|---|---|
+| A1 | P1 | 9/10 | `app/assess/score-panel.tsx:164` | The offline guard returns before any navigation, and the milestone's Continue is a navigation — an offline PM would get a dead primary action | Milestone renders offline, Continue disabled with the reason, break stays live |
+| C1 | P2 | 8/10 | `app/assess/score-panel.tsx` | 256-line component with three effects and two refs grows to ~450 with the four accepted items | Extract `MilestoneCard` in a separate no-behaviour-change commit first |
+| T1 | P2 | 9/10 | `lib/shape.ts` | Boundary logic is pure and fully decidable without a browser; e2e is a 6-minute loop with a track record of assertions passing for the wrong reason | Exhaustive unit tests on `nextAfter`, thin e2e for rendered behaviour only |
+
+**Section 4 (Performance): no issues found.** The change removes 28 page renders
+per assessment and adds no queries — verified against `lib/db/assessment.ts:402`
+and `shapeOf`.
+
+**VERDICT: APPROVED TO BUILD.** Scope is 6 files, zero new classes or services,
+net-negative on round trips. Build order is fixed by C1: refactor commit first,
+feature commit second. The two failure modes with historical precedent in this
+codebase — the false milestone (FM1) and the persisted-vs-optimistic count (FM2,
+which is N30) — must have their tests written to fail against today's code
+before the fix lands, or they are not tests.
+
+NO UNRESOLVED DECISIONS
