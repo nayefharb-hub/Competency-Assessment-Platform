@@ -6,3 +6,8 @@ build/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# Security audit reports. Local only, never committed: this repository is
+# public, and a report names the exact file, line and credential of anything it
+# finds. Publishing one hands an attacker the map before the fix has landed.
+.gstack/
