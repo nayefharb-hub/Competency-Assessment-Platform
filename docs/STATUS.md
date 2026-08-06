@@ -399,17 +399,35 @@ to assert that the server has not seen:
 **The contract that came out of it, which must not drift:** `nextAfter` reports
 `scored`/`total` at competency, area and assessment scope and **never** decides
 completeness. `done` is positional. The client adds the answers it holds —
-server, then outbox, then the screen — by asking each control for its answer
-rather than by arithmetic, so the count and the recap agree by construction. Any
-claim wider than the current competency can only ever **understate**, because
-the client cannot see queued answers elsewhere. Understating is a quieter card;
-overstating is a lie.
+server, then **this browser's own memory of what it confirmed**, then the screen
+— by asking each control for its answer rather than by arithmetic, so the count
+and the recap agree by construction. Any claim wider than the current competency
+can only ever **understate**, because the client cannot see answers given
+elsewhere. Understating is a quieter card; overstating is a lie.
 
-336 e2e / 0 failed, 69 unit. The six new regression tests were each run against
-the pre-fix build first and each failed there — including the two that the first
-run reported green because `activeControls` was selected without the
-competence-element key, so a filter meant to pick one competency matched all
-132.
+**N33 corrected the middle term, and it is the part to hold on to.** That memory
+used to be the OUTBOX, and the outbox answers a different question: "is this
+still unsent". The commit POST and the navigation GET leave together, and the
+GET is the shorter request — measured, the next control's render lands before
+the POST is even issued — so the server never has the previous answer; then the
+queue drops it the moment the write is acknowledged; then the effect keyed on
+the control overwrote the one map that still held it. Walking a competency, the
+milestone therefore never rose and the button read "Next control". `lib/outbox.ts`
+now keeps `answered`, which only grows, exported as `answeredLevel()`; the panel
+keeps `queued` (in flight, for the offline hint) and `known` (confirmed here,
+for completeness) as separate maps. **Do not collapse them again.**
+
+339 e2e / 0 failed / 0 skipped, 69 unit. Every new regression test was run
+against the pre-fix build first and failed there — including N33's, which failed
+loudly enough to take the suite down with it, which is why it now reports rather
+than throws. The six from the first review pass included two that reported green
+until `activeControls` was selected with the competence-element key, so a filter
+meant to pick one competency had been matching all 132.
+
+**A walked test is not the same test as a seeded one.** All six milestone checks
+arrived by `page.goto` with prior answers inserted into Postgres — the one route
+no PM takes — and every one of them passed against a build where the feature did
+not work at all. The suite now walks the competency.
 
 ## Next step
 

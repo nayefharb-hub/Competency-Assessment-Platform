@@ -2089,3 +2089,68 @@ exit.
 **Severity:** the single biggest drag on the experience the nine PMs are about
 to have, and the one most likely to affect completion rate — which is the metric
 this tool exists to move.
+
+### N33 — the milestone does not rise on the path a PM actually walks
+
+Owner, 2026-08-06, testing the N32 preview: *"the milestone moment only happens
+when i finish all competencies of an area … it is not consistent, sometime when
+I finish a competency it shows, most of the time it doesnt … sometime the
+control shows next control some time it shows complete competency."*
+
+**Both halves are one defect.** The button label and the milestone are derived
+from the same expression (`ceComplete` in `app/assess/score-panel.tsx`), which
+was the point of the N30 fix — one notion of "what happens next", so the hint
+and the button cannot disagree. When it is false the label reads "Next control"
+and no card appears. So "sometimes the label is wrong" and "sometimes the
+milestone is missing" are the same fact reported twice.
+
+**Reproduced on the first attempt, by walking rather than seeding.** Every
+milestone check in `scripts/e2e.mjs` [16] opens the last control with the
+earlier answers inserted straight into Postgres. Walking 4.3.1.1 → 4.3.1.5 by
+clicking, the way a PM does, fails every time:
+
+```
+  4.3.1.5: "Next control →"
+  milestone on screen after the fifth answer: NO
+  final url: /assess?c=4.3.2.1
+```
+
+**The mechanism, from the component's own state** (instrumented build, walked
+path, arriving at 4.3.1.5):
+
+```
+render  ceLevels {.1:3 .2:3 .3:3 .4:null}  queued {.4:3}  ceComplete true
+effect  ceLevels {.1:3 .2:3 .3:3 .4:null}  queued {}      ceComplete false
+```
+
+Three facts compose into a hole:
+
+1. The commit POST and the navigation GET leave together (D9), and the GET is
+   the shorter request — measured, the RSC response for the next control lands
+   *before the POST has even been issued*. So the server render of the next
+   control never contains the answer just given. Not a coin flip; every time.
+2. The outbox drops an entry the moment the server acknowledges it. `pendingFor`
+   answers "is this still unsent", which stops being true at exactly the wrong
+   moment.
+3. The effect keyed on the control **replaced** the map that did still hold the
+   answer with a fresh read of the outbox. The one place that knew overwrote
+   itself.
+
+So at the last control of a competency the previous control's answer was in
+neither source, `ceComplete` was false, and the run walked past the moment. It
+worked on a page LOAD — the server render then postdates every write — which is
+why the owner saw it at area ends, where a PM commonly comes back via the hub,
+and why a slow save (entry still queued when the effect runs) made it appear
+"sometimes".
+
+**Fix.** `lib/outbox.ts` now keeps `answered`, a session-scoped map of every
+answer this browser has confirmed, which only grows and is exported as
+`answeredLevel()`. The panel keeps two maps rather than one: `queued` (still in
+flight, drives the offline hint) and `known` (confirmed on this device, decides
+completeness). Neither the acknowledgement nor the effect can erase what the PM
+answered. No new round trip: the budget assertions still pass unchanged.
+
+**The lesson worth keeping.** The e2e suite had six checks on this screen and
+every one of them arrived by a route no PM takes. Seeding state into Postgres
+and opening the end of a competency tests the render; it cannot test the flow
+that produces the state. The new check walks the competency.

@@ -2774,6 +2774,53 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     await ctx.close();
   }
 
+  /* --- N33: the WALKED path. Every other check in this section opens the last
+     control with the earlier answers already in Postgres, which is the one
+     arrival a PM never makes. Walking the competency broke it: the commit POST
+     and the navigation GET leave together, so each render is taken before the
+     previous answer lands, and the outbox drops that answer the moment the
+     write is acknowledged. At 4.3.1.5 the answer to 4.3.1.4 was in neither
+     place, the button read "Next control" and the milestone never rose.
+     Reported by the owner from the preview: "sometimes it shows, most of the
+     time it doesn't". --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, CE[0]);
+
+    for (let i = 0; i < CE.length - 1; i++) {
+      await page.waitForSelector(".optlist");
+      await page.check('input[name="level"][value="3"]');
+      await page.click(".assess-actions button");
+      await page.waitForFunction(
+        (want) => new URL(location.href).searchParams.get("c") === want,
+        CE[i + 1], { timeout: 20_000 });
+    }
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="4"]');
+
+    const walked = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33: walking the competency reaches the fifth control as a finish, not a next",
+      /finish this competency/i.test(walked), JSON.stringify(walked));
+
+    await page.click(".assess-actions button");
+    /* Caught rather than thrown: a regression here means the milestone never
+       arrives, and a bare waitForSelector would take the rest of the suite down
+       with it — which is exactly what it did when this was first run against
+       the unfixed build. A regression test should report, not crash. */
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("N33: and the milestone rises on the walked path",
+      (await page.locator(".milestone").count()) === 1, page.url());
+
+    /* The recap has to show the answers the SERVER has not confirmed either —
+       the same memory that fixed the count feeds the rows. */
+    const walkedCard = (await page.locator(".milestone").count()) === 1
+      ? await page.locator(".milestone").innerText() : "(no milestone)";
+    check("N33: the recap answers every row, including the ones still settling",
+      !/not answered/i.test(walkedCard), JSON.stringify(walkedCard.slice(0, 240)));
+    await ctx.close();
+  }
+
   /* --- E2: the keyboard drives a whole control, and evidence still types --- */
   {
     await seed([]);

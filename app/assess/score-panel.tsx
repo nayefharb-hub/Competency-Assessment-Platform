@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/app/link";
-import { commit, pendingFor } from "@/lib/outbox";
+import { answeredLevel, commit, pendingFor } from "@/lib/outbox";
 import { createDwellClock, type DwellClock } from "@/lib/dwell";
 import type { Milestone } from "@/lib/shape";
 import MilestoneCard from "./milestone-card";
@@ -58,8 +58,12 @@ export default function ScorePanel({
      and without navigating. Keyed off the control below so that arriving at a
      new control — including via Back — never lands on a stale milestone (FM7). */
   const [reached, setReached] = useState(false);
-  /* Answers for this competency sitting in the outbox, unseen by the server. */
+  /* Answers for this competency still IN FLIGHT — what the offline hint talks
+     about. Not the same set as `known` below, and the difference is N33. */
   const [queued, setQueued] = useState<Record<string, number>>({});
+  /* Answers for this competency the PM has confirmed on this device, sent or
+     not. This is what decides whether the competency is finished. */
+  const [known, setKnown] = useState<Record<string, number>>({});
   /* A navigation from the milestone is in flight. Without this, a held Enter or
      a second click pushes the same URL twice and Back appears to do nothing. */
   const [navigating, startNavigating] = useTransition();
@@ -78,7 +82,7 @@ export default function ScorePanel({
     setLevel(queuedHere ? queuedHere.level : savedLevel);
     setEvidence(queuedHere ? (queuedHere.evidence ?? "") : savedEvidence);
 
-    /* THE WHOLE COMPETENCY'S QUEUE, not just this control's.
+    /* THE WHOLE COMPETENCY, not just this control.
      *
      * The outbox enqueues and navigates in the same breath (D9), so the save
      * POST races the next page's RSC GET. A PM answering five controls at speed
@@ -89,16 +93,31 @@ export default function ScorePanel({
      * queued-but-unsent answer still counts toward the milestone") and the e2e
      * missed it because it seeds prior scores straight into Postgres.
      *
+     * N33 IS WHY THERE ARE NOW TWO MAPS. Reading the QUEUE for completeness
+     * left a hole the previous fix could not see: the navigation GET is taken
+     * before the write lands, and the queue drops the entry the moment the
+     * write is acknowledged, so the answer the PM gave one control ago is in
+     * neither source by the time this effect runs. Worse, this effect REPLACED
+     * the map that did still hold it. Measured on the walked path: at 4.3.1.5
+     * the server render had .1-.3, the queue had nothing, and .4 — answered
+     * fifteen seconds earlier — had vanished. `answeredLevel` never forgets, so
+     * `known` cannot be wiped by an acknowledgement arriving at the wrong
+     * moment. `queued` stays the queue's own answer, for the offline hint.
+     *
      * Read in an EFFECT rather than during render: the outbox is client-only,
      * so consulting it while rendering would make the server's HTML and the
      * first client render disagree about the button's label. */
     const q: Record<string, number> = {};
+    const k: Record<string, number> = {};
     for (const c of milestone?.controls ?? []) {
       const p = pendingFor(c.code);
       if (p && p.level !== null) q[c.code] = p.level;
+      const confirmed = answeredLevel(c.code);
+      if (confirmed !== null) k[c.code] = confirmed;
     }
     if (queuedHere && queuedHere.level !== null) q[control] = queuedHere.level;
     setQueued(q);
+    setKnown(k);
 
     // A milestone belongs to the answer that produced it. Landing on any
     // control — forwards, or backwards with the browser button — starts from
@@ -201,7 +220,7 @@ export default function ScorePanel({
    * what the screen SAYS, never what the record holds.
    */
   const effectiveLevel = (code: string): number | null =>
-    code === control ? level : (ceLevels?.[code] ?? queued[code] ?? null);
+    code === control ? level : (ceLevels?.[code] ?? known[code] ?? null);
 
   const ceComplete = milestone
     ? milestone.controls.every((c) => effectiveLevel(c.code) !== null)

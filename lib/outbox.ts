@@ -98,6 +98,29 @@ let save: Saver | null = null;
 let mirrorHealthy = true;
 const listeners = new Set<() => void>();
 
+/**
+ * EVERY ANSWER THIS BROWSER HAS CONFIRMED THIS SESSION — including the ones
+ * already acknowledged and dropped from the queue above.
+ *
+ * N33, and it is the reason `pendingFor` alone was never enough. The commit
+ * POST and the navigation GET leave together (D9), so the server render of the
+ * NEXT control is taken before the write lands — measured, every time, not
+ * occasionally. The queue then drops the entry the moment the server says ok.
+ * Between those two moments the answer exists nowhere the client can see it:
+ * the server render predates it and the queue has forgotten it. At the last
+ * control of a competency that made `ceComplete` false, so the button read
+ * "Next control" and the milestone never rose — on the walked path, which is
+ * the only path a PM actually takes.
+ *
+ * This map is the client's own memory of what it confirmed. It only grows, so
+ * the gap has nothing to fall through. 132 entries is the ceiling.
+ *
+ * IN MEMORY, NOT MIRRORED. A reload gets a fresh server render, which by then
+ * includes every acknowledged write; the mirror exists for answers that have
+ * NOT reached the server, and those are still the queue's job.
+ */
+const answered = new Map<string, number>();
+
 /* ------------------------------------------------------------ subscribe */
 
 export function subscribe(fn: () => void): () => void {
@@ -162,6 +185,10 @@ export function configure(userId: string, saver: Saver) {
   const next = `${KEY_PREFIX}${userId}`;
   if (next === key) return;          // already bound; keep the live queue
   key = next;
+  // A different person is signed in now. What the PREVIOUS one answered is not
+  // this one's assessment, and letting it decide whether a competency looks
+  // complete would show one PM their colleague's progress.
+  answered.clear();
   try {
     const raw = localStorage.getItem(key);
     const parsed: unknown = raw ? JSON.parse(raw) : [];
@@ -208,6 +235,7 @@ export function commit(entry: Omit<OutboxEntry, "tries" | "userId" | "queuedAt">
   // Changing your mind about a control that is ALREADY failing must not reset
   // its history: zeroing `tries` would unmount the failure banner while the
   // network is still down, and restart the backoff at 2s. Carry both forward.
+  answered.set(entry.control, entry.level);
   const previous = queue.find((e) => e.control === entry.control);
   queue = [...queue.filter((e) => e.control !== entry.control), {
     ...entry,
@@ -229,6 +257,20 @@ export function retryNow() {
  *  than the server render while an entry is still in flight. */
 export function pendingFor(control: string): OutboxEntry | undefined {
   return queue.find((e) => e.control === control);
+}
+
+/**
+ * The level this browser confirmed for a control, sent or not — `null` when it
+ * has not been answered on this device this session.
+ *
+ * Deliberately NOT the same question as `pendingFor`, which asks "is this still
+ * unsent" and drives the offline hint. This one asks "did the PM answer it",
+ * which stays true after the server says ok. Screens that decide what the PM
+ * has DONE must ask this; screens that report what is still IN FLIGHT ask the
+ * other. Collapsing them is what produced N33.
+ */
+export function answeredLevel(control: string): number | null {
+  return answered.get(control) ?? null;
 }
 
 /** False once a localStorage write has failed. The offline banner promises
@@ -283,7 +325,12 @@ async function flush() {
       // flush replaced the object; confirming the old value must not delete
       // the new one, which has not been sent yet.
       if (stillQueued === entry) queue = queue.filter((e) => e !== entry);
-      if (reject) console.warn(`[outbox] ${entry.control} refused: not this account`);
+      if (reject) {
+        // Refused, so the record will never hold it. Forgetting it here keeps
+        // the screen from counting an answer the assessment does not have.
+        if (answered.get(entry.control) === entry.level) answered.delete(entry.control);
+        console.warn(`[outbox] ${entry.control} refused: not this account`);
+      }
     } else {
       failed = true;
       // Increment the entry that is actually IN the queue, not the detached
