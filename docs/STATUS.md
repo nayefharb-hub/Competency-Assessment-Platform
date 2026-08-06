@@ -1,10 +1,12 @@
 # Project status & handoff
 
-Last updated: 2026-08-05 (the performance arc: PRs #9–#13, N16–N21). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-05 (the shape-of-the-work arc: PRs #22–#24 — areas/competencies, durations, stalls, and pace). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
-**Live.** Deployed on Vercel from `main`. Migrations `0003` and `0004` are
-applied. Pilot feedback from using it is logged in
+**Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
+`0005` are applied (`0005` on 2026-08-05, by the owner, in the SQL Editor).
+Access-token lifetime was cut 60 min → 15 min the same day, and measured at
+900s rather than taken on trust. Pilot feedback from using it is logged in
 `docs/pilot-feedback.md` (15 notes, triaged); the plan for the rest is
 `docs/eng-plan-admin-and-ux.md`.
 
@@ -18,12 +20,50 @@ script fails with "Missing SUPABASE_URL". Copy `.env.example` and fill in the
 four values from Supabase → Project Settings → API. Nothing else works until
 this exists.
 
-**2. Network access.** `*.supabase.co` must be in the environment's Network
-access allowlist (Custom + "include default package managers"), or the session
-cannot reach the database at all. `*.vercel.app` is **not** reachable from the
-agent sandbox and probably cannot be — so nothing an agent says about the
-deployed site is verified. Test the code locally against the real database;
-confirming production is the owner's step.
+**2. Network access — RE-MEASURED 2026-08-06, and the old claim was wrong.**
+`*.supabase.co` must be in the environment's Network access allowlist (Custom +
+"include default package managers"), or the session cannot reach the database
+at all.
+
+`*.vercel.app` **is now reachable** — production `/login` answers 200 with the
+real sign-in page. This file previously said it was not reachable "and probably
+cannot be"; that is retired. `sonarcloud.io` is reachable too (public project
+reads work with no token), which closes the access gap CLAUDE.md describes.
+
+Two things still limit what an agent can verify against the deployed site, and
+they are not network problems:
+
+- **Preview deployments are behind Vercel Deployment Protection.** Any preview
+  URL 302s to `vercel.com/sso-api`. Since a PR's preview is the only place
+  unmerged work runs, an agent cannot QA a PR's own deployment without a
+  Protection Bypass for Automation token — which belongs in an environment
+  variable, never pasted into chat.
+- **Production runs `main`,** so it only ever shows merged work.
+
+**Reaching a PREVIEW deployment.** The owner created a Vercel *Protection
+Bypass for Automation* secret (named "claude QA testing") and added it to this
+Claude Code environment as **`Vercel_deployment_ByPass`** on 2026-08-06. Send it
+as a header on any preview URL:
+
+```bash
+curl -H "x-vercel-protection-bypass: $Vercel_deployment_ByPass" <preview-url>/login
+# Playwright: extraHTTPHeaders: { "x-vercel-protection-bypass": process.env.Vercel_deployment_ByPass }
+```
+
+**It only appears in a session whose container started AFTER the variable was
+added** — environment variables are injected at container start, so the session
+that requests one never sees it. Check with `printenv Vercel_deployment_ByPass`;
+if it is empty, the fix is a new session, not a new variable.
+
+Designating it a *System Environment Variable* in Vercel does NOT help an agent:
+that injects it into the deployment's own runtime, for the app to read. The
+caller needs the raw value locally, which is why it lives here too.
+
+Re-measure rather than trusting this paragraph: `curl -s -o /dev/null -w '%{http_code}' https://competency-assessment-platform.vercel.app/login`.
+
+Note one good property found while probing: the middleware redirects EVERY
+unauthenticated path to `/login`, including routes that do not exist, so an
+outsider cannot fingerprint which build is live by probing for new routes.
 
 **3. The password gate is live.** Every account carries
 `must_change_password = true` until its owner replaces the password. On first
@@ -36,11 +76,21 @@ accounts and needs no real credentials.
 ```bash
 npm install
 npm run verify:db          # expect 11/11
-npm run build && npm start &
-npm run e2e                # expect 176/176 — writes, then cleans up after itself
+npm run build
+npm start > /tmp/next.log 2>&1 &
+E2E_SERVER_LOG=/tmp/next.log npm run e2e   # writes, then cleans up after itself
+npm run test:unit                          # expect 50/50 — pure logic, no database
+npm run perf:save                          # 10 real saves, split by where the time goes
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
+
+**Read the tally, not just the ✗ count.** The suite reports skips: *"237 passed,
+0 failed, 2 SKIPPED (…)"*. A skip is not a pass. `E2E_SERVER_LOG` in particular
+gates the **warm-save round-trip budget** — the assertion behind CLAUDE.md's
+"round trips are counted, not estimated" — and without it that check silently
+does not run. It was found un-run on 2026-08-05 after several green runs had
+been reported, which is why skips are now counted rather than mentioned.
 
 **If `e2e` dies with "Executable doesn't exist at /opt/pw-browsers/…":** the
 cloud sandbox ships a pinned Chromium build that will not match whatever
@@ -173,12 +223,13 @@ Verified 2026-08-05 against the live database:
 - `npm run verify:db` — 11/11 (133 controls, 132 active, 4.3.2.6 inactive, 28
   elements, 3 areas, 586 measures, 6 scale levels, 4 profiles, 116 targets,
   and the per-area splits 24/49/60).
-- `npm run e2e` — **176/176** through a real browser against the running app,
+- `npm run e2e` — **235/235** through a real browser against the running app,
   then checked in Postgres directly. Covers auth, assignment, role gates, target
   blinding, score persistence, submit, review, accept-all, approve + snapshot,
   locking, cross-user access, rollup arithmetic, the admin editor, the password
-  gate, the People screen, session-cookie flags, archive/restore, and the N14
-  layout guarantee (Save on screen without scrolling at three viewports on both
+  gate, the People screen, session-cookie flags, archive/restore, the
+  area/competency navigation, the pace disclosure and `/analysis`
+  authorisation, and the N14 layout guarantee (Save on screen without scrolling at three viewports on both
   the shortest and longest controls, with the prose still capped at the reading
   measure).
 
@@ -265,7 +316,8 @@ Then:
 
 Project ref `gkqydskmnexhneqsvvvt`. Applied via the SQL Editor, in this order:
 `supabase/migrations/0001_init.sql` → `0002_rls.sql` → `supabase/seed.sql`,
-then `0003_assignment_and_archive.sql` (applied 2026-08-03).
+then `0003_assignment_and_archive.sql` (applied 2026-08-03),
+`0004_archive_frees_the_cycle.sql`, and `0005_pace.sql` (applied 2026-08-05).
 All three returned success; `seed.sql` self-verifies and rolls back on any
 count mismatch. See `supabase/README.md`.
 

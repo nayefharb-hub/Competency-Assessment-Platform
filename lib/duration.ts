@@ -51,6 +51,22 @@ export function measureIndex(measures: Measure[]): Map<string, number> {
   return byControl;
 }
 
+/**
+ * Seconds to read one control's own text once, at RATE.
+ *
+ * Deliberately EXCLUDES the judgement allowance that `estimateMinutes` adds.
+ * This is used as the "could not have read it" line in pace analysis, and that
+ * line has to be the strongest claim available: below it, the words on the
+ * screen did not pass through anybody's eyes at a rate a person reads at.
+ * Folding in DECIDE would turn a fact about reading speed into a judgement
+ * about how long thinking takes — an assumption doing work it cannot support
+ * when the output is "this person may have clicked through their assessment".
+ */
+export function readingSeconds(indicator: string | null | undefined,
+  description: string | null | undefined): number {
+  return ((words(indicator) + words(description)) / RATE) * 60;
+}
+
 export interface Estimate {
   /** Skimming the measures, which are marked "reference only, not scored". */
   low: number;

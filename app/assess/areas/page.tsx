@@ -100,6 +100,19 @@ export default async function AreasPage() {
       <p className="note" style={{ marginTop: 18 }}>
         Prefer the full list? <Link href="/assess/controls">All {fw.activeControls.length} controls</Link>.
       </p>
+
+      {/* THE DISCLOSURE (D21/D28). Said once, here, where a PM starts — not on
+          every control, which would read as a stopwatch over the shoulder.
+          It is load-bearing rather than legal furniture: pace is recorded so a
+          rushed assessment can be caught before it distorts the results, and
+          telling people that is the whole difference between an instrument and
+          a trap. The link is not decoration either — being able to see your own
+          figures is what makes the disclosure true. */}
+      <p className="note" style={{ marginTop: 6 }}>
+        Time spent on each control is recorded, so that an assessment rushed to get it finished
+        can be spotted before it reaches your results. Nobody is scored on speed, and you can see
+        your own figures on <Link href="/analysis">Analysis</Link>.
+      </p>
     </div>
   );
 }

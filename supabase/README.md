@@ -89,3 +89,26 @@ not depend on project-level default privileges. Postgres RLS cannot hide columns
 based on a row's state, so "the PM must not see assessor scores or targets before
 approval" is enforced in the data layer — see the note at the top of
 `0002_rls.sql`.
+
+## Migration order, as applied
+
+| File | Applied | What it does |
+|---|---|---|
+| `0001_init.sql` | 2026-08 | 13 tables |
+| `0002_rls.sql` | 2026-08 | RLS deny-by-default + service_role grants |
+| `seed.sql` | 2026-08 | the ICB4 framework, self-verifying |
+| `0003_assignment_and_archive.sql` | 2026-08-03 | assignment + archive columns |
+| `0004_archive_frees_the_cycle.sql` | 2026-08 | partial unique index — one LIVE assessment per cycle |
+| `0005_pace.sql` | 2026-08-05 | `score.dwell_ms` — time on control (D28) |
+
+**A note on ordering, learned building 0005.** Code deploys itself on push;
+migrations here are pasted into the SQL Editor by hand. There is therefore
+always a window where the running build is ahead of the schema, and a build
+that hard-depends on a new column turns that window into a total outage —
+retried by the outbox every 30 seconds for as long as it lasts.
+
+`saveSelfScore` handles this for `dwell_ms` by retrying the write without the
+column on exactly the two PostgREST codes that mean "no such column", and it
+self-heals the moment the migration lands. **Any future migration that adds a
+column to a write in the assessment path should do the same**, or the
+migration must be applied before the deploy that needs it.
