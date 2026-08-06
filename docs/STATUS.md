@@ -413,21 +413,58 @@ the POST is even issued — so the server never has the previous answer; then th
 queue drops it the moment the write is acknowledged; then the effect keyed on
 the control overwrote the one map that still held it. Walking a competency, the
 milestone therefore never rose and the button read "Next control". `lib/outbox.ts`
-now keeps `answered`, which only grows, exported as `answeredLevel()`; the panel
-keeps `queued` (in flight, for the offline hint) and `known` (confirmed here,
-for completeness) as separate maps. **Do not collapse them again.**
+now keeps `answered`, exported as `answeredLevel()`; the panel keeps `queued`
+(in flight, for the offline hint) and `known` (confirmed here, for completeness)
+as separate maps. **Do not collapse them again.**
 
-339 e2e / 0 failed / 0 skipped, 69 unit. Every new regression test was run
-against the pre-fix build first and failed there — including N33's, which failed
-loudly enough to take the suite down with it, which is why it now reports rather
-than throws. The six from the first review pass included two that reported green
-until `activeControls` was selected with the competence-element key, so a filter
-meant to pick one competency had been matching all 132.
+The invariant, stated exactly, because the first draft of it was wrong in the
+same commit that added two ways to break it: **acknowledgement never removes an
+entry** — that is the whole difference from the queue. A user change and a
+server refusal do, and both mean the answer is no longer the screen's to count.
+`answered` is keyed by ASSESSMENT as well as control, because a control code is
+not unique across time: an archived assessment can be replaced by a fresh
+assignment and a cycle rolls over, both while a tab stays open and neither
+re-running `configure`.
 
-**A walked test is not the same test as a seeded one.** All six milestone checks
-arrived by `page.goto` with prior answers inserted into Postgres — the one route
-no PM takes — and every one of them passed against a build where the feature did
-not work at all. The suite now walks the competency.
+**The review pass on the N33 fix found two more defects in it, and both were
+real.** (1) The fix REPLACED the queue in the completeness chain rather than
+adding to it — but `answered` is module memory that a page load destroys, while
+the queue is mirrored to localStorage and survives, so a PM who answered four
+controls during a write-path outage and then refreshed had four confirmed
+answers the screen could no longer see. N33 again, on the one path the mirror
+exists for. The chain is now `known → queued → ceLevels`. (2) The server value
+won that chain, so a REVISION was displayed at its pre-revision level: change a
+control, press Next, and the recap on the card that advertises itself as "the
+last easy moment to change an answer" showed the answer you had just replaced.
+Three specialists found (2) independently. Both now have walked tests.
+
+347 e2e / 0 failed / 0 skipped, 76 unit — the unit count includes a new
+`scripts/outbox.test.mjs`, because three of the paths that make `answered` safe
+(the clear on a user change, the delete on a refusal, the assessment scoping)
+cannot be reached from a browser test without a second account, a second
+assessment, or a server that refuses a write. Every new regression test was run
+against the pre-fix build first and failed there.
+
+**A walked test is not the same test as a seeded one, and neither is a failed
+one.** The six milestone checks in place before N33 each removed the state the
+defect lived in, in one of two ways: five arrived by `page.goto` with prior
+answers inserted straight into Postgres, and FM3 — the check written for this
+exact failure mode — aborted the save POST to simulate the queue, so it covered
+the failure path and never the successful one. A queue that never drains never
+forgets; success is what deletes the evidence. All six passed against a build
+where the feature did not work at all on the walked path. The suite now walks
+it, with the premise asserted so a run where the race falls the other way says
+INCONCLUSIVE instead of green.
+
+**One known flake, diagnosed and deliberately not fixed here.** "the app is
+reachable once the flag clears" (the change-password block) fails intermittently:
+`viewerMemo` in `lib/auth.ts` caches `must_change_password` for 2s, and the test
+navigates inside that window, so the gate fires once more against a row the
+database has already updated. That is the documented staleness bound behaving as
+designed — `lib/auth.ts:109` states it — not a defect. The product fix, if it is
+wanted, is for the change-password action to delete the memo entry for the
+current token the way sign-in already does at `lib/auth.ts:240`; that touches
+auth, so it needs `/cso` and its own diff.
 
 ## Next step
 

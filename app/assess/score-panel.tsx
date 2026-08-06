@@ -30,6 +30,7 @@ interface Level {
  */
 export default function ScorePanel({
   control,
+  assessmentId,
   nextControl,
   prevControl,
   levels,
@@ -40,6 +41,10 @@ export default function ScorePanel({
   ceLevels,
 }: {
   control: string;
+  /** Which record this screen is about. Scopes the client's memory of what it
+   *  confirmed, so a re-assignment, a cycle rollover, or a session that moved
+   *  to another PM cannot let yesterday's answers speak for today's record. */
+  assessmentId: string;
   nextControl: string | null;
   prevControl: string | null;
   levels: Level[];
@@ -100,9 +105,19 @@ export default function ScorePanel({
      * neither source by the time this effect runs. Worse, this effect REPLACED
      * the map that did still hold it. Measured on the walked path: at 4.3.1.5
      * the server render had .1-.3, the queue had nothing, and .4 — answered
-     * fifteen seconds earlier — had vanished. `answeredLevel` never forgets, so
-     * `known` cannot be wiped by an acknowledgement arriving at the wrong
-     * moment. `queued` stays the queue's own answer, for the offline hint.
+     * fifteen seconds earlier — had vanished. Acknowledgement never removes
+     * anything from `answered`, so `known` cannot be wiped at the wrong moment.
+     *
+     * BOTH MAPS ARE LOAD-BEARING, and the first cut of this fix got that wrong
+     * by REPLACING `queued` with `known` in `effectiveLevel` rather than adding
+     * it. `answered` is module memory and a full page load destroys it; the
+     * QUEUE is mirrored to localStorage and survives. So during a write-path
+     * outage — the exact situation the mirror exists for — a PM who answers
+     * four controls and then reloads has four confirmed answers that `known`
+     * has forgotten and only `queued` still holds. Dropping the queue from the
+     * chain reintroduced N33 on that path, and a review pass caught it before
+     * it shipped. Ask both, in this order: this device's memory, then what is
+     * still unsent, then the server.
      *
      * Read in an EFFECT rather than during render: the outbox is client-only,
      * so consulting it while rendering would make the server's HTML and the
@@ -112,7 +127,7 @@ export default function ScorePanel({
     for (const c of milestone?.controls ?? []) {
       const p = pendingFor(c.code);
       if (p && p.level !== null) q[c.code] = p.level;
-      const confirmed = answeredLevel(c.code);
+      const confirmed = answeredLevel(assessmentId, c.code);
       if (confirmed !== null) k[c.code] = confirmed;
     }
     if (queuedHere && queuedHere.level !== null) q[control] = queuedHere.level;
@@ -206,7 +221,9 @@ export default function ScorePanel({
   const dirty = level !== savedLevel || evidence !== savedEvidence;
 
   /*
-   * WHAT THE PM HAS ACTUALLY ANSWERED — server, then outbox, then this screen.
+   * WHAT THE PM HAS ACTUALLY ANSWERED — this screen, then this device, then
+   * what is still unsent, then the server. NEWEST FIRST, and the order is the
+   * point.
    *
    * This is N30. The server render is always one answer behind at exactly the
    * moment it matters (the last control of a competency), so the client has to
@@ -216,11 +233,22 @@ export default function ScorePanel({
    * makes the count and the recap agree by construction rather than by two
    * expressions that happen to match.
    *
+   * THE SERVER USED TO WIN THIS `??` CHAIN, which was wrong for a reason three
+   * independent review passes each found on the REVISE path: change 4.3.1.4
+   * from Practised to Expert, press Next, and the render of 4.3.1.5 was taken
+   * before that write landed — so `ceLevels` held Practised, short-circuited
+   * before `known`'s Expert was ever consulted, and the recap showed the PM the
+   * answer they had just replaced. On the card documented as "the last easy
+   * moment to change an answer". For `self_level` this device is never older
+   * than a render it raced: `answered` is cleared on a user change and scoped
+   * to the assessment, so the only thing it can hold is what this PM confirmed,
+   * for this record, in this session.
+   *
    * `submitSelfAssessment` still counts for itself server-side. This decides
    * what the screen SAYS, never what the record holds.
    */
   const effectiveLevel = (code: string): number | null =>
-    code === control ? level : (ceLevels?.[code] ?? known[code] ?? null);
+    code === control ? level : (known[code] ?? queued[code] ?? ceLevels?.[code] ?? null);
 
   const ceComplete = milestone
     ? milestone.controls.every((c) => effectiveLevel(c.code) !== null)
@@ -269,7 +297,7 @@ export default function ScorePanel({
         level,
         evidence: evidence.trim() || null,
         dwellMs: firstAnswer ? clock.current?.read(performance.now()) ?? null : null,
-      });
+      }, assessmentId);
       // The queue is now newer than the server for this control. Record it here
       // rather than re-reading the outbox during render, which would make the
       // server's HTML and the first client render disagree.

@@ -233,6 +233,7 @@ export default async function AssessPage({
         <div className="scorepanel">
           <ScorePanel
             control={code}
+            assessmentId={row.id}
             nextControl={next?.code ?? null}
             prevControl={prev?.code ?? null}
             levels={fw.scaleLevels.map((s) => ({

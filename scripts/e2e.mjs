@@ -2788,36 +2788,172 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
     const page = await open(ctx, CE[0]);
 
+    let stalledAt = null;
     for (let i = 0; i < CE.length - 1; i++) {
       await page.waitForSelector(".optlist");
       await page.check('input[name="level"][value="3"]');
       await page.click(".assess-actions button");
+      /* Caught, like every other wait in this block: if a regression raises the
+         milestone EARLY the click never navigates, and a bare wait would take
+         the suite down instead of naming the control it stopped on. */
       await page.waitForFunction(
         (want) => new URL(location.href).searchParams.get("c") === want,
-        CE[i + 1], { timeout: 20_000 });
+        CE[i + 1], { timeout: 20_000 }).catch(() => { stalledAt ??= CE[i]; });
+      if (stalledAt) break;
     }
+    check("N33: the walk reaches the last control of the competency",
+      stalledAt === null, stalledAt ? `stalled on ${stalledAt}` : "");
     await page.waitForSelector(".optlist");
     await page.check('input[name="level"][value="4"]');
+
+    /* THE PREMISE, ASSERTED — otherwise this block can pass for the wrong
+       reason and nobody would know.
+
+       The defect needs the fourth answer to be invisible to BOTH the server
+       render and the queue. On a fast local database that is what happens (the
+       navigation GET completes before the commit POST is even issued, measured)
+       but it is a race, and if it fell the other way this test would go green
+       against a build with the fix reverted — passing because the server render
+       happened to be complete, which is the seeded arrival the comment above
+       says a PM never makes. So check the two halves of the premise directly:
+       the write for 4.3.1.4 HAS landed (so the queue no longer holds it) and
+       the render of 4.3.1.5 was taken before it (so the server did not send
+       it). If either stops being true the run says INCONCLUSIVE rather than
+       lying. */
+    const landed = await db.from("score").select("self_level")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.4")).maybeSingle();
+    const stillQueued = await page.evaluate(() => {
+      const k = Object.keys(localStorage).find((s) => s.startsWith("cap.outbox."));
+      return k ? (JSON.parse(localStorage.getItem(k) || "[]")).some((e) => e.control === "4.3.1.4") : false;
+    });
+    const premise = landed.data?.self_level != null && !stillQueued;
+    if (!premise) {
+      console.log(`    ⊘ INCONCLUSIVE: N33's premise did not hold this run — 4.3.1.4 `
+        + `${landed.data?.self_level == null ? "had not landed" : "landed"}, queue `
+        + `${stillQueued ? "still holds it" : "is clear"}. The checks below cannot `
+        + `distinguish the fix from a complete server render.`);
+    }
 
     const walked = (await page.locator(".assess-actions button").first().innerText()).trim();
     check("N33: walking the competency reaches the fifth control as a finish, not a next",
       /finish this competency/i.test(walked), JSON.stringify(walked));
 
     await page.click(".assess-actions button");
-    /* Caught rather than thrown: a regression here means the milestone never
-       arrives, and a bare waitForSelector would take the rest of the suite down
-       with it — which is exactly what it did when this was first run against
-       the unfixed build. A regression test should report, not crash. */
     await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
-    check("N33: and the milestone rises on the walked path",
-      (await page.locator(".milestone").count()) === 1, page.url());
+    const raised = (await page.locator(".milestone").count()) === 1;
+    check("N33: and the milestone rises on the walked path", raised, page.url());
 
     /* The recap has to show the answers the SERVER has not confirmed either —
-       the same memory that fixed the count feeds the rows. */
-    const walkedCard = (await page.locator(".milestone").count()) === 1
-      ? await page.locator(".milestone").innerText() : "(no milestone)";
+       the same memory that fixed the count feeds the rows.
+
+       GUARDED ON THE CARD EXISTING. The first cut of this check read the card
+       into the literal string "(no milestone)" when it was absent and then
+       asserted that string does not match /not answered/ — which is true, so
+       the check reported GREEN on exactly the build it was written to fail
+       against. Two review specialists found it independently. A negated regex
+       over a sentinel is not an assertion. */
+    const walkedCard = raised ? await page.locator(".milestone").innerText() : "";
     check("N33: the recap answers every row, including the ones still settling",
-      !/not answered/i.test(walkedCard), JSON.stringify(walkedCard.slice(0, 240)));
+      raised && !/not answered/i.test(walkedCard), JSON.stringify(walkedCard.slice(0, 240)));
+    /* And the LEVELS, not just the absence of a phrase: four answered at 3 and
+       the last at 4, so a card that rendered but lost the client's memory fails
+       here rather than passing on a technicality. */
+    check("N33: and shows the levels the PM actually gave",
+      raised && (walkedCard.match(/Competent/gi) ?? []).length === 4
+        && /Proficient/i.test(walkedCard),
+      JSON.stringify(walkedCard.slice(0, 240)));
+
+    /* Drain before closing. The commit for 4.3.1.5 is still in flight (asserting
+       the card without waiting for it is the point), and the next block deletes
+       this assessment's scores within milliseconds — a late insert would land
+       after that delete and leave a stray answer in a competency the E2 block
+       believes is empty. Waiting AFTER the checks costs the suite nothing and
+       does not await the commit the product exists to not await. */
+    await page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 })
+      .catch(() => {});
+    await ctx.close();
+  }
+
+  /* --- N33b: the same walk, but the writes are FAILING and the PM reloads.
+     This is the case the first cut of the N33 fix broke and no test covered:
+     `answered` is module memory that a page load destroys, while the QUEUE is
+     mirrored to localStorage and survives. Replacing the queue with the new map
+     in the completeness chain — rather than adding it — meant four confirmed
+     answers went invisible the moment the PM refreshed during an outage, which
+     is the exact situation the mirror exists for. Found by review, not by a
+     user, which is the only reason it is not an N-number. --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, CE[0]);
+
+    /* Writes fail, reads work — a write-path outage, not an offline tab. The
+       run has to carry on, which is why this is a POST abort and not context
+       .setOffline(). */
+    await page.route("**/assess**", (route) =>
+      route.request().method() === "POST" ? route.abort() : route.continue());
+
+    for (let i = 0; i < CE.length - 1; i++) {
+      await page.waitForSelector(".optlist");
+      await page.check('input[name="level"][value="3"]');
+      await page.click(".assess-actions button");
+      await page.waitForFunction(
+        (want) => new URL(location.href).searchParams.get("c") === want,
+        CE[i + 1], { timeout: 20_000 }).catch(() => {});
+    }
+    const unsent = await db.from("score").select("control_id", { count: "exact", head: true })
+      .eq("assessment_id", asmt.id);
+    check("N33b: nothing reached the server — the four answers are queued only",
+      (unsent.count ?? 0) === 0, String(unsent.count));
+
+    // The reaction the mirror exists for.
+    await page.reload();
+    await page.waitForSelector(".optlist", { timeout: 20_000 });
+    await page.check('input[name="level"][value="4"]');
+    const afterReload = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33b: after a reload mid-outage the queued answers still count",
+      /finish this competency/i.test(afterReload), JSON.stringify(afterReload));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("N33b: and the milestone still rises",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    await ctx.close();
+  }
+
+  /* --- N33c: a REVISION must not be reported at its old level.
+     Three review specialists found this independently, on the path the card
+     itself advertises ("the last easy moment to change an answer"). The recap
+     read `ceLevels` before the client's own memory, and the render it read was
+     taken before the revision landed — so the row showed the PM the answer they
+     had just replaced. The `??` order in effectiveLevel is the fix and this is
+     what pins it. --- */
+  {
+    await seed(CE);                                   // all five at level 3
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.4");
+
+    check("N33c: the control opens at its persisted level",
+      await page.locator('input[name="level"][value="3"]').isChecked());
+    await page.check('input[name="level"][value="5"]');   // Competent -> Expert
+    await page.click('.assess-actions button');           // commit + navigate together
+    await page.waitForFunction(
+      () => new URL(location.href).searchParams.get("c") === "4.3.1.5",
+      null, { timeout: 20_000 }).catch(() => {});
+    await page.waitForSelector(".optlist");
+
+    const label = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33c: the fifth control still offers the finish after a revision",
+      /finish this competency/i.test(label), JSON.stringify(label));
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+
+    const row4 = page.locator('.milestone-recap li', { hasText: "4.3.1.4" });
+    const row4Text = (await row4.count()) ? await row4.innerText() : "(no row)";
+    check("N33c: the recap shows the REVISED level, not the one it replaced",
+      /Expert/i.test(row4Text) && !/Competent/i.test(row4Text), JSON.stringify(row4Text));
+    await page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 })
+      .catch(() => {});
     await ctx.close();
   }
 

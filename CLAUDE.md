@@ -50,8 +50,9 @@ the client never holds a table-capable key.
 
 ## Architecture rules that must not drift
 
-Learned by measurement during the 2026-08 performance arc; each has a cost
-that was paid once already.
+Each was learned by measurement — most during the 2026-08 performance arc, the
+last from a defect that reached the owner — and each has a cost that was paid
+once already. None of them is a preference.
 
 - **No synchronous network dependency in the per-request hot path unless it
   fetches the data being served.** Auth is verified locally by signature

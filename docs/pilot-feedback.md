@@ -2143,14 +2143,32 @@ why the owner saw it at area ends, where a PM commonly comes back via the hub,
 and why a slow save (entry still queued when the effect runs) made it appear
 "sometimes".
 
-**Fix.** `lib/outbox.ts` now keeps `answered`, a session-scoped map of every
-answer this browser has confirmed, which only grows and is exported as
-`answeredLevel()`. The panel keeps two maps rather than one: `queued` (still in
-flight, drives the offline hint) and `known` (confirmed on this device, decides
-completeness). Neither the acknowledgement nor the effect can erase what the PM
-answered. No new round trip: the budget assertions still pass unchanged.
+**Fix.** `lib/outbox.ts` now keeps `answered`, a map of every answer this
+browser has confirmed, scoped to the assessment and exported as
+`answeredLevel()`. **Acknowledgement never removes an entry** — that is the
+whole difference from the queue; a user change and a server refusal do, and both
+mean the answer is no longer this screen's to count. The panel keeps two maps
+rather than one: `queued` (still in flight, drives the offline hint) and `known`
+(confirmed on this device, decides completeness). No new round trip: the budget
+assertions still pass unchanged.
+
+**The review pass on this fix found two more defects in it.** Worth recording
+here because both were introduced by the repair, not by the original build.
+First, the fix REPLACED the queue in the completeness chain instead of adding to
+it — and `answered` is module memory that a page load destroys while the queue
+is mirrored to localStorage and survives, so a PM who answered four controls
+during a write-path outage and then refreshed lost the milestone again. Second,
+the server value still won the chain, so a control revised seconds earlier was
+displayed at its old level on the card that calls itself the last easy moment to
+change an answer. The chain is now `known → queued → ceLevels`, newest first,
+and both cases have walked tests (N33b, N33c in `scripts/e2e.mjs`).
 
 **The lesson worth keeping.** The e2e suite had six checks on this screen and
-every one of them arrived by a route no PM takes. Seeding state into Postgres
-and opening the end of a competency tests the render; it cannot test the flow
-that produces the state. The new check walks the competency.
+not one of them could see the defect. Five arrived by `page.goto` with prior
+answers inserted straight into Postgres — a page load postdates every write, so
+the client never had to remember anything. The sixth, FM3, was written for this
+exact failure mode and aborted the save POST to simulate the queue: a queue that
+never drains never forgets, so it tested the failure path and never the
+successful one. **Success is what deletes the evidence.** Seeding state and
+opening the end of a competency tests the render; it cannot test the flow that
+produces the state.
