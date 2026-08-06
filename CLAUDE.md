@@ -68,6 +68,16 @@ that was paid once already.
   commit a server action with the navigation beside it; the e2e assertion moved
   and this line did not. A review pass caught the two disagreeing. The number
   to trust is the one in `scripts/e2e.mjs`, because it is the one that runs.)
+
+  **There are two commit shapes since N32, and both are asserted.** At a
+  competency boundary the commit raises the milestone in place and navigates
+  nowhere: 3 calls, then Continue costs the navigation's 2 — still 5 across the
+  pair, on 28 of the 132 commits in an assessment. The mid-competency shape is
+  unchanged. Measured past the 2s viewer-memo TTL; inside it Continue costs 1,
+  which is real but timing-dependent, so the steady state is what is pinned.
+  This was written down because the existing budget assertion runs at
+  `4.3.1.1`, which is mid-competency, so it never touched the new path — a
+  change that made the milestone fetch anything would have been invisible.
 - **Performance claims come from `npm run perf:save` (or the phase logs),
   never from reasoning about where time "must" be going.** Four asserted
   mechanisms in a row were wrong before measurement; the rule exists because

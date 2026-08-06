@@ -1,6 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-06 (the navigation-and-security arc: PR #25 — one front door, form spacing, and two rounds of security fixes). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-06 (the continuous assessment run: PR #26 — milestone in place, competency legibility, keyboard scoring; reviewed and fixed, NOT yet merged). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
@@ -356,6 +356,60 @@ not by reasoning about what the code should do. The first two attempts at that
 confirmation hit a **stale server** (`pkill -f "next start"` kills the parent,
 not the `next-server` child holding the port) and would have supported the
 opposite conclusion.
+
+## The continuous assessment run (PR #26, N30–N32, E1–E4) — ON THE BRANCH, NOT MERGED
+
+Three pilot-feedback items from the owner using the tool as first pilot user.
+**N30**: the last control of a competency promised "Back to the list" on the
+visit where the fifth answer was still uncommitted and "Finish this competency"
+on a later visit — the same screen, two different promises. **N31**: the
+competency was the least visible thing on the screen, though it is the unit the
+rollup aggregates into. **N32**: finishing a competency ejected the PM to a
+list, 28 times per assessment, one every five answers.
+
+Reviewed by `/plan-ceo-review` then `/plan-eng-review`; the approved design is
+`docs/design-continuous-assessment-run.md`, which ends `NO UNRESOLVED
+DECISIONS`. What shipped: the milestone happens **in place**, Continue carries
+the run into the next competency's first *unscored* control, the card recaps the
+competency with every row clickable to revise, the competency name leads the
+screen at heading weight with "3 of 5 in this competency" beside it, and 0–5 +
+Enter drive a whole control from the keyboard.
+
+**The review pass on that build found ten critical defects and is why this is
+worth reading.** Three root causes, all in one seam — what the client is allowed
+to assert that the server has not seen:
+
+1. **The milestone fired on a race.** `ceComplete` corrected the server's count
+   by exactly **+1**, for the control on screen, but the outbox enqueues and
+   navigates in the same breath (D9), so several answers are routinely in
+   flight. Answer five controls quickly and the fifth arrives with three landed:
+   `3 + 1 >= 5` is false and the milestone silently does not happen. Faster
+   connection, it does. **The approved design doc named this in advance (FM3)
+   and the test was never written.**
+2. **"Every competency scored" was decided by position.** The build deleted
+   `const areaComplete = area.scored === area.controls` and replaced it with a
+   check scoped to the last competency, so a PM who skipped one control in week
+   one and then worked through the other 131 in order was told the assessment
+   was finished and sent to a Submit the server refuses.
+3. **Offline was a render-time snapshot.** Nothing subscribed to anything, so a
+   connection lost while the card was up left Continue live (the D13 hard
+   navigation to Chrome's error page) and a connection regained left it dead
+   beside copy promising the PM they could carry on.
+
+**The contract that came out of it, which must not drift:** `nextAfter` reports
+`scored`/`total` at competency, area and assessment scope and **never** decides
+completeness. `done` is positional. The client adds the answers it holds —
+server, then outbox, then the screen — by asking each control for its answer
+rather than by arithmetic, so the count and the recap agree by construction. Any
+claim wider than the current competency can only ever **understate**, because
+the client cannot see queued answers elsewhere. Understating is a quieter card;
+overstating is a lie.
+
+336 e2e / 0 failed, 69 unit. The six new regression tests were each run against
+the pre-fix build first and each failed there — including the two that the first
+run reported green because `activeControls` was selected without the
+competence-element key, so a filter meant to pick one competency matched all
+132.
 
 ## Next step
 
