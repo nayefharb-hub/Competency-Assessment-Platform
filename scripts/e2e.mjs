@@ -128,9 +128,36 @@ const skip = (name, why) => {
  * invisible to every app_user query, and enough to make the next "add person"
  * fail with "email already registered". Cleaning up by id only cannot reach it.
  */
+/**
+ * EVERY page of auth.users, not just the first.
+ *
+ * `listUsers({ page: 1, perPage: 1000 })` was written out at three call sites,
+ * and past a thousand accounts each of them failed OPEN: a stray QA account on
+ * page two is not deleted by a purge, not swept by the teardown, and — worst —
+ * not seen by the assertion that exists to catch precisely that. "No QA sign-in
+ * accounts left behind either" would print green with a live admin fixture
+ * sitting on the real project. A backstop that silently truncates is not a
+ * backstop, so this pages until a short page comes back.
+ */
+async function allAuthUsers() {
+  const out = [];
+  for (let page = 1; page <= 100; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw new Error(`listUsers page ${page} failed: ${error.message}`);
+    const users = data?.users ?? [];
+    out.push(...users);
+    if (users.length < 1000) return out;
+  }
+  throw new Error("listUsers did not terminate within 100 pages");
+}
+
+/** The QA fixtures among them. One definition of "a QA account", used by both
+ *  the sweep and the assertion that checks the sweep worked. */
+const qaAuthAccounts = async () =>
+  (await allAuthUsers()).filter((u) => u.email?.endsWith("@example.test"));
+
 async function deleteAuthUser(email) {
-  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const found = (data?.users ?? []).find((u) => u.email === email);
+  const found = (await allAuthUsers()).find((u) => u.email === email);
   if (found) await db.auth.admin.deleteUser(found.id);
 }
 
@@ -207,20 +234,35 @@ browser.on("disconnected", () => {
  * stack: no summary, no failing group, no clue which section died. A crash
  * must leave the database as clean as a pass does, and must SAY what broke.
  */
-let tornDown = false;
-async function teardown() {
-  if (tornDown) return;
-  tornDown = true;
+/*
+ * A PROMISE, not a boolean (/review, 2026-08-06). Two holes the flag had:
+ *
+ * - A second Ctrl-C — or an unhandled rejection thrown by the still-running
+ *   suite while cleanup is deleting its rows — re-entered here, hit the guard,
+ *   returned INSTANTLY, and the caller's `.finally()` then called
+ *   process.exit(1) with the first purge still mid-flight. The impatient
+ *   double-Ctrl-C is the likeliest way a human ends a dragging run, so the
+ *   guard was most likely to fail in exactly the case it was added for.
+ * - The flag was set BEFORE any work, so an exception inside the purge loop
+ *   disabled the only retry path permanently.
+ *
+ * Re-entry now awaits the SAME attempt instead of racing it.
+ */
+let teardownRun = null;
+const teardown = () => (teardownRun ??= doTeardown());
+
+async function doTeardown() {
   console.log("\nCleaning up QA data and accounts…");
 
   /*
    * Purge by PATTERN, not by the three names this file happens to know.
    *
-   * The named purges below cover the fixtures declared at the top. They do NOT
-   * cover the transient accounts created inside a test block (qa.added,
-   * qa.orphan), which purge themselves at both ends of their own block and are
-   * therefore stranded by a crash in the middle. They also do not cover a
-   * fixture from some OTHER script pointed at the same database.
+   * The sweep seeds itself with the three fixtures declared at the top and then
+   * adds everything matching %@example.test from BOTH app_user and Auth. The
+   * three names alone do NOT cover the transient accounts created inside a test
+   * block (qa.added, qa.orphan), which purge themselves at both ends of their
+   * own block and are therefore stranded by a crash in the middle. Nor do they
+   * cover a fixture from some OTHER script pointed at the same database.
    *
    * Both gaps were real. A /cso pass on 2026-08-06 found qa.pace.pm and
    * qa.pace.boss — an interrupted ad-hoc pace run, one of them an admin whose
@@ -234,19 +276,26 @@ async function teardown() {
    * FAILED rather than one that was never attempted.
    */
   const { data: allQa } = await db.from("app_user").select("email").like("email", "%@example.test");
-  const { data: authAll } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const qaEmails = new Set([
     PM.email, OTHER.email, BOSS.email,
     ...(allQa ?? []).map((u) => u.email),
-    ...(authAll?.users ?? []).map((u) => u.email).filter((e) => e?.endsWith("@example.test")),
+    ...(await qaAuthAccounts()).map((u) => u.email),
   ]);
-  for (const email of qaEmails) await purge(email);
+  /* One failing purge must not abandon the rest, or the accounts behind it in
+     the loop. Whatever survives is named by the assertions below, which is the
+     signal — an exception here used to take those assertions with it. */
+  for (const email of qaEmails) {
+    try {
+      await purge(email);
+    } catch (e) {
+      console.log(`  ✗ could not purge ${email} — ${e.message}`);
+    }
+  }
 
   const { data: leftovers } = await db.from("app_user").select("email").like("email", "%@example.test");
   check("no QA accounts left on the allowlist", (leftovers ?? []).length === 0,
     (leftovers ?? []).map((u) => u.email).join(","));
-  const { data: authLeft } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const strays = (authLeft?.users ?? []).filter((u) => u.email?.endsWith("@example.test"));
+  const strays = await qaAuthAccounts();
   check("no QA sign-in accounts left behind either", strays.length === 0,
     strays.map((u) => u.email).join(","));
   closingOnPurpose = true;
@@ -276,9 +325,15 @@ process.on("uncaughtException", (err) => crashed("CRASHED", err));
  * awaited, and Ctrl-C — the ordinary way a human ends a run that is taking too
  * long — both walked straight past teardown. That is the likeliest route by
  * which the qa.pace accounts survived.
+ *
+ * SIGHUP and SIGQUIT are in the list too: a closed terminal window or a dropped
+ * SSH session is at least as ordinary a way to end a long run as Ctrl-C, and
+ * Node's default action for both is to terminate. SIGKILL and a power cut stay
+ * uncoverable by construction — which is the standing argument for the per-run
+ * fixture passwords being a real second layer rather than a nicety.
  */
 process.on("unhandledRejection", (err) => crashed("HIT AN UNHANDLED REJECTION", err));
-for (const sig of ["SIGINT", "SIGTERM"]) {
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
   process.on(sig, () => crashed("INTERRUPTED", new Error(`received ${sig}`)));
 }
 
@@ -442,6 +497,64 @@ console.log("\n[1] Invite-only auth");
   await page.goto("/results");
   check("no session cannot reach /results", page.url().includes("/login"));
   await ctx.close();
+}
+
+/*
+ * The refusal floor — the sign-in timing oracle (/cso finding 2).
+ *
+ * The identical error message exists to stop an outsider enumerating the
+ * pilot's staff list. It was undone by the clock: the allowlist was checked
+ * first and returned early, so an address that had never been invited never
+ * paid for a password verification and answered ~250ms sooner than one that
+ * had. Nothing asserted the fix, so restoring the early return would have gone
+ * unnoticed — the two sign-in failure checks both read text, never duration.
+ *
+ * ASSERTED AS A ONE-SIDED FLOOR, deliberately. Comparing the two branches to
+ * each other is the flaky formulation: it goes red on an unlucky sample. A
+ * floor can only be exceeded — client-measured time is server floor plus
+ * network plus render — so `elapsed >= floor` cannot fail on a slow day, only
+ * when the padding is genuinely gone.
+ *
+ * The constant is READ FROM THE SOURCE for the same reason ASSESS_HUB is: a
+ * copy here would keep asserting 600ms after someone tuned it.
+ */
+{
+  const FLOOR_MS = (() => {
+    const src = readFileSync(new URL("../app/login/actions.ts", import.meta.url), "utf8");
+    const m = /const FAILURE_FLOOR_MS = (\d+)/.exec(src);
+    if (!m) {
+      throw new Error(
+        "app/login/actions.ts no longer declares FAILURE_FLOOR_MS — the sign-in "
+        + "timing check cannot verify anything. Fix the export or update this "
+        + "parser; do not hardcode the value here.",
+      );
+    }
+    return Number(m[1]);
+  })();
+
+  const timeRefusal = async (email, password) => {
+    const ctx = await browser.newContext({ baseURL: BASE });
+    const page = await ctx.newPage();
+    await page.goto("/login");
+    await page.fill("#email", email);
+    await page.fill("#password", password);
+    const t0 = Date.now();
+    await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+    await page.waitForSelector('[role="alert"]');
+    const ms = Date.now() - t0;
+    await ctx.close();
+    return ms;
+  };
+
+  // No account at all — the branch that used to answer ~250ms sooner.
+  const stranger = await timeRefusal("never.invited@example.test", "wrong-on-purpose");
+  check("an address that was never invited is not refused faster than the floor",
+    stranger >= FLOOR_MS, `${stranger}ms, floor ${FLOOR_MS}ms`);
+
+  // A real, invited address with the wrong password — the branch that always paid.
+  const invited = await timeRefusal(PM.email, "wrong-on-purpose");
+  check("and neither is a wrong password on an invited one",
+    invited >= FLOOR_MS, `${invited}ms, floor ${FLOOR_MS}ms`);
 }
 
 const pm = await session(PM.email, PM.password);
@@ -623,7 +736,19 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
  * value, so it reached the wire in a Location header, on a page that had just
  * asked for a bank password.
  */
-for (const hostile of ["//evil.test", "/\\evil.test", "/\tevil.test", "https://evil.test"]) {
+/* The payloads that DIFFERENTIATE the guard from the one it replaced.
+   A /review pass measured the original four and found every one of them
+   refused by the OLD inline regex too, so all four stayed green with the fix
+   reverted — four ticks telling the next reader a property was covered when
+   nothing was. "/\t/evil.test" is the input the comment in lib/routes.ts
+   names, and "/..//evil.test" is the traversal that reopened the hole after
+   the first fix. The fast, exhaustive version of this now lives in
+   scripts/routes.test.mjs; these stay because they exercise the whole
+   redirect path, header and browser included. */
+for (const hostile of [
+  "//evil.test", "/\\evil.test", "/\tevil.test", "https://evil.test",
+  "/\t/evil.test", "/..//evil.test", "/foo/../..//evil.test",
+]) {
   const ctx = await browser.newContext({ baseURL: BASE });
   const page = await ctx.newPage();
   await page.goto(`/login?next=${encodeURIComponent(hostile)}`);
@@ -631,6 +756,14 @@ for (const hostile of ["//evil.test", "/\\evil.test", "/\tevil.test", "https://e
   await page.fill("#password", PM.password);
   await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
   await page.waitForLoadState("networkidle");
+  /* ORIGIN, and only origin — that is the whole contract.
+     A first draft of this also required the path not to contain the attacker's
+     host, which fails on "/\tevil.test": the parser strips the tab and the
+     value becomes the in-app path "/evil.test". That is a 404 on our own
+     origin, not a hand-off to anyone, and asserting against it would be
+     encoding a preference as a security property. What matters is that the
+     browser never ends up somewhere else, which is exactly what the traversal
+     payloads above would have broken before the fix. */
   check(`a hostile next (${JSON.stringify(hostile)}) never leaves the app`,
     new URL(page.url()).origin === new URL(BASE).origin, page.url());
   await ctx.close();
@@ -1171,23 +1304,39 @@ console.log("\n[4] Self-scoring persists to Postgres");
     await pm.page.context().clearCookies({ name: "cap.last" });
     await pm.page.goto(ASSESS_HUB);
     await pm.page.waitForLoadState("networkidle");
-    /* Asserted POSITIVELY. `!includes("4.3.1.1")` was the first draft, and it
-       is satisfied by any other href at all — the last unanswered control, a
-       wrong area, even /results. The fallback could regress from
-       first-unscored to last-unscored and stay green. Name the control. */
+    /* Asserted POSITIVELY — and this time actually so.
+       The previous version carried this same comment above the negative form it
+       says it rejected: `!/c=4\.3\.1\.1$/ && /c=/`, which any other href
+       satisfies — the LAST unanswered control, a wrong area, anything with a
+       `c=` in it. A /review pass caught the comment describing a fix that had
+       never been applied, which is worse than the weak assertion alone: it
+       tells the next reader the case is covered.
+       So derive the expected code from the database and compare to it. A
+       regression from first-unscored to last-unscored now goes red. */
+    const pmAssessment = await assessmentOf(PM.email);
+    const { data: pmScores } = await db.from("score")
+      .select("control_id, self_level").eq("assessment_id", pmAssessment.id).limit(5000);
+    const answered = new Set((pmScores ?? [])
+      .filter((s) => s.self_level !== null).map((s) => s.control_id));
+    const expectedFirst = activeControls.find((c) => !answered.has(c.id));
     const firstUnscored = await pm.page.evaluate(() =>
       document.querySelector(".progress-head a.btn-primary")?.getAttribute("href") ?? "");
     check("with no remembered position, it resumes at the first unanswered control",
-      /[?&]c=4\.3\.1\.1$/.test(firstUnscored) === false && /[?&]c=/.test(firstUnscored),
-      firstUnscored);
+      firstUnscored === `/assess?c=${expectedFirst.code}`,
+      `${firstUnscored}, expected /assess?c=${expectedFirst?.code}`);
 
     // An addressless /assess is a question, not a screen (D30).
     const bookmarked = await pm.page.goto("/assess");
     await pm.page.waitForLoadState("networkidle");
     check("a bookmarked /assess redirects to the hub",
       new URL(pm.page.url()).pathname === ASSESS_HUB, pm.page.url());
+    /* `bookmarked` is null when the navigation produced no new document, and
+       `null?.request()` is undefined, and `undefined !== null` is TRUE — so the
+       check passed itself whenever it had nothing to inspect. Require the
+       response first. */
     check("...and it got there BY redirect, not by already being there",
-      bookmarked?.request().redirectedFrom() !== null, String(bookmarked?.request().url()));
+      bookmarked !== null && bookmarked.request().redirectedFrom() !== null,
+      bookmarked === null ? "no response object" : String(bookmarked.request().url()));
 
     /* The hub is terminal. This needs its OWN navigation: the first draft
        asserted the same expression twice with nothing in between, which is one
@@ -1993,14 +2142,19 @@ console.log("\n[11] Password gate (A1)");
   check("a short password is refused", (await gated.page.content()).includes("at least 10"));
 
   await gated.page.goto("/change-password");
-  await gated.page.fill("#password", "LongEnough1!aa");
-  await gated.page.fill("#confirm", "DifferentOne1!a");
+  await gated.page.fill("#password", qaPassword());
+  await gated.page.fill("#confirm", qaPassword());   // a DIFFERENT one, hence the mismatch
   await gated.page.click('form:has(#password) button[type="submit"]');
   await actionLanded(gated.page, "do not match");
   check("mismatched passwords are refused", (await gated.page.content()).includes("do not match"));
 
-  // the happy path clears the flag and releases the app
-  const NEWPASS = "QaChanged1!pass";
+  /* The happy path clears the flag and releases the app.
+     Generated, not a literal: this value BECOMES qa.pm2's real password and the
+     same block clears must_change_password, so a literal here is a fully
+     working assessee login published in a public repository for as long as the
+     account outlives the run. A /review pass found this and three more like it
+     surviving the "fixture passwords are generated per run" change. */
+  const NEWPASS = qaPassword();
   await gated.page.goto("/change-password");
   await gated.page.fill("#password", NEWPASS);
   await gated.page.fill("#confirm", NEWPASS);
@@ -2040,7 +2194,8 @@ console.log("\n[12] People screen (A1)");
   await boss.page.fill("#email", NEWMAIL);
   await boss.page.fill("#job_title", "Project Manager");
   await boss.page.selectOption("#role", "assessee");
-  await boss.page.fill("#password", "AddedByAdmin1!");
+  const ADDED_PW = qaPassword();   // becomes a real account's password
+  await boss.page.fill("#password", ADDED_PW);
   await boss.page.click('button:has-text("Add person")');
   await actionLanded(boss.page, NEWMAIL);
 
@@ -2056,12 +2211,18 @@ console.log("\n[12] People screen (A1)");
   check("the person is on the allowlist", made !== null,
     addError?.trim() || "(no error banner shown)");
   check("created flagged to set their own password", made?.must_change_password === true);
-  check("the password is never echoed into the URL", !boss.page.url().includes("AddedByAdmin"));
+  /* Checks the password ACTUALLY USED, not a literal. When the fixture
+     passwords became per-run this assertion kept looking for "AddedByAdmin",
+     a string that no longer exists anywhere — green forever, guarding nothing.
+     Both encodings, since a URL is where this would land if it leaked. */
+  check("the password is never echoed into the URL",
+    !boss.page.url().includes(ADDED_PW) && !boss.page.url().includes(encodeURIComponent(ADDED_PW)),
+    boss.page.url());
   check("a new person appears in the assign list, without an assessment",
     (await boss.page.locator(`input[name="assignee"][value="${made?.id}"]`).count()) === 1);
 
   // the account really works, and lands on the gate
-  const fresh = await session(NEWMAIL, "AddedByAdmin1!");
+  const fresh = await session(NEWMAIL, ADDED_PW);
   check("the added person can sign in", !fresh.page.url().includes("/login"), fresh.page.url());
   check("and is sent straight to set their own password",
     fresh.page.url().includes("/change-password"), fresh.page.url());
@@ -2071,7 +2232,7 @@ console.log("\n[12] People screen (A1)");
   await boss.page.goto("/admin/people");
   await boss.page.fill("#full_name", "QA Added Person");
   await boss.page.fill("#email", NEWMAIL);
-  await boss.page.fill("#password", "AnotherOne1!aa");
+  await boss.page.fill("#password", qaPassword());
   await boss.page.click('button:has-text("Add person")');
   await actionLanded(boss.page, "already on the allowlist");
   check("a duplicate email is refused", (await boss.page.content()).includes("already on the allowlist"));
@@ -2098,7 +2259,8 @@ console.log("\n[12] People screen (A1)");
   await boss.page.fill("#email", ORPHAN);
   await boss.page.fill("#job_title", "Project Manager");
   await boss.page.selectOption("#role", "assessee");
-  await boss.page.fill("#password", "OrphanNew1!aa");
+  const ORPHAN_NEW_PW = qaPassword();   // becomes the adopted account's password
+  await boss.page.fill("#password", ORPHAN_NEW_PW);
   await boss.page.click('button:has-text("Add person")');
   await actionLanded(boss.page, ORPHAN);
 
@@ -2111,7 +2273,7 @@ console.log("\n[12] People screen (A1)");
     adopted?.must_change_password === true);
   // The password the ADMIN just typed must be the one that works — otherwise
   // the admin hands over a credential that silently is not the account's.
-  const orphanIn = await session(ORPHAN, "OrphanNew1!aa");
+  const orphanIn = await session(ORPHAN, ORPHAN_NEW_PW);
   check("the password the admin typed is the one that works",
     !orphanIn.page.url().includes("/login"), orphanIn.page.url());
   await orphanIn.ctx.close();
@@ -2121,13 +2283,14 @@ console.log("\n[12] People screen (A1)");
   await db.from("app_user").update({ must_change_password: false }).eq("email", NEWMAIL);
   await boss.page.goto("/admin/people");
   const row = boss.page.locator("tr", { hasText: NEWMAIL });
-  await row.locator('input[name="password"]').fill("ResetByAdmin1!");
+  const RESET_PW = qaPassword();   // becomes a real account's password
+  await row.locator('input[name="password"]').fill(RESET_PW);
   // The click is on a row locator, so the page has to be named explicitly.
   await submitAction(boss.page, () => row.locator('button:has-text("Reset")').click());
   const { data: afterReset } = await db.from("app_user")
     .select("must_change_password").eq("email", NEWMAIL).single();
   check("an admin reset re-arms the must-change flag", afterReset.must_change_password === true);
-  const resetLogin = await session(NEWMAIL, "ResetByAdmin1!");
+  const resetLogin = await session(NEWMAIL, RESET_PW);
   check("the reset password works and lands on the gate",
     resetLogin.page.url().includes("/change-password"), resetLogin.page.url());
   await resetLogin.ctx.close();

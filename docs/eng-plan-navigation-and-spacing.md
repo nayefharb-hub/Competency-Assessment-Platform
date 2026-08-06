@@ -1,6 +1,10 @@
 # Eng plan: one front door, and form rows that are not touching
 
-Status: **NOT BUILT — READY TO BUILD.** Derived from
+Status: **BUILT.** Parts 1, 1b, 1bb, 1c and 2 shipped in `803ea49`, with the
+pre-landing review fixes in `b8a146e`; Part 3 shipped in `d603b9c`. A `/review`
+pass on 2026-08-06 found four more defects in that code — an open redirect that
+survived its own fix, a security test with no power to fail, and two assertions
+that passed for the wrong reason — all fixed on the same branch. Derived from
 `docs/design-assessment-navigation.md` (decisions D29–D32, settled with the
 owner in `/office-hours`) and N28 in `docs/pilot-feedback.md`.
 
@@ -197,9 +201,16 @@ The first draft redirected an assessee-only user off `app/page.tsx` on *every*
 visit, for the whole session. That is a different rule from the one the header
 describes, and it broke the denial banner (below). What lands instead:
 
-`app/login/form.tsx:28` — the post-sign-in `next` default becomes `ASSESS_HUB`
-for an **assessee-only** user. Anyone holding `assessor` or `admin` — including
-the owner, who holds both — keeps the console as their landing.
+The post-sign-in default becomes `ASSESS_HUB` for an **assessee-only** user.
+Anyone holding `assessor` or `admin` — including the owner, who holds both —
+keeps the console as their landing.
+
+**AS BUILT, this landed server-side, not in the form.** This plan named
+`app/login/form.tsx:28` (the hidden `next` input) twice, and that turned out to
+be impossible: `form.tsx` is a client component, and the user's role is only
+known after the allowlist select, which is server-only. It is in
+`app/login/actions.ts` (the sign-in action) and `app/login/page.tsx` (the
+already-signed-in visitor), which is also why both doors agree.
 
 `/` stays reachable for everyone. A PM who navigates there deliberately, or who
 is bounced there by `requireRole`, still gets the console and still gets the
@@ -230,7 +241,9 @@ Breaking now, and absent from both the test plan and the regression surface:
 All three assert `url().includes("denied=1")`.
 
 **Owner chose the second fix (2026-08-06):** move the role landing to the
-`next` default in `app/login/form.tsx:28`, as written at the top of Part 2.
+post-sign-in default, as written at the top of Part 2. (Built server-side in
+`app/login/actions.ts` and `app/login/page.tsx` rather than in `form.tsx` — see
+the note there.)
 
 This is preferred over exempting `denied` in `app/page.tsx` because it removes
 the mechanism rather than patching around it. There is no redirect on `/` left

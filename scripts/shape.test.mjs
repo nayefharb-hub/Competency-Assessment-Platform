@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { estimateMinutes, estimateLabel, measureIndex } from "../lib/duration.ts";
-import { shapeOf, nextAfter, scoredCodes } from "../lib/shape.ts";
+import { shapeOf, nextAfter, scoredCodes, isComplete } from "../lib/shape.ts";
 import { hasStalled, daysSince, STALL_DAYS } from "../lib/stall.ts";
 
 const ctl = (code, area, ce, words) => ({
@@ -159,4 +159,27 @@ test("a finished or submitted assessment cannot stall", () => {
 test("daysSince survives a null and a malformed date", () => {
   assert.equal(daysSince(null, NOW), null);
   assert.equal(daysSince("not a date", NOW), null);
+});
+
+/* ------------------------------------------------- isComplete (D29 hub) */
+
+test("complete means every active control, and one gap is enough", () => {
+  const active = [ctl("1.1.1.1", "A", "1.1.1", 10), ctl("1.1.1.2", "A", "1.1.1", 10)];
+  assert.equal(isComplete(active, new Set(["1.1.1.1", "1.1.1.2"])), true);
+  assert.equal(isComplete(active, new Set(["1.1.1.1"])), false);
+  assert.equal(isComplete(active, new Set()), false);
+});
+
+test("an empty framework is not a finished assessment", () => {
+  /* [].every() is true, so the naive version put "Review and submit" in front
+     of a PM whose framework fetch came back empty — offering to hand a
+     zero-control assessment to the Head of PMO. */
+  assert.equal(isComplete([], new Set()), false);
+  assert.equal(isComplete([], new Set(["1.1.1.1"])), false);
+});
+
+test("a scored code that is not in the active list cannot complete it", () => {
+  // An inactive control's score must not hold the assessment open OR close it.
+  const active = [ctl("1.1.1.1", "A", "1.1.1", 10)];
+  assert.equal(isComplete(active, new Set(["9.9.9.9"])), false);
 });

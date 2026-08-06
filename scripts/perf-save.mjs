@@ -56,10 +56,14 @@ async function purge() {
  * scripts/e2e.mjs learned this as N21 and grew a teardown; this file was left
  * behind. Same lesson, same shape.
  */
-let cleanedUp = false;
-async function teardown(label, err) {
-  if (cleanedUp) return;
-  cleanedUp = true;
+/* A PROMISE, not a boolean — same reason as scripts/e2e.mjs. A boolean guard
+   returns instantly on re-entry, and every signal handler below calls
+   process.exit() straight after, so a second Ctrl-C during a slow purge kills
+   the process mid-cleanup and abandons the account this exists to remove. */
+let teardownRun = null;
+const teardown = (label, err) => (teardownRun ??= doTeardown(label, err));
+
+async function doTeardown(label, err) {
   if (err) console.log(`\n✗ ${label} — ${String(err?.message ?? err).split("\n")[0]}`);
   await browserRef?.close().catch(() => {});
   await purge().catch((e) => console.log(`  ✗ cleanup ALSO failed — ${e.message}`));
@@ -68,7 +72,7 @@ async function teardown(label, err) {
 let browserRef = null;
 process.on("uncaughtException", (e) => teardown("CRASHED", e).finally(() => process.exit(1)));
 process.on("unhandledRejection", (e) => teardown("UNHANDLED REJECTION", e).finally(() => process.exit(1)));
-for (const sig of ["SIGINT", "SIGTERM"]) {
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"]) {
   process.on(sig, () => teardown("INTERRUPTED", new Error(`received ${sig}`)).finally(() => process.exit(1)));
 }
 

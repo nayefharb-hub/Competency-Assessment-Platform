@@ -44,19 +44,30 @@ export function scoredCodes(scores: Score[]): Set<string> {
 /**
  * Has this PM answered everything they are being asked to answer?
  *
- * Extracted because three screens were computing it separately — the hub, the
- * control list, and the server's own submit precondition — and a review found
- * the hub's copy carrying a comment asserting they "cannot disagree". They
- * agreed by coincidence, not by construction. That is the same defect this
- * change set exists to remove from navigation, so it should not be reintroduced
- * one file over.
+ * Extracted because the hub and the control list were computing it separately,
+ * and a review found the hub's copy carrying a comment asserting they "cannot
+ * disagree". They agreed by coincidence, not by construction. That is the same
+ * defect this change set exists to remove from navigation, so it should not be
+ * reintroduced one file over.
+ *
+ * THE SERVER'S SUBMIT PRECONDITION IS DELIBERATELY NOT A THIRD CALLER.
+ * `submitSelfAssessment` works from `control_id` (it has the score rows, not
+ * the framework), while this works from `code`. Two of three share the seam;
+ * the third would need a key extractor to join them, and pretending otherwise
+ * in this comment is how the last "cannot disagree" claim got written.
  *
  * ACTIVE CONTROLS ONLY. ICB4 ships 133 controls and one is inactive; an
  * inactive control contributes nothing to any rollup and must never be able to
  * hold an assessment open.
+ *
+ * AN EMPTY FRAMEWORK IS NOT A FINISHED ASSESSMENT. `[].every()` is `true`, so
+ * without the length guard a framework fetch that came back empty would put
+ * "Review and submit" in front of a PM who has answered nothing — the hub
+ * offering to hand a zero-control assessment to the Head of PMO. Caught by a
+ * /review pass reading the boundary rather than the happy path.
  */
 export function isComplete(active: Control[], scored: Set<string>): boolean {
-  return active.every((c) => scored.has(c.code));
+  return active.length > 0 && active.every((c) => scored.has(c.code));
 }
 
 /**

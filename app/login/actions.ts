@@ -22,13 +22,24 @@ export interface SignInState {
  */
 const FAILURE_FLOOR_MS = 600;
 
+/**
+ * The allowlist could not be READ — see lib/auth.ts, which pays for this
+ * distinction already. Says "try again" because that genuinely is the fix.
+ */
+const UNAVAILABLE =
+  "Could not reach the database to confirm your account. Please try again.";
+
 /** One refusal, one duration, whatever the reason underneath. */
-async function refuse(startedAt: number, email: string): Promise<SignInState> {
+async function refuse(
+  startedAt: number,
+  email: string,
+  error: string = GENERIC,
+): Promise<SignInState> {
   const spent = Date.now() - startedAt;
   if (spent < FAILURE_FLOOR_MS) {
     await new Promise((resolve) => setTimeout(resolve, FAILURE_FLOOR_MS - spent));
   }
-  return { error: GENERIC, email };
+  return { error, email };
 }
 
 /**
@@ -62,8 +73,20 @@ async function refuse(startedAt: number, email: string): Promise<SignInState> {
  * never reached Supabase Auth.
  *
  * So the password is now verified FIRST, for every address, and the allowlist is
- * consulted afterwards. Round trips are unchanged on the success path (two
- * either way) and one FEWER on a wrong password.
+ * consulted afterwards. Round trips, all four paths, since this project counts
+ * them rather than estimating them: success is two either way; a wrong password
+ * is one, down from two; an unrecognised address is one, as before, but it is
+ * now an Auth verification rather than a Postgres select; and a valid password
+ * for an account that is NOT invited is three, up from one — verify, allowlist,
+ * then the sign-out that throws away the session that path had to create.
+ *
+ * A residual this does not close: that same uninvited path answers with
+ * Set-Cookie headers (written, then cleared) where a wrong password writes
+ * none. It distinguishes "correct password for an account that exists but is
+ * not invited" — a de-provisioned or orphaned account — and needs a working
+ * password to reach, so it is a much smaller door than the one being shut here.
+ * Closing it means not minting the session at all, which is a bigger change
+ * than this one and is recorded rather than smuggled in.
  *
  * The floor covers what reordering cannot. Supabase Auth is itself measurably
  * slower for an address it knows than one it does not, and in this app knowing
@@ -102,8 +125,33 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
     .select("id, role")
     .eq("email", email)
     .maybeSingle();
-  if (invited.error || !invited.data) {
-    await auth.auth.signOut();
+
+  /*
+   * THE QUERY FAILED, which is not the same fact as "not invited" — and the two
+   * need opposite answers. This is N19, which lib/auth.ts:76-88 already paid
+   * for: the owner hit it refreshing after a deploy, was told the account they
+   * administer "is not on the assessment allowlist", and lost the session with
+   * it. A review pass caught it being rebuilt here, one file over, on the
+   * sign-in path.
+   *
+   * Worse here than there, in fact. `signOut()` defaults to `scope: 'global'`
+   * (verified in @supabase/auth-js GoTrueClient.signOut), which revokes every
+   * refresh token the account holds — so one slow moment on the database would
+   * have signed a legitimate user out of every device they own and told them
+   * they had never been invited.
+   *
+   * So: a read failure says "try again" and takes nothing away, and the local
+   * scope is used even for a genuine refusal. Only the session this request
+   * just minted needs discarding; the person's other devices are not ours to
+   * revoke on the strength of an email that is not on a list.
+   */
+  if (invited.error) {
+    console.error(`[signin] allowlist lookup failed: ${invited.error.message}`);
+    await auth.auth.signOut({ scope: "local" });
+    return refuse(startedAt, email, UNAVAILABLE);
+  }
+  if (!invited.data) {
+    await auth.auth.signOut({ scope: "local" });
     return refuse(startedAt, email);
   }
 

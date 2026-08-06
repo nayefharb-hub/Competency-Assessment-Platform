@@ -32,6 +32,24 @@ export const ASSESS_HUB = "/assess/areas";
  * relative, backslash, embedded control character, absolute URL — changes the
  * origin and is refused. Kept in one place because the two copies are exactly
  * how the control character survived being noticed.
+ *
+ * BOTH CHECKS, AND WHY NEITHER IS ENOUGH ALONE (/review, 2026-08-06). The first
+ * version of this function did the parse and stopped there, which reopened the
+ * hole it had just closed, one input over. Measured:
+ *
+ *     safeNext("/..//evil.com")  ->  "//evil.com"
+ *     new URL("//evil.com", "https://app")  ->  https://evil.com/
+ *
+ * `..` pops the leading segment, so a path that RESOLVED same-origin against
+ * the opaque base comes back starting with `//` — and that value is then handed
+ * to redirect(), where the browser reads it as protocol-relative and leaves.
+ * The origin check passed honestly; it was asked about the input, and the
+ * danger is in the output.
+ *
+ * So the shape check is re-applied to the string actually returned. Parsing
+ * removes the control-character bypass, the pattern removes the `//host`
+ * bypass, and the order matters: pattern-then-parse would still hand back a
+ * normalised value nobody re-examined.
  */
 export function safeNext(next: string | null | undefined): string {
   if (!next) return "/";
@@ -39,7 +57,9 @@ export function safeNext(next: string | null | undefined): string {
   try {
     const u = new URL(next, BASE);
     if (u.origin !== BASE) return "/";
-    return u.pathname + u.search + u.hash;
+    const path = u.pathname + u.search + u.hash;
+    // The returned value, not the input, is what a browser will resolve.
+    return /^\/(?![/\\])/.test(path) ? path : "/";
   } catch {
     return "/";
   }

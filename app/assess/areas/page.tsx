@@ -36,11 +36,15 @@ export default async function AreasPage() {
   const totalCes = areas.reduce((s, a) => s + a.ces.length, 0);
   const doneCes = areas.reduce((s, a) => s + a.ces.filter((c) => c.scored === c.controls.length).length, 0);
   const nextUp = areas.find((a) => a.firstUnscored);
-  /* "Continue where you left off" has to mean the same thing as the menu
-     (D12), which resumes from cap.last. Sending it to the first UNSCORED
-     control instead gave two buttons one promise and two destinations — and
-     because it passes ?c=, it would then overwrite the cookie with the wrong
-     answer. First-unscored stays as the fallback, exactly as on /assess. */
+  /* "Continue where you left off" resumes from cap.last.
+     This comment used to justify that by matching the MENU's behaviour under
+     D12 — which D30 reversed in this same change set: the menu now points here,
+     and this button is the sole consumer of the cookie. The rule survived its
+     own rationale, so here is the current one. Sending it to the first UNSCORED
+     control instead would ignore a control the PM deliberately went back to
+     re-read, and because it passes ?c=, would then overwrite the cookie with
+     that wrong answer. First-unscored stays as the fallback, which is the case
+     a PM's first sitting always takes — there is no cap.last yet. */
   const remembered = (await cookies()).get("cap.last")?.value;
   const resume = (remembered && fw.controlByCode(remembered)?.active
     ? remembered
