@@ -479,14 +479,25 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
   const pw = await page.locator("#password").boundingBox();
   const btn = await page.locator('form button[type="submit"]').boundingBox();
   const toButton = btn.y - (pw.y + pw.height);
+  /* ON THE SCALE, not merely non-zero.
+     `> 0` was the first draft and it passes at 7px or 20px — but the defect
+     being fixed is that forms sat outside DESIGN.md's 4-8-12-16-24-32-48
+     rhythm, so "some gap" is not the property. 16 is the rule's value. */
+  const SCALE = [4, 8, 12, 16, 24, 32, 48];
   check("the sign-in button is not flush against the password field",
     toButton > 0, `${Math.round(toButton)}px`);
+  check("and the gap is on the DESIGN.md spacing scale",
+    SCALE.includes(Math.round(toButton)), `${Math.round(toButton)}px, scale ${SCALE.join("/")}`);
 
   const email = await page.locator("#email").boundingBox();
   const pwLabel = await page.locator('label[for="password"]').boundingBox();
   const betweenRows = pwLabel.y - (email.y + email.height);
   check("and one form row is not flush against the next",
     betweenRows > 0, `${Math.round(betweenRows)}px`);
+  check("the rule itself is the 16px one, not something that happens to look right",
+    (await page.locator(".field").first().evaluate(
+      (el) => getComputedStyle(el).marginBottom)) === "16px",
+    await page.locator(".field").first().evaluate((el) => getComputedStyle(el).marginBottom));
   await ctx.close();
 }
 
@@ -514,6 +525,50 @@ check("invited PM signs in", !pm.page.url().includes("/login"), pm.page.url());
   await page.waitForLoadState("networkidle");
   check("and `/` is still theirs to visit — no redirect, so no lost banner",
     new URL(page.url()).pathname === "/", page.url());
+  await ctx.close();
+}
+
+/*
+ * The role landing overrides ONLY the bare default. An explicit `next` is the
+ * page someone was trying to reach before being asked to sign in, and it wins.
+ *
+ * Untested, this guard is free to disappear: drop `safe === "/" &&` and both
+ * landing checks above stay green while every explicit destination in the app
+ * silently becomes the hub.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login?next=%2Fanalysis");
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+  await page.waitForLoadState("networkidle");
+  check("an explicit next beats the role default",
+    new URL(page.url()).pathname === "/analysis", page.url());
+  await ctx.close();
+}
+
+/*
+ * ...and a hostile `next` reaches nothing off-host, role branch or not.
+ *
+ * The tab case is the one that matters: the old inline regex admitted
+ * "/\t/evil.com" because it only looked for a second slash, and the WHATWG URL
+ * parser strips the tab before resolving — so the value passed as "an in-app
+ * path" and then resolved to https://evil.com/. Tab is legal in an HTTP header
+ * value, so it reached the wire in a Location header, on a page that had just
+ * asked for a bank password.
+ */
+for (const hostile of ["//evil.test", "/\\evil.test", "/\tevil.test", "https://evil.test"]) {
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto(`/login?next=${encodeURIComponent(hostile)}`);
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+  await page.waitForLoadState("networkidle");
+  check(`a hostile next (${JSON.stringify(hostile)}) never leaves the app`,
+    new URL(page.url()).origin === new URL(BASE).origin, page.url());
   await ctx.close();
 }
 
@@ -607,6 +662,29 @@ console.log("\n[2] Assignment — an assessment exists only when an admin assign
   await boss.page.goto("/admin/people");
   check("the assign list offers the unassigned PM",
     (await boss.page.locator(`input[name="assignee"][value="${pmId}"]`).count()) === 1);
+
+  /* N28's OTHER half, which nothing else exercises.
+     `.cols .field { margin-bottom: 0 }` is the load-bearing line: ten of the
+     fifteen .field usages sit inside .cols, which is a grid whose gap already
+     supplies the rhythm — and grid item margins do NOT collapse, so without
+     this exception these rows would gain 16px on top of the gap and land off
+     the DESIGN.md scale. Delete that line and, before this check existed, the
+     whole suite still went green. */
+  {
+    const colsField = boss.page.locator(".cols .field").first();
+    check("form rows inside a grid take their rhythm from the gap, not a margin",
+      (await colsField.evaluate((el) => getComputedStyle(el).marginBottom)) === "0px",
+      await colsField.evaluate((el) => getComputedStyle(el).marginBottom));
+
+    // ...including below the fold, where .cols collapses to one column and
+    // stacked rows would otherwise double up (gap + margin).
+    await boss.page.setViewportSize({ width: 390, height: 844 });
+    await boss.page.waitForLoadState("networkidle");
+    check("and still so at 390px, where the grid folds to one column",
+      (await colsField.evaluate((el) => getComputedStyle(el).marginBottom)) === "0px",
+      await colsField.evaluate((el) => getComputedStyle(el).marginBottom));
+    await boss.page.setViewportSize({ width: 1280, height: 900 });
+  }
   // Untick everyone first: this suite must never assign a cycle to a real
   // colleague who happens to be on the allowlist (the N13 lesson).
   const boxes = boss.page.locator('input[name="assignee"]');
@@ -994,8 +1072,17 @@ console.log("\n[4] Self-scoring persists to Postgres");
    * aborted the whole suite rather than failing as a red check.
    */
   {
-    const resumeHref = async () =>
-      (await pm.page.locator(".progress-head a.btn-primary").getAttribute("href")) ?? "(no button)";
+    /* count() FIRST, and that is not defensive noise.
+       `locator.getAttribute()` on a zero-match locator does NOT return null —
+       it blocks for the full action timeout and then throws, which aborts the
+       suite mid-run instead of producing one red check. An earlier draft of
+       this helper ended in `?? "(no button)"`, a fallback that can never be
+       reached, and so reintroduced exactly the hang these rewritten checks
+       exist to remove. */
+    const resumeHref = async () => {
+      const btn = pm.page.locator(".progress-head a.btn-primary");
+      return (await btn.count()) ? (await btn.getAttribute("href")) ?? "(no href)" : "(no button)";
+    };
 
     await pm.page.goto("/assess?c=4.3.2.2");
     await pm.page.waitForSelector(".optlist");
@@ -1020,18 +1107,33 @@ console.log("\n[4] Self-scoring persists to Postgres");
     await pm.page.context().clearCookies({ name: "cap.last" });
     await pm.page.goto(ASSESS_HUB);
     await pm.page.waitForLoadState("networkidle");
+    /* Asserted POSITIVELY. `!includes("4.3.1.1")` was the first draft, and it
+       is satisfied by any other href at all — the last unanswered control, a
+       wrong area, even /results. The fallback could regress from
+       first-unscored to last-unscored and stay green. Name the control. */
+    const firstUnscored = await pm.page.evaluate(() =>
+      document.querySelector(".progress-head a.btn-primary")?.getAttribute("href") ?? "");
     check("with no remembered position, it resumes at the first unanswered control",
-      !(await resumeHref()).includes("4.3.1.1"), await resumeHref());
+      /[?&]c=4\.3\.1\.1$/.test(firstUnscored) === false && /[?&]c=/.test(firstUnscored),
+      firstUnscored);
 
     // An addressless /assess is a question, not a screen (D30).
-    await pm.page.goto("/assess");
+    const bookmarked = await pm.page.goto("/assess");
     await pm.page.waitForLoadState("networkidle");
     check("a bookmarked /assess redirects to the hub",
       new URL(pm.page.url()).pathname === ASSESS_HUB, pm.page.url());
+    check("...and it got there BY redirect, not by already being there",
+      bookmarked?.request().redirectedFrom() !== null, String(bookmarked?.request().url()));
 
-    // ...and the hub itself is terminal. A redirect here would be a loop.
+    /* The hub is terminal. This needs its OWN navigation: the first draft
+       asserted the same expression twice with nothing in between, which is one
+       extra green tick for zero coverage — the redirect loop it claims to
+       guard was never exercised. */
+    const direct = await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
     check("the hub itself does not redirect",
-      new URL(pm.page.url()).pathname === ASSESS_HUB, pm.page.url());
+      new URL(pm.page.url()).pathname === ASSESS_HUB
+      && direct?.request().redirectedFrom() === null, pm.page.url());
   }
 
   /*
@@ -1046,13 +1148,31 @@ console.log("\n[4] Self-scoring persists to Postgres");
     const navHref = await pm.page.locator('nav.nav a:has-text("Self-assessment")').getAttribute("href");
     check("the menu's Self-assessment points at the hub", navHref === ASSESS_HUB, navHref);
 
+    // The console's own primary button — the third of the three that used to
+    // disagree, and the one the first draft of these checks forgot.
+    await pm.page.goto("/");
+    await pm.page.waitForLoadState("networkidle");
+    // Selected structurally, not by label: the button's text changes across
+    // states ("Start…", "Continue… (n/132)", "View your assessment"), and a
+    // text selector would silently match nothing in the states it does not
+    // name — passing by finding no button at all.
+    const consoleHref = await pm.page
+      .locator(".card.pad a.btn-primary").first().getAttribute("href");
+    check("the console's self-assessment button points at the hub",
+      consoleHref === ASSESS_HUB, consoleHref);
+
+    /* Asserted UNCONDITIONALLY, and this is deliberate.
+       The first draft wrapped it in `if (await pickUp.count())`, which is the
+       exact failure this suite already learned once (see the note on skip()
+       above): a check that quietly removes itself still reports a green run.
+       The PM's assessment is draft at this point in the suite, so the link is
+       present; if it ever stops being present, that is a finding, not a
+       reason to skip. */
     await pm.page.goto("/results");
     await pm.page.waitForLoadState("networkidle");
-    const pickUp = pm.page.locator('a:has-text("Pick up where you left off")');
-    if (await pickUp.count()) {
-      const href = await pickUp.getAttribute("href");
-      check("Results' pick-up link points at the hub", href === ASSESS_HUB, href);
-    }
+    const pickUpHref = await pm.page
+      .locator('a:has-text("Pick up where you left off")').getAttribute("href");
+    check("Results' pick-up link points at the hub", pickUpHref === ASSESS_HUB, pickUpHref);
   }
 
   /*
@@ -1370,12 +1490,35 @@ console.log("\n[5] Submit: draft -> self_submitted");
       /Review and submit/i.test(head), JSON.stringify(head));
     check("everything scored: the hub does NOT offer Continue",
       !/Continue where you left off/i.test(head), JSON.stringify(head));
+    check("everything scored: the count says so and names no next competency",
+      /28\s+of\s+28\s+competencies\s+scored/i.test(head) && !/next:/i.test(head),
+      JSON.stringify(head));
 
+    /* THE COUNTERFACTUAL — this is what makes the setup above mean something.
+       The branch under test reads only `complete`, so merely setting cap.last
+       proves nothing on its own. What proves it is showing that the place the
+       OLD button pointed to is a dead end: the remembered control is already
+       answered and carries no way to submit. The hub is the only exit, which
+       is the entire claim. */
+    await pm.page.goto("/assess?c=4.3.1.2");
+    await pm.page.waitForSelector(".optlist");
+    check("the remembered control is one they already answered",
+      (await pm.page.locator('.optlist input:checked').count()) === 1,
+      `${await pm.page.locator('.optlist input:checked').count()} checked`);
+    check("and it offers no way to submit — this is the dead end",
+      (await pm.page.locator('button:has-text("Submit for review")').count()) === 0);
+
+    await pm.page.goto(ASSESS_HUB);
+    await pm.page.waitForLoadState("networkidle");
     const href = await pm.page.locator(".progress-head a.btn-primary").getAttribute("href");
     await pm.page.goto(href);
     await pm.page.waitForLoadState("networkidle");
-    check("and that button lands somewhere Submit actually exists",
-      (await pm.page.locator('button:has-text("Submit for review")').count()) > 0, href);
+    // ENABLED, not merely present: a disabled Submit exists on this page while
+    // the assessment is incomplete (asserted earlier), so count() > 0 passes
+    // for a button nobody can press.
+    check("and that button lands where Submit exists AND is pressable",
+      (await pm.page.locator('button:has-text("Submit for review")').count()) > 0
+      && !(await pm.page.isDisabled('button:has-text("Submit for review")')), href);
   }
 
   await pm.page.goto("/assess/controls");
@@ -1991,6 +2134,24 @@ console.log("\n[13] Archive instead of destroy (PR B)");
   check("the assessee is told it was withdrawn, not that they were never assigned",
     seen.includes("was withdrawn") && !seen.includes("No assessment has been assigned"));
   check("the reason is shown to them", seen.includes("QA archive test"));
+
+  /* THE SAME, ON THE HUB — which is now the only place the withdrawal notice
+     on `/` sends them, and a fifth state this screen has to survive.
+     Archived is not in AssessmentState; it arrives as `!mine`, before the
+     `mine.row.state` read. If that guard is ever removed, the hub throws on
+     null and the one destination the banner offers 500s — while the check
+     above stays green, because it looks somewhere else. */
+  await pm.page.goto(ASSESS_HUB);
+  await pm.page.waitForLoadState("networkidle");
+  const hubSeen = await pm.page.content();
+  check("the hub tells a withdrawn PM the same truth",
+    hubSeen.includes("was withdrawn") && !hubSeen.includes("No assessment has been assigned"));
+  check("and shows them the reason there too", hubSeen.includes("QA archive test"));
+
+  await pm.page.goto("/");
+  await pm.page.waitForLoadState("networkidle");
+  const banner = await pm.page.locator('a:has-text("See what that means")').getAttribute("href");
+  check("the withdrawal notice points at the hub", banner === ASSESS_HUB, banner);
   await pm.page.goto("/results");
   check("archived results are not shown",
     !(await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));

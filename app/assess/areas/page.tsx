@@ -6,7 +6,7 @@ import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
 import { estimateLabel } from "@/lib/duration";
-import { scoredCodes, shapeOf } from "@/lib/shape";
+import { isComplete, scoredCodes, shapeOf } from "@/lib/shape";
 import NotAssigned from "../not-assigned";
 
 export const dynamic = "force-dynamic";
@@ -60,12 +60,13 @@ export default async function AreasPage() {
      out of order (last answer landing mid-competency, so nextAfter's boundary
      never fires) leaves a PM at 132 of 132 with no route to submit at all.
 
-     `complete` is the same predicate /assess/controls uses, over the same
-     active controls, so the two screens cannot disagree about whether a PM is
-     done. Active only — an inactive control contributes nothing to any rollup
-     and must not hold an assessment open. */
+     Completeness comes from `isComplete` in lib/shape.ts, shared with
+     /assess/controls. An earlier draft of this file computed it inline and
+     claimed in a comment that the two screens "cannot disagree"; they agreed
+     by coincidence rather than by construction, which is the same defect this
+     change set exists to remove from navigation. */
   const state = mine.row.state;
-  const complete = fw.activeControls.every((ac) => done.has(ac.code));
+  const assessmentComplete = isComplete(fw.activeControls, done);
   const on = (ts: string | null) => (ts ? ` ${ts.slice(0, 10)}` : "");
 
   return (
@@ -80,7 +81,7 @@ export default async function AreasPage() {
             {state === "draft" && (
               <>
                 <b className="tnum">{doneCes}</b> of <b className="tnum">{totalCes}</b> competencies
-                {complete ? " scored" : " complete"}
+                {assessmentComplete ? " scored" : " complete"}
                 {nextUp && <> · next: <b>{nextUp.name}</b></>}
               </>
             )}
@@ -92,12 +93,12 @@ export default async function AreasPage() {
         </div>
         {/* One primary action per state. The draft-complete branch is the one
             that keeps Submit reachable; see the note above. */}
-        {state === "draft" && complete && (
+        {state === "draft" && assessmentComplete && (
           <Link className="btn btn-primary" href="/assess/controls">
             Review and submit
           </Link>
         )}
-        {state === "draft" && !complete && resume && (
+        {state === "draft" && !assessmentComplete && resume && (
           <Link className="btn btn-primary" href={`/assess?c=${resume}`}>
             Continue where you left off
           </Link>

@@ -5,6 +5,7 @@ import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
+import { isComplete } from "@/lib/shape";
 import NotAssigned from "../not-assigned";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,10 @@ export default async function ControlsIndex({
   );
   const total = fw.activeControls.length;
   const done = fw.activeControls.filter((c) => scored.has(c.code)).length;
-  const complete = done === total;
+  // Shared with the hub (lib/shape.ts) so the two screens cannot answer
+  // "is this PM finished?" differently — one of them offers Submit on the
+  // strength of it.
+  const complete = isComplete(fw.activeControls, new Set(scored.keys()));
   const draft = row.state === "draft";
   const firstUnscored = fw.activeControls.find((c) => !scored.has(c.code));
 

@@ -56,10 +56,13 @@ export default async function AssessPage({
   }
   const { row, scores } = mine;
 
-  /* Where an unaddressed /assess lands (decision D12, revised by the owner).
-     The menu used to open control 1 every time, so a PM sixty controls in had
-     to find their own place. It now returns them to the control they were last
-     on — including one they had gone back to re-read, which "first unanswered"
+  /* Where an `?c=` naming an unknown or inactive control lands (D12, revised).
+     An ADDRESSLESS /assess no longer reaches this code at all — it redirected
+     to the hub above — and the menu no longer points here either. What is left
+     is the narrower case of a stale bookmark or a hand-typed code.
+
+     The rule itself is unchanged: return the PM to the control they were last
+     on, including one they had gone back to re-read, which "first unanswered"
      would have overruled.
 
      The position is a cookie: a per-device convenience, not part of the

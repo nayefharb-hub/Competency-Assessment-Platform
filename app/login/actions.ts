@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { authClient } from "@/lib/auth";
-import { ASSESS_HUB } from "@/lib/routes";
+import { ASSESS_HUB, safeNext } from "@/lib/routes";
 import { db } from "@/lib/supabase/server";
 
 /** One message for every failure — see the note on the sign-in page. */
@@ -55,9 +55,9 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   const { error } = await auth.auth.signInWithPassword({ email, password });
   if (error) return { error: GENERIC, email };
 
-  // Only ever bounce to an in-app path. `//host` and `/\host` are both read as
-  // protocol-relative by browsers, so a bare startsWith("/") is not enough.
-  const safe = /^\/(?![/\\])/.test(next) ? next : "/";
+  // Only ever bounce to an in-app path. See safeNext: the old inline regex let
+  // "/\t/evil.com" through, which the browser resolves to https://evil.com/.
+  const safe = safeNext(next);
 
   /* Land by role, AT SIGN-IN — which is what D32 asks for, and deliberately
      not a redirect on `/`.

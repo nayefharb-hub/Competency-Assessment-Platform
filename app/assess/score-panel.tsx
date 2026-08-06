@@ -90,7 +90,8 @@ export default function ScorePanel({
    *
    * STARTED IN THE RENDER BODY, NOT IN AN EFFECT. A passive effect runs after
    * hydration, and on any full page load — a bookmarked /assess?c=…, a reload,
-   * "Self-assessment" from the menu, the first control of every sitting — the
+   * a link in from the hub or the control list, the first control of every
+   * sitting — the
    * server-rendered text is on screen and readable well before the bundle
    * hydrates. Starting the clock there discarded that reading time, and the
    * error ran in the accusing direction: it makes an answer look faster than
