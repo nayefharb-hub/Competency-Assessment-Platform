@@ -1950,3 +1950,69 @@ is that the product cannot say what "the assessment" is.
 **Settled in `/office-hours` as D29–D32** (`docs/design-assessment-navigation.md`),
 including a deliberate reversal of the owner's earlier D12. Next step is
 `/plan-eng-review`; nothing is built yet.
+
+---
+
+### N30 — the last control of a competency changes its button between visits
+
+Owner, 2026-08-06, from the deployed app, with two screenshots of the **same**
+control (4.4.1.5, the last in *4.4.1 Self-reflection and self-management*):
+
+| Visit | Progress line | Helper text | Primary button |
+|---|---|---|---|
+| First | 20 scored so far | "Not saved yet — **Next control** saves it." | **Back to the list →** |
+| Second, reached via area → competency → control | 23 scored so far | (none) | **Finish this competency →** |
+
+Same control, same competency, two different promises about what the button
+does. The owner reached it the second time through the area screen, but the
+route in is not what changed the label.
+
+**Cause — an off-by-one against the PM's own answer.** `nextAfter()`
+(`lib/shape.ts:169`) decides the label from
+`ceComplete = ce.scored === ce.controls.length`, and `ce.scored` comes from
+`scoredCodes()`, which counts only scores **already persisted**. The answer the
+PM is looking at on screen is not committed until they press the button
+(`app/assess/score-panel.tsx:127` — the outbox commits on click, by design,
+D11/PR #20).
+
+So on the last control of a competency, at the exact moment every other control
+in it is already scored and this one is selected but unsaved:
+
+- `ce.scored` is 4 of 5 → `complete` is **false** → `score-panel.tsx:239`
+  renders **"Back to the list →"**.
+- The PM has answered all five and is told the competency is not finished.
+
+Return later, when that fifth answer has persisted, and `ce.scored` is 5 of 5,
+so the same screen now reads **"Finish this competency →"**. Nothing about the
+navigation path matters; what changed is whether the visible answer had reached
+the database yet.
+
+The two screenshots corroborate this exactly: the first carries the "Not saved
+yet" line (uncommitted) and shows 20 scored; the second has no such line
+(already committed) and shows 23.
+
+**A second, related defect in the same screenshot.** The helper text at
+`score-panel.tsx:217` chooses its wording from `nextControl`, while the button
+two lines below chooses from `boundary`. At a competency boundary both are
+truthy, so the hint says *"**Next control** saves it"* while the button says
+*"Back to the list"* — the hint names a control that is not on offer. Same root:
+two notions of "what happens next", computed from different inputs, rendered
+side by side.
+
+**Not a data bug.** The score is saved correctly either way; `nextAfter`'s
+`complete` flag is deliberately conservative, and the comment above it records
+why (`lib/shape.ts:165` — a PM who skipped four of five and scored the last one
+must not be told "Finish this competency" and pointed at a Submit the server
+would refuse). That reasoning is right. The flaw is that the same conservatism
+fires against a PM who has skipped nothing, because their own answer is not yet
+counted at the moment the label is chosen.
+
+**Worth noting for whoever fixes it:** the honest fix is to count the current
+unsaved selection when the PM has one, so the label describes what the click is
+about to make true rather than what was true before it. That is a client-side
+adjustment to the label only — it must NOT relax the server's submit
+precondition, which is the thing protecting against the skipped-controls case.
+
+**Severity:** confusing rather than harmful, on the screen a PM sees 132 times.
+Logged at the owner's request; deliberately **not fixed** while they are still
+working through the assessment.
