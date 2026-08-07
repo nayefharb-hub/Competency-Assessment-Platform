@@ -2471,6 +2471,32 @@ it; whether that is sufficient is a question for `/cso`.
 **Deliberately not in PR #26** — it touches auth, so it gets its own diff and a
 security pass. Worth doing before the pilot starts.
 
+**2026-08-07, and this makes it worse than filed: it is not ONE check.** Four
+consecutive local runs of the same green build, no code change between them:
+
+| Run | Failures |
+|---|---|
+| 1 | the app is reachable once the flag clears |
+| 2 | *(that, plus a threshold bug of my own)* |
+| 3 | assessor/admin signs in · an assessor/admin still lands on the console · server refuses an incomplete approval · the app is reachable once the flag clears |
+| 4 | the password the admin typed is the one that works · the reset password works and lands on the gate · the app is reachable once the flag clears |
+
+Every one of them sits on `/login` or `/change-password`, and every one has the
+same signature: **the browser was still on the page it should have navigated
+away from.** One check is documented; the other five are the same mechanism
+landing on whichever neighbouring assertion happens to run while the memo is
+stale. The same three failed on the Vercel preview.
+
+So the count in the summary line understates it. This is not "one flake plus
+noise" — it is one mechanism producing between one and four red checks per run,
+and which ones go red is timing. Anyone reading a single run will conclude the
+suite is flaky in the auth area generally, which is precisely the training this
+repository has already paid for once (N21).
+
+**It also means the fix has a test.** Run the suite five times against the fix;
+the password-gate section has to be green in all five, not just in the run you
+choose to report.
+
 ---
 
 ### N46 — the framework admin screen cannot be worked through
@@ -2485,7 +2511,7 @@ as a place to change one field, and the job is to review 133 controls.**
 | 2 | No next/previous, so every control means going back to the list | Previous/Next, walking the filtered view |
 | 3 | No way to check controls by target | Target filter on `/admin/controls` |
 | 4 | Text does not use the pane's width | **Held** — mockup first, owner's call |
-| 5 | No explanation of what Aware vs Practised vs Competent mean | Collapsible APM scale, target marked |
+| 5 | No explanation of what Aware vs Practised vs Competent mean | Segmented picker + definition (Design A) |
 | 6 | The KIB clarification box needs the same room as the reason | `<textarea>`, 3 rows |
 
 **Items 2 and 3 are one feature, and that is the useful part.** Filtering alone
@@ -2523,6 +2549,35 @@ Reverting each to the correct form turned 5 failing checks green.
 reaching a redirect target, which is `safeNext()`'s shape — and that one has been
 broken twice by trusting the input rather than the output. Only the four known
 keys survive, each validated against the framework.
+
+**Item 5 shipped twice, and the first one was wrong.** The first cut put the six
+levels in a vertical card list and the owner rejected it: ~430px of definitions
+between the target and the fields the screen exists for, pushing Priority,
+Active and Reason below the fold.
+
+The mistake was borrowing the PM's control. That list is right for the PM —
+they read all six carefully, once per control, to place themselves. An admin is
+SETTING a value they already know and occasionally checking how Competent
+differs from Practised. Same six levels, opposite job.
+
+Four designs were prototyped and the owner chose **A: a segmented picker**. The
+six levels became the input, so the dropdown is gone and setting a target costs
+one click instead of two; the whole scale stays visible as LABELS (the domain
+rule is that a level is picked by label, never by number); only the chosen
+level's definition is spelled out, with the rest behind "Compare all six" as one
+line each. Measured 151px against the rejected 430px.
+
+**No client component.** The definition follows the checked radio through
+`:has()`, which this stylesheet already relies on for `.opt:has(input:checked)`.
+Adding a client bundle to swap one line of text is the trade `app/link.tsx`
+exists to refuse.
+
+**The height is now asserted at 200px in the e2e**, and that number has a
+reason: it is under half the rejected design, and six bordered cards clear 400px
+before any text wraps, so a return to the rejected shape fails the check. The
+first cut of that assertion said 140px — a guess made before measuring, against
+a real 151px. Tuning it down to fit would have made the check agree with the
+code instead of with the intent.
 
 **Still open from this report: item 4**, and it turned out to rest on a wrong
 number — see N47.

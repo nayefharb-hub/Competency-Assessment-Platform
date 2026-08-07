@@ -558,49 +558,97 @@ textarea.input {
 .edited { font-size: 11.5px; color: var(--accent); font-weight: 600; }
 .prefilled { font-size: 11.5px; color: var(--ink-muted); }
 
-/* ---------- what the levels mean (admin) ----------
-   Collapsed by default: an admin who knows the scale is tuning a target, not
-   re-reading six definitions, and an always-open block would push the fields
-   that ARE the job below the fold. Open, it is the same APM wording the PM
-   sees while self-scoring — one definition on both sides of the assessment,
-   not two that can drift. */
-.scale-help {
-  margin-top: 14px; border: 1px solid var(--border);
-  border-radius: var(--radius-in); background: var(--surface-2);
+/* ---------- target level, as a config control (admin) ----------
+   The six levels ARE the input. The first cut of this was a vertical card list
+   — the PM's control, borrowed — and it was rejected for the right reason: the
+   PM reads all six to place themselves, an admin is setting a value they
+   already know. Six padded cards to set one number pushed Priority, Active and
+   Reason below the fold on a screen whose whole job is those fields.
+
+   Labels, not just numbers: the domain rule is that a level is picked by
+   LABEL. */
+.levelseg { display: flex; flex-wrap: wrap; gap: 0; }
+.levelseg-opt { display: contents; }
+.levelseg input {
+  /* Reachable by keyboard and to a screen reader, invisible to the eye — the
+     label is the control. Not `display:none`, which would take it out of the
+     tab order and out of the accessibility tree. */
+  position: absolute; opacity: 0; width: 1px; height: 1px;
+  margin: 0; pointer-events: none;
 }
+.levelseg label {
+  flex: 1 1 0; min-width: 62px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 8px 4px; min-height: 44px; justify-content: center;
+  border: 1px solid var(--border); border-right-width: 0;
+  background: var(--surface-2); color: var(--ink-muted);
+  font-size: 12.5px; font-weight: 600; line-height: 1.15; text-align: center;
+  transition: background 0.15s, color 0.15s;
+}
+.levelseg-opt:first-of-type label {
+  border-top-left-radius: var(--radius-in); border-bottom-left-radius: var(--radius-in);
+}
+/* The last OPTION, not the last child — the definition paragraphs are children
+   of the same flex container. */
+.levelseg-opt:nth-of-type(6) label {
+  border-right-width: 1px;
+  border-top-right-radius: var(--radius-in); border-bottom-right-radius: var(--radius-in);
+}
+.levelseg label .n { font-size: 13.5px; font-weight: 700; }
+.levelseg label .l { font-size: 10.5px; }
+.levelseg label:hover { background: var(--accent-weak); color: var(--ink); }
+.levelseg input:checked + label {
+  background: var(--selected); border-color: var(--selected); color: #fff;
+}
+.levelseg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The definition follows the checked radio — no client component for one line
+   of text. `:has()` is already load-bearing in this stylesheet
+   (`.opt:has(input:checked)`), so this adds no new browser requirement. */
+.levelseg-defn {
+  display: none; flex-basis: 100%; margin: 8px 0 0;
+  font-size: 12.5px; line-height: 1.5; color: var(--ink-muted);
+  max-width: var(--measure);
+}
+.levelseg-defn b { color: var(--ink); font-weight: 650; }
+.levelseg:has(input[value="0"]:checked) .levelseg-defn[data-level="0"],
+.levelseg:has(input[value="1"]:checked) .levelseg-defn[data-level="1"],
+.levelseg:has(input[value="2"]:checked) .levelseg-defn[data-level="2"],
+.levelseg:has(input[value="3"]:checked) .levelseg-defn[data-level="3"],
+.levelseg:has(input[value="4"]:checked) .levelseg-defn[data-level="4"],
+.levelseg:has(input[value="5"]:checked) .levelseg-defn[data-level="5"] { display: block; }
+
+/* Below the two-column fold the six segments would be ~40px wide and the
+   labels would clip, so they wrap to two rows of three. */
+@media (max-width: 560px) {
+  .levelseg label { flex-basis: 33.333%; border-right-width: 1px; border-radius: var(--radius-in); }
+  .levelseg { gap: 4px; }
+}
+
+/* "Compare all six" — one line per level, not a card each. */
+.scale-help { margin-top: 10px; }
 .scale-help > summary {
-  cursor: pointer; padding: 9px 13px; font-size: 12.5px; font-weight: 600;
-  color: var(--ink); list-style: none; border-radius: var(--radius-in);
+  cursor: pointer; font-size: 12.5px; font-weight: 600;
+  color: var(--accent); list-style: none;
 }
 .scale-help > summary::-webkit-details-marker { display: none; }
-.scale-help > summary::before {
-  content: "▸"; display: inline-block; width: 14px; color: var(--ink-muted);
-}
-.scale-help[open] > summary::before { content: "▾"; }
-.scale-help > summary:hover { color: var(--accent); }
+.scale-help > summary::before { content: "▸ "; }
+.scale-help[open] > summary::before { content: "▾ "; }
 .scale-help > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.scale-levels { list-style: none; margin: 0; padding: 0 13px 12px; display: grid; gap: 6px; }
-.scale-levels li {
-  display: grid; grid-template-columns: 20px 1fr; gap: 10px;
-  padding: 8px 11px; font-size: 12.5px; line-height: 1.5;
-  border: 1px solid var(--border); border-radius: var(--radius-in);
-  background: var(--surface);
+.scale-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.scale-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+  line-height: 1.45; vertical-align: baseline;
 }
-/* The target is marked with a border and a WORD, never colour alone —
-   DESIGN.md's rule for every status treatment in this app. */
-.scale-levels li.is-target {
-  border-color: var(--selected); box-shadow: inset 0 0 0 1px var(--selected);
-  background: var(--accent-weak);
-}
-.scale-levels .lvl-n { font-weight: 700; color: var(--ink-muted); }
-.scale-levels li.is-target .lvl-n { color: var(--selected); }
-.scale-levels b { display: block; font-weight: 650; }
-.scale-levels .lvl-tag {
-  font-weight: 600; font-size: 11px; color: var(--selected);
-  text-transform: uppercase; letter-spacing: .05em;
-}
-.scale-levels .lvl-text { display: block; color: var(--ink-muted); margin-top: 2px; }
+.scale-table tr:last-child td { border-bottom: 0; }
+.scale-table .n { width: 18px; font-weight: 700; color: var(--ink-muted); }
+.scale-table .lab { width: 76px; font-weight: 650; white-space: nowrap; }
+.scale-table .txt { color: var(--ink-muted); }
+/* Never colour alone — the left edge carries it too (DESIGN.md). */
+.scale-table tr.is-target td { background: var(--accent-weak); }
+.scale-table tr.is-target td:first-child { box-shadow: inset 2px 0 0 var(--selected); }
+.scale-table tr.is-target .n { color: var(--selected); }
 
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .tablewrap { overflow-x: auto; }

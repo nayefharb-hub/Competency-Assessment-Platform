@@ -584,7 +584,19 @@ one is held behind a design call (N47 below).
 
 The framework admin was built as a place to change one field, and the job is to
 review 133 controls. So: **a target filter on the table, and Previous/Next in
-the editor that walks the filtered view** — narrow to "targeted Competent", then
+the editor that walks the filtered view**
+
+**The target picker shipped twice.** The first cut borrowed the PM's vertical
+level list — ~430px of definitions between the target and the fields the screen
+exists for — and the owner rejected it. The PM reads all six to place
+themselves; an admin is setting a value they already know. Four designs were
+prototyped and the owner chose a **segmented picker**: the six levels ARE the
+input, the dropdown is gone, one click instead of two, labels visible (a level
+is picked by label, never by number), and only the chosen definition spelled
+out. 151px against 430px, asserted at a 200px budget in the e2e — a number
+chosen because six cards clear 400px, not because it is what the code does. No
+client component: the definition follows the checked radio through `:has()`.
+ — narrow to "targeted Competent", then
 walk those 41 rather than making 41 round trips to the list. Reason and KIB
 context became textareas (they run to two or three sentences and existed to be
 read), and the APM scale is now explained on the screen where the target is

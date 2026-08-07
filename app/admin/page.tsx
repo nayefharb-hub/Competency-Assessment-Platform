@@ -156,20 +156,73 @@ export default async function AdminPage({
               filtered set is not dumped back into all 133 by pressing Save. */}
           <input type="hidden" name="filter" value={filterQuery(filter)} />
 
+          {/* TARGET LEVEL — a segmented picker, not a dropdown (owner's call,
+              Design A).
+
+              The first cut of this put the six levels in a vertical card list
+              and it was rejected for the right reason: that list is the PM's
+              control, and the PM's job is different. They read all six
+              carefully, once per control, to place themselves. An admin is
+              SETTING a value they already know and occasionally checking how
+              Competent differs from Practised — so six padded cards pushed
+              Priority, Active and Reason below the fold on a screen whose whole
+              job is those fields.
+
+              The six levels are now the input itself, so setting a target costs
+              one click instead of two, the whole scale stays visible as LABELS
+              (the domain rule is that a level is picked by label, never by
+              number), and only the chosen definition is spelled out. The rest
+              are one disclosure away.
+
+              NO CLIENT COMPONENT. The definition line follows the checked radio
+              through `:has()` in globals.css, which this stylesheet already
+              relies on for `.opt:has(input:checked)`. Adding a client bundle to
+              swap one line of text would be the trade app/link.tsx exists to
+              avoid. */}
           <div className="cols" style={{ marginTop: 16 }}>
             <div className="field">
-              <label htmlFor="target">Target level</label>
-              <select className="input" id="target" name="target" defaultValue={control.target_level ?? 3}>
+              <span className="flabel" id="target-label">Target level</span>
+              <div className="levelseg" role="radiogroup" aria-labelledby="target-label">
                 {fw.scaleLevels.map((s) => (
-                  <option key={s.level} value={s.level}>
-                    {s.level} · {s.label}
-                  </option>
+                  <span key={s.level} className="levelseg-opt">
+                    <input
+                      type="radio"
+                      name="target"
+                      id={`target-${s.level}`}
+                      value={s.level}
+                      defaultChecked={s.level === (control.target_level ?? 3)}
+                    />
+                    <label htmlFor={`target-${s.level}`}>
+                      <span className="n tnum">{s.level}</span>
+                      <span className="l">{s.label}</span>
+                    </label>
+                  </span>
                 ))}
-              </select>
+                {/* One per level; CSS reveals the one whose radio is checked. */}
+                {fw.scaleLevels.map((s) => (
+                  <p className="levelseg-defn" data-level={s.level} key={`d-${s.level}`}>
+                    <b>{s.label}</b> — {s.application || s.knowledge}
+                  </p>
+                ))}
+              </div>
               <div className="note" style={{ marginTop: 6 }}>
                 Source: {control.target_source ?? "—"}
                 {control.apm_competence && ` · APM: ${control.apm_competence}`}
               </div>
+              <details className="scale-help">
+                <summary>Compare all six</summary>
+                <table className="scale-table">
+                  <tbody>
+                    {fw.scaleLevels.map((s) => (
+                      <tr key={s.level} className={s.level === control.target_level ? "is-target" : undefined}>
+                        <td className="n tnum">{s.level}</td>
+                        <td className="lab">{s.label}</td>
+                        <td className="txt">{s.application || s.knowledge}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
             </div>
             <div className="field">
               <label htmlFor="priority">Priority</label>
@@ -180,37 +233,6 @@ export default async function AdminPage({
               </select>
             </div>
           </div>
-
-          {/* WHAT THE LEVELS MEAN, on the screen where the target is chosen.
-              The admin was picking "3 · Competent" from a dropdown with nothing
-              on the page saying how Competent differs from Practised — the
-              distinction the whole benchmark rests on. This is the APM
-              APPLICATION axis, which is the axis the scale is defined on
-              (domain rule), and it is the same wording the PM is shown while
-              self-scoring, so both sides of the assessment are reading one
-              definition rather than two. */}
-          <details className="scale-help">
-            <summary>
-              What the levels mean
-              <span className="muted"> · APM 0–5, Application axis</span>
-            </summary>
-            <ul className="scale-levels">
-              {fw.scaleLevels.map((s) => (
-                <li key={s.level} className={s.level === control.target_level ? "is-target" : undefined}>
-                  <span className="lvl-n tnum">{s.level}</span>
-                  <span>
-                    <b>
-                      {s.label}
-                      {s.level === control.target_level && (
-                        <span className="lvl-tag"> target for this control</span>
-                      )}
-                    </b>
-                    <span className="lvl-text">{s.application || s.knowledge}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
 
           <div className="cols" style={{ marginTop: 14 }}>
             <div className="field">

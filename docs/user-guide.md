@@ -324,10 +324,12 @@ scoped-down control changes every rollup it appears in and the next person to
 read it needs to know why. Reason and KIB context are both multi-line: these
 run to two or three sentences and they exist to be read.
 
-**What the levels mean** expands the APM 0–5 scale with the wording for each
-level and marks the one this control targets, so you can see how Competent
-differs from Practised without leaving the screen. It is the same wording the
-PM is shown while self-scoring.
+**Target level** is picked from the six levels directly rather than from a
+dropdown, so the whole scale is in front of you and setting one is a single
+click. The level you choose is explained underneath it; **Compare all six**
+opens the full scale, one line per level, when you need to weigh Competent
+against Practised. It is the same APM wording the PM is shown while
+self-scoring, so both sides of the assessment read one definition.
 
 Editing a target affects **future rollups only**. Assessments already approved
 keep the targets frozen at approval.

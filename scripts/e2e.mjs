@@ -3972,15 +3972,67 @@ console.log("\n[18] Framework admin: filter by target, walk it, and read it");
   /* WHAT THE LEVELS MEAN — the admin picks a target with no idea how Competent
      differs from Practised. Assert the real APM wording, not just the labels,
      because six labels with no definitions is the state being fixed. */
+  /* THE PICKER IS THE SIX LEVELS, not a dropdown (owner's Design A). Assert the
+     control's SHAPE, not just that a value round-trips: a <select> would pass
+     any value check and still be the design that was rejected. */
+  check("N46: there is no target dropdown left",
+    (await page.locator('select[name="target"]').count()) === 0);
+  check("N46: the target is picked from all six levels at once",
+    (await page.locator('.levelseg input[name="target"]').count()) === 6);
+  const segLabels = await page.locator(".levelseg label .l").allInnerTexts();
+  check("N46: and every level is offered by LABEL, not only by number",
+    ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"]
+      .every((l) => segLabels.includes(l)), segLabels.join("|"));
+  /* 4.3.1.3 is seeded at target 2 (Practised) — read from the database rather
+     than hardcoded, so a reseed cannot make this assertion quietly wrong. */
+  const { data: seededTarget } = await db.from("control")
+    .select("target_level").eq("code", "4.3.1.3").single();
+  check("N46: the control's own target is the one selected",
+    await page.locator(`.levelseg input[value="${seededTarget.target_level}"]`).isChecked(),
+    `expected ${seededTarget.target_level}`);
+  const seededLabel = ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"][seededTarget.target_level];
+
+  /* Only the CHOSEN level's definition is spelled out — that is what makes the
+     block short. Checked as rendered visibility, because all six are in the
+     DOM and CSS decides which one shows. */
+  const shownDefns = await page.locator(".levelseg-defn:visible").allInnerTexts();
+  check("N46: exactly one definition is shown, for the selected level",
+    shownDefns.length === 1 && shownDefns[0].includes(seededLabel),
+    `${shownDefns.join("|")} (want ${seededLabel})`);
+
+  /* Picking another level moves the definition with it, with no client bundle. */
+  await page.locator('.levelseg label[for="target-5"]').click();
+  const afterPick = await page.locator(".levelseg-defn:visible").allInnerTexts();
+  check("N46: choosing a different level shows that level's definition",
+    afterPick.length === 1 && /Expert/.test(afterPick[0]), afterPick.join("|"));
+  await page.locator(`.levelseg label[for="target-${seededTarget.target_level}"]`).click();
+
+  /* The full scale is still reachable for comparison, one line per level. */
   await page.locator(".scale-help > summary").click();
-  const help = await page.locator(".scale-levels").innerText();
+  const help = await page.locator(".scale-table").innerText();
   check("N46: every level on the scale is explained",
     ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"]
       .every((l) => help.includes(l)), help.slice(0, 80));
   check("N46: the explanation is the APM wording, not just the label",
     /under supervision/i.test(help) && /independently/i.test(help), help.slice(0, 120));
   check("N46: and this control's own target is marked",
-    (await page.locator(".scale-levels li.is-target").count()) === 1);
+    (await page.locator(".scale-table tr.is-target").count()) === 1);
+
+  /* THE HEIGHT IS THE POINT, so it is measured rather than asserted by eye.
+     The rejected design was ~430px of level cards sitting between the target
+     and the fields the screen exists for.
+
+     THE THRESHOLD IS 200px AND THAT NUMBER HAS A REASON. It is under half the
+     rejected design, which is what "a config control, not a reading list"
+     has to mean in pixels, and a return to one card per level cannot fit
+     under it — six bordered cards with padding clear 400px before any text
+     wraps. It is NOT the current height plus a margin: the first cut of this
+     check said 140px, which was a guess made before measuring, and the real
+     picker is 151px. Tuning the number down to whatever the code does would
+     have made the check agree with the code instead of with the intent. */
+  const pickerBox = await page.locator(".levelseg").boundingBox();
+  check("N46: the picker stays a control, not a reading list",
+    pickerBox.height < 200, `${Math.round(pickerBox.height)}px, budget 200`);
 
   /* Restore 4.3.1.3 exactly, as section [10] does — the suite must not leave
      the real framework carrying QA text. */
