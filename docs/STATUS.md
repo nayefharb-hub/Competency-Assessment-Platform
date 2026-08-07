@@ -84,13 +84,13 @@ npm run verify:db          # expect 11/11
 npm run build
 npm start > /tmp/next.log 2>&1 &
 E2E_SERVER_LOG=/tmp/next.log npm run e2e   # writes, then cleans up after itself
-npm run test:unit                          # expect 82/82 — pure logic, no database
+npm run test:unit                          # expect 85/85 — pure logic, no database
 npm run perf:save                          # 10 real saves, split by where the time goes
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
 
-**Read the tally, not just the ✗ count.** The suite reports skips: *"373 passed,
+**Read the tally, not just the ✗ count.** The suite reports skips: *"388 passed,
 0 failed, 2 SKIPPED (…)"*. A skip is not a pass. `E2E_SERVER_LOG` in particular
 gates the **two round-trip budgets** — a warm commit + navigation at 5 calls, a
 competency-boundary commit at 3, the assertions behind CLAUDE.md's "round trips
@@ -107,6 +107,26 @@ E2E_CHROMIUM=/opt/pw-browsers/chromium npm run e2e
 ```
 
 `scripts/e2e.mjs:24` already reads that variable; nothing needs changing.
+
+**If a section dies at `page.check` with a 30s timeout and no server error,
+suspect the SERVER, not the code.** Cost an hour on 2026-08-07. The page had
+`id="__next_error__"` and the browser console said `ChunkLoadError: Failed to
+load chunk` — two `next start` processes were alive at once, so port 3000 was
+answering from a build whose chunk hashes no longer existed on disk. Rebuilding
+under a running server does the same thing.
+
+Two traps make this hard to see. `pgrep -f next-server` matches the grep's own
+command line, so it looks like a server survives every kill; check
+`ss -tlnp | grep 3000` instead. And a Next error page still embeds the RSC
+payload, so any check written as `page.content().includes(…)` passes on it —
+section 3 reported four green checks against a page that had crashed. The
+recipe:
+
+```bash
+pgrep -f next-server | xargs -r kill -9   # then confirm port 3000 is free
+rm -rf .next && npm run build
+npm start > /tmp/next.log 2>&1 &
+```
 
 **5. Where things are.**
 
@@ -438,7 +458,7 @@ control, press Next, and the recap on the card that advertises itself as "the
 last easy moment to change an answer" showed the answer you had just replaced.
 Three specialists found (2) independently. Both now have walked tests.
 
-373 e2e / 0 failed / 2 skipped without `E2E_SERVER_LOG`, 82 unit — the unit count includes a new
+388 e2e / 0 failed / 2 skipped without `E2E_SERVER_LOG`, 85 unit — the unit count includes a new
 `scripts/outbox.test.mjs`, because three of the paths that make `answered` safe
 (the clear on a user change, the delete on a refusal, the assessment scoping)
 cannot be reached from a browser test without a second account, a second
@@ -470,7 +490,7 @@ auth, so it needs `/cso` and its own diff.
 
 The owner walked the whole assessment on 2026-08-07 and logged eleven items;
 they are in `docs/pilot-feedback.md`, and what shipped is recorded at the end of
-that file. Two are done.
+that file. Four of the eleven are done — N44, and N38/N39/N40 as one change.
 
 **N44 — the framework screen opens on a table.** `/admin/controls` is a
 filterable table (Control · Indicator · Target · Priority · State), grouped by

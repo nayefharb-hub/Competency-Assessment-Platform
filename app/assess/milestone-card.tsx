@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "@/app/link";
+import { ASSESS_SUBMIT } from "@/lib/routes";
 import type { Milestone } from "@/lib/shape";
 
 /**
@@ -152,20 +153,28 @@ export default function MilestoneCard({
           : <>
               All <b className="tnum">{milestone.ce.total}</b> controls answered
               {areaFinished && <> · {milestone.area.name} finished</>}
-              {assessmentRemaining > 0 && !milestone.nextControl && (
+              {assessmentRemaining > 0 && milestone.done === "assessment" && (
                 /* Positionally the end, but not actually finished. Saying so here
                    is the difference between a tool that supports a decision and
                    one that congratulates you into a refused Submit.
 
-                   GATED ON `nextControl`, NOT ON `canContinue`. They were the
-                   same test until N38 gave the card somewhere to continue TO
-                   when the run has holes behind it — and that silently deleted
-                   this sentence on the one screen it was written for, the last
-                   control of the framework. `nextControl` is the honest test:
-                   it is null exactly when there is no competency ahead, which
-                   is when a PM could believe they had finished. Mid-run it is
-                   set, so this does not become "127 controls elsewhere" on
-                   every one of the 28 milestones. */
+                   THE GATE IS THE POSITIONAL END OF THE FRAMEWORK, and it took
+                   two wrong answers to get here. It was `!canContinue`, which
+                   meant "the end" only until N38 gave the card somewhere to
+                   continue TO — and that silently deleted this sentence from
+                   the one screen it was written for. The repair was
+                   `!nextControl`, which is worse: `ceContextAt` returns
+                   `nextControl: null` for EVERY mid-competency context, so a PM
+                   mopping up one hole in week one would have been told "127
+                   controls elsewhere still need a score" — the scolding this
+                   sentence was specifically shaped to avoid.
+
+                   `done === "assessment"` is the honest test because the
+                   sentence corrects a POSITIONAL illusion, and there is exactly
+                   one: standing on the last control of the framework. Nowhere
+                   else does the screen imply an ending. A competency finished
+                   mid-run claims only "<CE> complete", which is true, and its
+                   Continue points at what is still owed. */
                 <> · <b className="tnum">{assessmentRemaining}</b>
                   {assessmentRemaining === 1 ? " control" : " controls"} elsewhere
                   still need a score</>
@@ -226,7 +235,16 @@ export default function MilestoneCard({
             {finishedEverything ? "Review and submit →" : "Take a break"}
           </button>
         ) : (
-          <Link className="btn btn-secondary" href={milestone.listHref}>
+          /* THE DESTINATION FOLLOWS THE COPY, NOT THE POSITION.
+             `finishedEverything` is a COUNT; `listHref` is POSITIONAL — the
+             area page mid-area, the hub at an area boundary, the controls list
+             only at the very last control of the framework. Those agreed only
+             while the card could rise nowhere else. Since N40 it can rise
+             wherever a competency is completed, so a PM whose final unanswered
+             control sat mid-framework was offered "Review and submit →" and
+             landed on a page with no Submit on it. If the button says submit,
+             it goes where Submit is. */
+          <Link className="btn btn-secondary" href={finishedEverything ? ASSESS_SUBMIT : milestone.listHref}>
             {finishedEverything ? "Review and submit →" : "Take a break"}
           </Link>
         )}

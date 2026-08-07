@@ -2347,3 +2347,57 @@ every one of the 28 milestones.
 Round trips are unmoved: the in-memory shape derivations add no query, and both
 budgets are asserted from the server's own log — a warm commit + navigation is
 5, a boundary commit is 3.
+
+### The review round on N38/N39/N40 — five findings, two of them shipping defects
+
+Four specialists ran against the diff. Three of them found the same two things
+independently, which is the signal worth recording.
+
+**1. `nextOwed` was competency-scoped, and Continue sent PMs backwards.** The
+client's `known`/`queued` maps were built over `milestone.controls` — right
+while they answered only "is this competency whole", which is competency-scoped
+by definition. N38/N39 then used the same maps to filter a FRAMEWORK-WIDE owed
+list, and every code outside the current competency came back `undefined`, so
+the filter passed it through. Concretely: two holes left, 4.3.1.2 and 4.5.9.3.
+Fill the first, Continue to the second, fill that — and Continue sends the PM
+back to 4.3.1.2, answered twenty seconds earlier. If the outbox had been
+acknowledged and dropped by then, it shows up BLANK. Fixed by asking the outbox
+about every code the filter will test.
+
+**2. "Review and submit →" led to a page with no Submit on it.** The copy is
+chosen from a COUNT (`assessmentRemaining === 0`); the destination came from
+`listHref`, which is POSITIONAL. Those agreed only while the card could rise
+nowhere but the last control of the framework. A PM whose final hole sat
+mid-framework was congratulated and dead-ended on the area listing. `lib/routes.ts`
+gained `ASSESS_SUBMIT`; if the button says submit, it goes where Submit is.
+
+**3. The "N controls elsewhere" sentence fired on every mid-run milestone.**
+The first repair gated it on `!nextControl`, which `ceContextAt` sets to null
+for every mid-competency context — so finishing your first competency in week
+one announced "126 controls elsewhere still need a score". Now gated on
+`done === "assessment"`, the one positional illusion in the product.
+
+**4. "Complete the assessment" on a click that completed nothing.** Re-open the
+framework's last control on a fully answered assessment and the button promised
+to complete something finished a week earlier. Split `causedIt` (this click
+made it whole) from `completesCe` (the card should rise), and the revision case
+now says "Review this competency" / "Review before submitting".
+
+**5. A test that passed on the broken build.** The block named "N38 proper" left
+the LAST competency whole, so the old code took its `ceComplete` branch and said
+"Finish this competency" — which satisfied an assertion written as a
+disjunction. The defect lived in the branch that fixture could not reach. Now a
+second hole sits inside that competency and the assertion is an equality.
+
+**And the walked test was vacuous twice before it worked**, which is the part
+worth keeping. First cut: correct walk, but on a fast local database the first
+answer landed before the PM reached the second hole, so no render lagged and
+the filter was never asked. Second cut: the POST delayed four seconds
+(delayed, never aborted — an aborted queue never drains and never forgets, so
+it tests the failure path and not the successful-but-still-settling one), and
+it still passed, because the other 26 competencies were unanswered so the owed
+list filled up going forward and never wrapped back to the near hole. Third
+cut: exactly two holes in the whole framework, so the wrap puts the near one at
+the front. That fails on the pre-fix build and passes on the fixed one, and the
+premise — "the write really was still in flight" — is asserted, so a run where
+the race falls the other way reports INCONCLUSIVE rather than green.

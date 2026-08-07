@@ -70,15 +70,22 @@ once already. None of them is a preference.
   and this line did not. A review pass caught the two disagreeing. The number
   to trust is the one in `scripts/e2e.mjs`, because it is the one that runs.)
 
-  **There are two commit shapes since N32, and both are asserted.** At a
-  competency boundary the commit raises the milestone in place and navigates
+  **There are two commit shapes since N32, and both are asserted.** A commit
+  that COMPLETES a competency raises the milestone in place and navigates
   nowhere: 3 calls, then Continue costs the navigation's 2 — still 5 across the
-  pair, on 28 of the 132 commits in an assessment. The mid-competency shape is
-  unchanged. Measured past the 2s viewer-memo TTL; inside it Continue costs 1,
-  which is real but timing-dependent, so the steady state is what is pinned.
-  This was written down because the existing budget assertion runs at
-  `4.3.1.1`, which is mid-competency, so it never touched the new path — a
-  change that made the milestone fetch anything would have been invisible.
+  pair. Any other commit is the ordinary 5-call navigate. Measured past the 2s
+  viewer-memo TTL; inside it Continue costs 1, which is real but
+  timing-dependent, so the steady state is what is pinned. This was written
+  down because the budget assertion runs at `4.3.1.1`, which completes nothing,
+  so it never touched the other path — a change that made the milestone fetch
+  anything would have been invisible.
+
+  **The trigger is completion, not position, since N40** — this paragraph said
+  "at a competency boundary … on 28 of the 132 commits" and that was true only
+  while the card could rise nowhere else. A hole filled anywhere now takes the
+  3-call shape too, so the count is 28 plus however many holes the PM left
+  behind. Same numbers, wider distribution; both remain asserted in
+  `scripts/e2e.mjs`, which is the copy to trust.
 - **Performance claims come from `npm run perf:save` (or the phase logs),
   never from reasoning about where time "must" be going.** Four asserted
   mechanisms in a row were wrong before measurement; the rule exists because
@@ -121,6 +128,13 @@ once already. None of them is a preference.
 - ICB4 source text is **never edited**. KIB clarifications are added in their own
   field alongside it.
 - The tool **supports a decision, never gates one** — no pass/fail verdicts.
+- **The primary button names what the click COMPLETES if it completes
+  something, and otherwise names where it GOES** (owner, N38/N39/N40).
+  Completion is a fact about ANSWERS and is asked of answers; position decides
+  only where you go, and the two must never share an expression — that shared
+  expression was N30, N33, N38 and N40, four times. "Completes something" is
+  narrower than "is now whole": re-opening a competency that was already
+  finished completes nothing, and the button must not claim otherwise.
 - Language: never use "interest" in the financial sense (Sharia-compliant bank);
   use "profit rate" / "rate of return" / "return".
 

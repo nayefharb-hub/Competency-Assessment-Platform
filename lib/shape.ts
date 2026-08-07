@@ -179,9 +179,15 @@ export interface Milestone {
    *
    * `"mid"` exists because completion stopped being a positional question
    * (N38/N40): a control in the middle of a competency can still be the answer
-   * that finishes it. `done` remains strictly about POSITION — it is the card's
-   * business to know whether crossing this control also crosses an area — and
-   * whether the competency is FINISHED is decided by the client from answers.
+   * that finishes it. `done` remains strictly about POSITION, and whether the
+   * competency is FINISHED is decided by the client from answers.
+   *
+   * TWO CONSUMERS, both narrow. `atCeEnd` in score-panel asks only `!== "mid"`,
+   * and the card's "N controls elsewhere" sentence asks only `=== "assessment"`
+   * — the one place in the product where position implies an ending. The
+   * `ce`/`area` discrimination survives to pick `listHref` inside this file.
+   * The card decides "Perspective finished" from a COUNT, not from `done`; do
+   * not add a variant expecting it to honour position again.
    */
   done: "ce" | "area" | "assessment" | "mid";
   /**
@@ -204,7 +210,14 @@ export interface Milestone {
    */
   area: { name: string; scored: number; total: number };
   assessment: { scored: number; total: number };
-  /** Where "take a break" goes. Also the fallback if Continue cannot run. */
+  /**
+   * Where "take a break" goes — POSITIONAL: the area page inside an area, the
+   * hub at an area boundary, the controls list at the end of the framework.
+   *
+   * NOT where "Review and submit" goes. That copy is chosen from a COUNT, and
+   * the two came apart the moment the card could rise mid-framework; the card
+   * uses ASSESS_SUBMIT for it. See lib/routes.ts.
+   */
   listHref: string;
 }
 
@@ -274,14 +287,26 @@ export function ceContextAt(
  * RETURNS SEVERAL, and the client picks. The server's list is one answer behind
  * by construction (D9), so the first entry may be the control the PM is standing
  * on — the one they are answering right now — or one they answered seconds ago
- * that has not landed. The client knows both and skips them. Five is far more
- * than the outbox can plausibly hold at once and costs five short strings.
+ * that has not landed. The client drops every code it knows it has answered,
+ * asking the outbox about each one (score-panel's `relevant` set), so the filter
+ * is not competency-scoped even though the milestone is.
+ *
+ * THE LIMIT HAS TO SURVIVE THE CLIENT EATING THE WHOLE PREFIX. It was five,
+ * chosen as "more than the outbox can plausibly hold" — but the entries the
+ * client discards are not spread through the list, they are the FRONT of it,
+ * because the outbox holds the controls most recently walked and this list
+ * starts at the control just walked. Review found the exhaustion: during a write
+ * outage a PM working through a six-control competency has five unsent answers
+ * sitting at the head of the list, all five are dropped, `nextOwed` is null, and
+ * a mid-competency card offers no Continue at all while a hundred controls are
+ * still unanswered. Twelve clears the largest competency in ICB4 (six) twice
+ * over and costs twelve short strings on a page that already carries 132.
  */
 export function owedAfter(
   areas: AreaShape[],
   scored: Set<string>,
   from: Control,
-  limit = 5,
+  limit = 12,
 ): string[] {
   const ordered = areas.flatMap((a) => a.ces.flatMap((c) => c.controls));
   const at = ordered.findIndex((c) => c.code === from.code);

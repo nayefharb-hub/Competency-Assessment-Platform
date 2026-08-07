@@ -129,11 +129,31 @@ export default function ScorePanel({
      * first client render disagree about the button's label. */
     const q: Record<string, number> = {};
     const k: Record<string, number> = {};
-    for (const c of milestone?.controls ?? []) {
-      const p = pendingFor(c.code);
-      if (p && p.level !== null) q[c.code] = p.level;
-      const confirmed = answeredLevel(assessmentId, c.code);
-      if (confirmed !== null) k[c.code] = confirmed;
+    /* THIS COMPETENCY **AND** EVERY CODE THE OWED FILTER WILL TEST.
+     *
+     * The maps used to cover only `milestone.controls`, which was right while
+     * they were read only for completeness — that question is competency-scoped
+     * by definition. Since N38/N39 `nextOwed` tests framework-wide codes against
+     * the same maps, and for anything outside this competency both lookups came
+     * back `undefined`, so the filter passed it through unconditionally. Three
+     * reviewers found it independently:
+     *
+     *   two holes left, 4.3.1.2 and 4.5.9.3. Fill the first; the card rises;
+     *   Continue lands on the second. That render was taken before the first
+     *   write landed (D9), so the server's owed list is still [4.3.1.2,
+     *   4.5.9.3]. Answer 4.5.9.3, and Continue sends the PM back to 4.3.1.2 —
+     *   a control they answered twenty seconds ago. If the outbox had by then
+     *   been acknowledged and dropped, the panel shows it BLANK.
+     *
+     * So ask the outbox about every code the filter will see. `answeredLevel`
+     * and `pendingFor` take any control code; nothing about them was
+     * competency-scoped except this loop. */
+    const relevant = new Set([...(milestone?.controls ?? []).map((c) => c.code), ...(owed ?? [])]);
+    for (const code of relevant) {
+      const p = pendingFor(code);
+      if (p && p.level !== null) q[code] = p.level;
+      const confirmed = answeredLevel(assessmentId, code);
+      if (confirmed !== null) k[code] = confirmed;
     }
     if (queuedHere && queuedHere.level !== null) q[control] = queuedHere.level;
     setQueued(q);
@@ -143,7 +163,11 @@ export default function ScorePanel({
     // control — forwards, or backwards with the browser button — starts from
     // the panel, never from a milestone someone already passed through.
     setReached(false);
-  }, [control, savedLevel, savedEvidence, milestone]);
+    // `owed` joins the deps because the loop above now reads it. Both it and
+    // `milestone` are fresh arrays from the server render, so this effect runs
+    // on every navigation — which is what it wants: each control re-asks the
+    // outbox what it is holding.
+  }, [control, savedLevel, savedEvidence, milestone, owed]);
 
   /* Connectivity is STATE, not a value read once while rendering.
    *
@@ -286,7 +310,12 @@ export default function ScorePanel({
    * which is the thing whose effect is being asked about. */
   const priorHere = known[control] ?? queued[control] ?? ceLevels?.[control] ?? savedLevel;
   const atCeEnd = !!milestone && milestone.done !== "mid";
-  const completesCe = ceComplete && (atCeEnd || priorHere === null);
+  /** This click is what made the competency whole — the control had no answer
+   *  before it. The only thing that can truthfully be called "completing". */
+  const causedIt = ceComplete && priorHere === null;
+  /** The card should rise: either the click caused the completion, or the PM
+   *  reached the competency's end with it whole and the recap is the point. */
+  const completesCe = ceComplete && (atCeEnd || causedIt);
 
   /* WHERE "I HAVE FINISHED SOMETHING, TAKE ME ON" GOES (N38/N39/N40).
    *
@@ -298,6 +327,16 @@ export default function ScorePanel({
   const nextOwed = (owed ?? []).find(
     (code) => code !== control && known[code] === undefined && queued[code] === undefined,
   ) ?? null;
+
+  /* ONE EXPRESSION FOR "WHERE DOES CONTINUE GO", because there were three —
+     `leaveMilestone`'s cookie write, `continueRun`'s navigation, and the
+     `canContinue` prop that decides whether the button is rendered at all.
+     Three copies of a rule agree by coincidence, and this one governs whether a
+     control is offered and where it leads: if the prop and the handler ever
+     disagreed, the card would show a Continue that went nowhere, or hide one
+     while work remained. It is the same argument `commitLabel` below already
+     makes for the label and the hint. */
+  const continueTarget = milestone?.nextControl ?? nextOwed;
 
   /* Answers this client holds that the server has not counted. Only this
      competency's are knowable here, which is why the wider claims can only
@@ -402,7 +441,7 @@ export default function ScorePanel({
        action is "Finish this competency", and whose milestone therefore rises
        again for work done days ago. The design doc lists honouring `cap.last`
        as an explicit constraint of this flow. */
-    const target = milestone?.nextControl ?? nextOwed;
+    const target = continueTarget;
     if (target) {
       const secure = location.protocol === "https:" ? "; Secure" : "";
       document.cookie =
@@ -421,18 +460,22 @@ export default function ScorePanel({
    * carry into, and the honest place to go is whatever is still owed.
    */
   function continueRun() {
-    const next = milestone?.nextControl ?? nextOwed;
-    leaveMilestone(next ? `/assess?c=${encodeURIComponent(next)}` : (milestone?.listHref ?? "/assess/controls?saved=1"));
+    /* No fallback branch. `onContinue` is reachable only from the card's button
+       and its Enter handler, both gated on the same `continueTarget` — so a null
+       here cannot happen, and a dead branch that looks live is what the next
+       refactor preserves. */
+    leaveMilestone(`/assess?c=${encodeURIComponent(continueTarget!)}`);
   }
 
   /**
    * Revise a control from the recap.
    *
    * THE ROW FOR THE CONTROL YOU ARE STANDING ON IS THE COMMON CASE, and it was
-   * the one that did not work: the milestone only ever renders on the last
-   * control of a competency, so that control is always the last recap row —
-   * the answer just given, the most likely one to want back. Pushing its own
-   * URL is a no-op, and `reached` is cleared only by the effect keyed on
+   * the one that did not work. It is the answer just given and the most likely
+   * one to want back — the last recap row when the card came from a positional
+   * boundary, any row at all since N40 let the card rise wherever a competency
+   * is completed. Pushing its own URL is a no-op, and `reached` is cleared only
+   * by the effect keyed on
    * [control, savedLevel, savedEvidence], none of which change while the write
    * is still in flight. So the button did nothing, precisely during the window
    * where changing your mind matters.
@@ -515,17 +558,37 @@ export default function ScorePanel({
    * Completion is a fact about ANSWERS, so it is asked of answers. Position is
    * still what decides where you go next, and the two no longer share an
    * expression.
+   *
+   * AND "COMPLETES" MEANS `causedIt`, NOT `completesCe`. The two differ on one
+   * screen: the PM re-opens the last control of a competency that is already
+   * whole. The card still rises there — that is where a revision is shown back
+   * to them (N33c) — but nothing was completed by the click, so a label saying
+   * "Complete the assessment" would be describing an event that happened last
+   * week. Review found it: on a fully answered assessment, re-opening control
+   * 132 promised to complete something that was already complete.
+   *
+   * So that screen names what the click DOES: it shows the competency back.
+   * When there is genuinely nothing left anywhere, the more useful thing to
+   * name is the next step, which is the review — and that is the one state in
+   * which "Review before submitting" is honest. (Reaching it through the
+   * ordinary fall-through below is impossible, which review also found: no
+   * `nextControl` means the framework's last control, where `atCeEnd` holds, so
+   * either the competency is whole or its hole is owed. The wording survives
+   * because this branch gives it a real home.)
    */
-  const completesAssessment = completesCe && assessmentRemaining === 0;
-  const commitLabel = completesAssessment
-    ? "Complete the assessment"
-    : completesCe
-      ? "Finish this competency"
-      : nextControl
-        ? "Next control"
-        : nextOwed
-          ? "Next unanswered control"
-          : "Review before submitting";
+  const completesAssessment = causedIt && assessmentRemaining === 0;
+  const commitLabel = completesCe
+    ? (causedIt
+        ? (assessmentRemaining === 0 ? "Complete the assessment" : "Finish this competency")
+        : (assessmentRemaining === 0 ? "Review before submitting" : "Review this competency"))
+    : nextControl
+      ? "Next control"
+      : nextOwed
+        ? "Next unanswered control"
+        /* Unreachable today (see above), kept as the honest default rather than
+           a throw: if a future shape change makes it reachable, a PM with
+           nothing owed should be pointed at the review, not at a crash. */
+        : "Review before submitting";
 
   if (reached && milestone) {
     return (
@@ -540,7 +603,7 @@ export default function ScorePanel({
         busy={navigating}
         areaRemaining={areaRemaining}
         assessmentRemaining={assessmentRemaining}
-        canContinue={!!(milestone.nextControl ?? nextOwed)}
+        canContinue={!!continueTarget}
         onContinue={continueRun}
         onRevise={reviseControl}
       />

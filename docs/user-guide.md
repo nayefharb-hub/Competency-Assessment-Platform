@@ -113,7 +113,8 @@ completes something, it says so; otherwise it says where you are going:
 | **Finish this competency →** | this answer completes the competency you are in — wherever in it you are standing |
 | **Next unanswered control →** | there is nothing after this one, but you skipped something earlier |
 | **Complete the assessment →** | this was the last unanswered control anywhere |
-| **Review before submitting →** | everything is answered |
+| **Review this competency →** | you re-opened a competency that was already finished — the click shows it back to you |
+| **Review before submitting →** | everything is answered and nothing is left to complete |
 | **Skip for now →** | you have not picked a level |
 
 You never wait for the save. The answer is handed to a queue and the screen
@@ -153,10 +154,13 @@ the same card.
 - A **recap** of every control in it with the level you gave. **Any row is
   clickable** to go back and change that answer. This is the easiest moment to
   revise something.
-- **Next:** the competency you are about to start.
-- **Continue →** carries straight on — to the next competency's first unanswered
-  control, or, if there is no competency ahead, to whatever you still owe.
-  **Enter** does the same.
+- **Next:** the competency you are about to start — shown when you finished the
+  competency at its last control. Fill a hole in the middle of the framework and
+  there is no "next" to name, so the line is not there.
+- **Continue →** carries straight on: to the next competency's first unanswered
+  control when there is one, otherwise to whatever you still owe, wherever it
+  is. **Enter** does the same. If nothing at all is left, there is no Continue —
+  the card offers the review instead.
 - **Take a break** returns you to the list.
 
 If you skipped something in that competency, no card appears — the competency is
@@ -172,7 +176,8 @@ when you have not.
 Re-opening a competency you already finished does not raise the card again; the
 button reads *"Next control"* and you can read back through your answers
 normally. Reaching its last control shows the card, so a change you make there
-is shown back to you.
+is shown back to you — and there the button says *"Review this competency"*,
+because nothing is being completed.
 
 ## Picking up where you left off
 

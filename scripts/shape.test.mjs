@@ -388,3 +388,36 @@ test("nothing owed is an empty list, which is the only true 'ready to submit'", 
   const scored = new Set(FIVE.map((c) => c.code));
   assert.deepEqual(owedAfter(shaped(scored), scored, FIVE[0]), []);
 });
+
+/* The guard branches. `app/assess/page.tsx` only ever passes an ACTIVE control
+   it has already resolved through the framework, so neither of these can fire
+   today — which is exactly why they are pinned: they are the contract that the
+   page's guard is the only thing standing between these functions and a null
+   dereference, and the inactive control (4.3.2.6 in ICB4) is the shape that
+   would take this path if that guard ever moved. */
+test("a control outside the shape has no competency context, rather than throwing", () => {
+  assert.equal(ceContextAt(shaped(), ctl("9.9.9.9", "Nowhere", "9.9.9", 10)), null);
+  assert.equal(ceContextAt(shaped(), ctl("1.1.9.9", "People", "1.1.9", 10)), null,
+    "a known area is not enough — the competency has to exist too");
+});
+
+test("owed from a control that is not in the shape lists everything still owed", () => {
+  const scored = new Set(["1.1.1.1"]);
+  assert.deepEqual(
+    owedAfter(shaped(scored), scored, ctl("9.9.9.9", "Nowhere", "9.9.9", 10)),
+    ["1.1.1.2", "1.1.1.3", "1.1.2.1", "1.1.2.2"],
+    "no anchor means no rotation — the whole list, in framework order");
+});
+
+test("the owed limit clears the largest competency several times over", () => {
+  /* It was 5, and 5 is the size of a competency the PM may be holding entirely
+     in the outbox during a write outage — the client drops every one of them
+     (they are the FRONT of the list, being the most recently walked), leaving
+     nothing to continue to while a hundred controls are still unanswered. */
+  const scored = new Set();
+  assert.equal(owedAfter(shaped(scored), scored, FIVE[0]).length, 5,
+    "all five, including the anchor itself — it wraps all the way round, and "
+    + "the client is what drops the control it is standing on");
+  assert.equal(owedAfter(shaped(scored), scored, FIVE[0], 2).length, 2,
+    "the limit truncates, so it has to be bigger than what the client discards");
+});

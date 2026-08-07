@@ -71,9 +71,7 @@ export default async function AssessPage({
      client redirect. First unanswered is the fallback when there is no cookie
      (new device, cleared browser), which is also the sensible answer for
      someone starting out. */
-  const scored = new Set(
-    scores.filter((s) => s.self_level !== null).map((s) => s.control_code),
-  );
+  const scored = scoredCodes(scores);
   const firstUnanswered = fw.activeControls.find((ac) => !scored.has(ac.code));
   const remembered = (await cookies()).get("cap.last")?.value;
   const resume = (remembered && fw.controlByCode(remembered)?.active ? remembered : null)
@@ -93,12 +91,12 @@ export default async function AssessPage({
   /* What sits at the end of a competence element (D25, revised by N32). A CE is
      still the sitting and finishing it is still a moment — but the moment now
      happens IN PLACE, and Continue carries the run into the next competency
-     rather than ejecting the PM to a list 28 times per assessment. `nextAfter`
-     reports counts and never decides completeness; the client adds the answers
-     the server has not seen. shapeOf() derives all of it in memory from data
-     already fetched — no extra round trip on the path two PRs were spent
-     making fast. */
-  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
+     rather than ejecting the PM to a list 28 times per assessment. Everything
+     derived below reports COUNTS and never decides completeness; the client
+     adds the answers the server has not seen. shapeOf() derives all of it in
+     memory from data already fetched — no extra round trip on the path two PRs
+     were spent making fast. */
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, scored,
     fw.data.areas.map((a) => a.name));
   /* ALWAYS, not only at a competency's last control (N38/N40). The button has
      to name what the click COMPLETES, and completion is a fact about answers
@@ -111,7 +109,7 @@ export default async function AssessPage({
      but the next control still UNANSWERED, wrapping past the end to holes left
      behind. Several, because the server's list is one answer behind and the
      client is the only thing that knows what it is holding. */
-  const owed = owedAfter(areas, new Set(scored), control);
+  const owed = owedAfter(areas, scored, control);
 
   /* The PM's answers for the competency they are in. No new query:
      findAssessmentWithScores already returned every score for the assessment in
