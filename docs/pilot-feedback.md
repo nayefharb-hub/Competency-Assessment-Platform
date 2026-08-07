@@ -2470,3 +2470,107 @@ it; whether that is sufficient is a question for `/cso`.
 
 **Deliberately not in PR #26** — it touches auth, so it gets its own diff and a
 security pass. Worth doing before the pilot starts.
+
+---
+
+### N46 — the framework admin screen cannot be worked through
+
+Six items, reported by the owner on 2026-08-07 while editing the framework on a
+27" display. They are one complaint with six faces: **the admin screen was built
+as a place to change one field, and the job is to review 133 controls.**
+
+| # | Report | Shipped |
+|---|---|---|
+| 1 | The reason box is one line; the full reason cannot be read | `<textarea>`, 3 rows |
+| 2 | No next/previous, so every control means going back to the list | Previous/Next, walking the filtered view |
+| 3 | No way to check controls by target | Target filter on `/admin/controls` |
+| 4 | Text does not use the pane's width | **Held** — mockup first, owner's call |
+| 5 | No explanation of what Aware vs Practised vs Competent mean | Collapsible APM scale, target marked |
+| 6 | The KIB clarification box needs the same room as the reason | `<textarea>`, 3 rows |
+
+**Items 2 and 3 are one feature, and that is the useful part.** Filtering alone
+would have meant "find the 41 controls targeted Competent, then open each from
+the list and come back 41 times". Previous/Next alone would have meant walking
+all 133. Together they are the actual job: narrow to a target, then walk it.
+
+**The seam that makes it safe.** The table decides which rows exist and the
+editor's Next walks that same set, which is two screens answering one question —
+the exact shape of D29 (three screens each with their own copy of "continue the
+assessment") and of `commitLabel` (two copies of "what happens next", rendering
+a hint that named a button not on screen). So the predicate, the ORDER and the
+query string live in `lib/control-filter.ts` and nowhere else. If Next walked a
+different list than the table rendered, an admin would press Next on the last
+filtered row and land on a control the view does not contain, with nothing red
+anywhere, because each screen would be self-consistent.
+
+**The order is the table's, not the array's.** `fw.controls` order and
+competency-grouped order agree today. The unit fixture interleaves competencies
+so they disagree, because "happens to agree" is what this module exists to stop
+relying on.
+
+**Two invariants were proved by breaking them**, per the ground rule that a test
+which has never been red is a decoration:
+
+- a truthiness test on the target dropped `target=0` from the query string —
+  "everything targeted Unaware" became indistinguishable from "everything",
+  with the chip still rendering as selected. Same trap as `answeredBefore`.
+- returning the filtered array instead of the grouped order made Next walk a
+  different sequence than the table showed.
+
+Reverting each to the correct form turned 5 failing checks green.
+
+**The posted filter is re-parsed, never passed through.** It is a hidden field
+reaching a redirect target, which is `safeNext()`'s shape — and that one has been
+broken twice by trusting the input rather than the output. Only the four known
+keys survive, each validated against the framework.
+
+**Still open from this report: item 4**, and it turned out to rest on a wrong
+number — see N47.
+
+---
+
+### N47 — the type scale is set for a laptop and read on a 27"
+
+Raised as "text is not taking the full space of the pane" (N46 item 4) and
+answered wrongly the first time, which is the part worth keeping.
+
+**The wrong answer.** The prose was said to be capped at 68 characters by
+`--measure`, making the gap beside it a deliberate trade. Measured on the running
+build with `getComputedStyle`, `.ro p` renders **79 characters** and
+`.measures li` renders 72 — both *above* the 60-70 `DESIGN.md` asks for. The line
+was already too long. What made it look short was the empty pane beside it, which
+is a container problem. The owner's instinct and the design rule were never in
+conflict; the stated implementation was simply wrong, and `docs/STATUS.md` had
+recorded 72-73 all along.
+
+**What the screens actually render** (2560x1440, 1440x900 and 390x844 all give
+the same numbers — the scale is fixed `px` and does not respond to viewport):
+
+| Element | Size | Chars/line |
+|---|---|---|
+| `.ro p` — the ICB4 prose | 13.5px | 79 |
+| `.measures li` | 14px | 72 |
+| `.input` — every form field | 14px | — |
+| `.opt span.gloss`, `.note`, `.field label` | 12.5px | — |
+| `.grid td` — the framework table | 13.5px | — |
+
+`DESIGN.md` states body 15, and almost nothing anyone reads is set at it.
+
+**Why the same size works on a laptop and fails on a 27".** Legibility is
+angular: physical size over viewing distance. 13.5px subtends 19.7 arcminutes on
+a 14" laptop at ~50cm and **15.5 arcminutes** on a 27" at ~70cm, against a
+20-22' comfort target. The laptop case set the size and the 27" inherited it.
+
+**A phone defect found while measuring.** iOS Safari zooms the page when a field
+under 16px takes focus. Every input is 14px, so a PM tapping the evidence field
+on an iPhone gets the page jumping and has to pinch back — on each of 132
+controls. Raising inputs to 16px is the whole fix.
+
+**Proposed**: root 16px stepping to 17px above 1600px, the scale converted to
+`rem` so one token moves it coherently, inputs at 16px minimum, and `--measure`
+from 52ch to 44ch (measured to land ~66 characters). Admin and PM get the same
+scale — same eyes, same desk — and differ only in container.
+
+**Not built.** It moves every screen, so it wants its own diff and its own
+`/design-review`. Mockup published for the owner's judgement; the two-column
+admin layout is held behind the same call.

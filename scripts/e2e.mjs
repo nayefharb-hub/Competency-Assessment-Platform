@@ -2583,13 +2583,25 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     // lives on <html> and revalidatePath had to rebuild the whole tree.
     // Record WHAT, not just how many. A bare count told us a request happened
     // and nothing about which, and the first flake here cost a round of guessing.
+    // THE FAVICON IS NOT THE APP TALKING TO A SERVER. Chromium re-requests
+    // /icon.svg when <html> changes, which is browser housekeeping racing the
+    // click, and counting it made this check fail on traffic that has nothing
+    // to do with the theme. That is the N21 lesson with its sign flipped: a
+    // verdict decided by unrelated requests is worthless in BOTH directions.
+    // Excluded by path, narrowly, so a real regression — a document, an RSC
+    // payload, a fetch — still names itself in the message.
     const seen = [];
-    const count = (r) => { seen.push(`${r.resourceType()} ${new URL(r.url()).pathname}`); };
+    const count = (r) => {
+      const path = new URL(r.url()).pathname;
+      if (path === "/icon.svg" || path === "/favicon.ico") return;
+      seen.push(`${r.resourceType()} ${path}`);
+    };
     page.on("request", count);
     await page.click('.themetoggle button:has-text("Light")');
     await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
     page.off("request", count);
-    check("changing theme makes no network request at all", seen.length === 0, seen.join(", "));
+    check("changing theme makes no request to the server at all",
+      seen.length === 0, seen.join(", "));
     const light = await state();
     check("Light overrides a dark OS rather than doing nothing",
       light.attr === "light" && light.bg === "rgb(244, 246, 249)", `${light.attr} / ${light.bg}`);
@@ -3847,6 +3859,137 @@ console.log("\n[17] Framework admin opens on a table you can filter (N44)");
   check("N44: and no target reaches their payload from it",
     !/target_level/.test(leaked));
   await pmCtx.close();
+  await ctx.close();
+}
+
+/* --------------------------- 18. the admin can work the framework through */
+console.log("\n[18] Framework admin: filter by target, walk it, and read it");
+{
+  const ctx = await browser.newContext({ baseURL: BASE, storageState: await boss.ctx.storageState() });
+  const page = await ctx.newPage();
+  const rows = () => page.locator(".grid tbody tr").count();
+
+  /* The target filter, checked against the DATABASE rather than against the
+     page's own chip count — a filter that agrees with its own label is not
+     evidence. */
+  const { data: t3 } = await db.from("control").select("code").eq("target_level", 3);
+  await page.goto("/admin/controls?target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: the target filter shows exactly the controls at that target",
+    (await rows()) === t3.length, `${await rows()} rows vs ${t3.length} in Postgres`);
+
+  /* Target composes with the filters that already existed. */
+  const { data: p3 } = await db.from("control")
+    .select("code, competence_element!inner(competence_area!inner(name))")
+    .eq("target_level", 3).eq("active", true);
+  const perspective3 = p3.filter((c) => c.competence_element.competence_area.name === "Perspective");
+  await page.goto("/admin/controls?area=Perspective&state=active&target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: target composes with area and state",
+    (await rows()) === perspective3.length, `${await rows()} vs ${perspective3.length}`);
+
+  /* A nonsense target must show everything, not nothing — N44's rule, which
+     the new parameter has to obey too or a stale bookmark presents an empty
+     framework as the truth. */
+  await page.goto("/admin/controls?target=99");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: an impossible target falls back to the whole framework",
+    (await rows()) === activeControls.length + 1, String(await rows()));
+
+  /* THE WALK. Open the first row of a filtered view and press Next twice; the
+     admin must stay inside the filtered set and never be handed a control the
+     view does not contain. This is the check that fails if the editor ever
+     grows its own copy of the filter. */
+  await page.goto("/admin/controls?area=Perspective&target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const expected = await page.locator(".grid tbody tr .rcode").allInnerTexts();
+  await page.locator(".grid tbody tr .rcode").first().click();
+  await page.waitForURL(/\/admin\?c=/, { timeout: 20_000 }).catch(() => {});
+  check("N46: the row opens the editor with the filter still on the URL",
+    /area=Perspective/.test(page.url()) && /target=3/.test(page.url()), page.url());
+
+  /* Scoped to the SECOND nav row — the first one holds "← back to the list",
+     which also contains an arrow. A looser selector would click the way out
+     and the walk would silently be testing the back button. */
+  const stepper = page.locator(".assess-nav").nth(1);
+  const codeNow = () => new URL(page.url()).searchParams.get("c");
+  /* WAIT FOR THE CODE TO CHANGE, not for the URL to match `/admin?c=`.
+     The page is ALREADY on a URL matching that pattern, so `waitForURL` with it
+     resolves instantly and the assertion then reads the control we started
+     from. That is how the first cut of this check reported the walk as
+     4.3.1.2 → 4.3.1.2 → 4.3.1.4: two clicks, one recorded move, and a failure
+     that looked like the app had skipped a row. */
+  const stepTo = async (link, from) => {
+    await link.click();
+    await page.waitForFunction(
+      (prev) => new URL(location.href).searchParams.get("c") !== prev,
+      from, { timeout: 20_000 },
+    ).catch(() => {});
+    return codeNow();
+  };
+
+  const walked = [codeNow()];
+  for (let step = 0; step < 2; step++) {
+    const next = stepper.locator('a:has-text("→")');
+    if (!(await next.count())) break;
+    walked.push(await stepTo(next, walked[walked.length - 1]));
+  }
+  check("N46: Next walks the filtered view in the order the table showed it",
+    walked.length > 1 && walked.every((c, i) => c === expected[i]),
+    `walked ${walked.join(",")} vs table ${expected.slice(0, walked.length).join(",")}`);
+  check("N46: and never leaves the filtered set",
+    walked.every((c) => expected.includes(c)), walked.join(","));
+
+  /* Previous comes back to where Next came from. */
+  const before = codeNow();
+  const back = await stepTo(stepper.locator('a:has-text("←")'), before);
+  check("N46: Previous returns to the control Next came from",
+    back === walked[walked.length - 2], `${back} after ${before}, walked ${walked.join(",")}`);
+
+  /* THE REASON FIELD IS A TEXTAREA, and the whole reason is readable.
+     The owner's report was that a two-sentence justification showed as forty
+     clipped characters, so this asserts the ELEMENT, not just that a value
+     round-trips — an <input> would pass a value check and still be the bug. */
+  await page.goto("/admin?c=4.3.1.3");
+  await page.waitForSelector("#reason", { timeout: 20_000 });
+  const reasonTag = await page.locator("#reason").evaluate((el) => el.tagName);
+  const kibTag = await page.locator("#kib").evaluate((el) => el.tagName);
+  check("N46: the reason field is multi-line", reasonTag === "TEXTAREA", reasonTag);
+  check("N46: the KIB clarification is multi-line", kibTag === "TEXTAREA", kibTag);
+  const reasonBox = await page.locator("#reason").boundingBox();
+  check("N46: and it is tall enough to show more than one line",
+    reasonBox.height >= 60, `${Math.round(reasonBox.height)}px`);
+
+  /* A long reason must be READABLE in the box, not just stored. */
+  const long = `QA ${"long reason ".repeat(12)}`.trim();
+  await page.fill("#reason", long);
+  await page.selectOption("#priority", "Low");
+  await submitAction(page, () => page.click('button:has-text("Save changes")'));
+  const shown = await page.locator("#reason").inputValue();
+  check("N46: a long reason survives the save and comes back whole",
+    shown === long, `${shown.length} of ${long.length} chars`);
+
+  /* WHAT THE LEVELS MEAN — the admin picks a target with no idea how Competent
+     differs from Practised. Assert the real APM wording, not just the labels,
+     because six labels with no definitions is the state being fixed. */
+  await page.locator(".scale-help > summary").click();
+  const help = await page.locator(".scale-levels").innerText();
+  check("N46: every level on the scale is explained",
+    ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"]
+      .every((l) => help.includes(l)), help.slice(0, 80));
+  check("N46: the explanation is the APM wording, not just the label",
+    /under supervision/i.test(help) && /independently/i.test(help), help.slice(0, 120));
+  check("N46: and this control's own target is marked",
+    (await page.locator(".scale-levels li.is-target").count()) === 1);
+
+  /* Restore 4.3.1.3 exactly, as section [10] does — the suite must not leave
+     the real framework carrying QA text. */
+  const { data: seeded } = await db.from("control")
+    .select("reason, priority").eq("code", "4.3.1.3").single();
+  await db.from("control").update({ reason: null, priority: "High" }).eq("code", "4.3.1.3");
+  check("N46: framework restored after the admin walk",
+    seeded !== null);
+
   await ctx.close();
 }
 

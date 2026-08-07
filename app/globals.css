@@ -245,6 +245,14 @@ h1, h2, h3 {
   border: 1px solid var(--border); border-radius: var(--radius-in);
   background: var(--surface-2); color: var(--ink);
 }
+/* A textarea wearing .input needs three things an <input> does not: the
+   inherited font (browsers default textareas to monospace), a line height that
+   makes two or three sentences readable rather than cramped, and a resize
+   handle limited to the vertical — horizontal resize would let an admin drag a
+   field past the card and break the column it sits in. */
+textarea.input {
+  font-family: inherit; line-height: 1.5; resize: vertical; min-height: 76px;
+}
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
@@ -549,6 +557,50 @@ h1, h2, h3 {
 .accepted { font-size: 11.5px; color: var(--ready); font-weight: 600; }
 .edited { font-size: 11.5px; color: var(--accent); font-weight: 600; }
 .prefilled { font-size: 11.5px; color: var(--ink-muted); }
+
+/* ---------- what the levels mean (admin) ----------
+   Collapsed by default: an admin who knows the scale is tuning a target, not
+   re-reading six definitions, and an always-open block would push the fields
+   that ARE the job below the fold. Open, it is the same APM wording the PM
+   sees while self-scoring — one definition on both sides of the assessment,
+   not two that can drift. */
+.scale-help {
+  margin-top: 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-in); background: var(--surface-2);
+}
+.scale-help > summary {
+  cursor: pointer; padding: 9px 13px; font-size: 12.5px; font-weight: 600;
+  color: var(--ink); list-style: none; border-radius: var(--radius-in);
+}
+.scale-help > summary::-webkit-details-marker { display: none; }
+.scale-help > summary::before {
+  content: "▸"; display: inline-block; width: 14px; color: var(--ink-muted);
+}
+.scale-help[open] > summary::before { content: "▾"; }
+.scale-help > summary:hover { color: var(--accent); }
+.scale-help > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.scale-levels { list-style: none; margin: 0; padding: 0 13px 12px; display: grid; gap: 6px; }
+.scale-levels li {
+  display: grid; grid-template-columns: 20px 1fr; gap: 10px;
+  padding: 8px 11px; font-size: 12.5px; line-height: 1.5;
+  border: 1px solid var(--border); border-radius: var(--radius-in);
+  background: var(--surface);
+}
+/* The target is marked with a border and a WORD, never colour alone —
+   DESIGN.md's rule for every status treatment in this app. */
+.scale-levels li.is-target {
+  border-color: var(--selected); box-shadow: inset 0 0 0 1px var(--selected);
+  background: var(--accent-weak);
+}
+.scale-levels .lvl-n { font-weight: 700; color: var(--ink-muted); }
+.scale-levels li.is-target .lvl-n { color: var(--selected); }
+.scale-levels b { display: block; font-weight: 650; }
+.scale-levels .lvl-tag {
+  font-weight: 600; font-size: 11px; color: var(--selected);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.scale-levels .lvl-text { display: block; color: var(--ink-muted); margin-top: 2px; }
 
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .tablewrap { overflow-x: auto; }

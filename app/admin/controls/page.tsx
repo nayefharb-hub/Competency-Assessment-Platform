@@ -1,6 +1,11 @@
 import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
+import {
+  AREAS, controlsHref, editorHref, filteredControls, isFiltered, parseControlFilter,
+  type ControlFilterParams,
+} from "@/lib/control-filter";
+import type { Level } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -30,33 +35,26 @@ export const dynamic = "force-dynamic";
  * THE COUNTS IN THE HEADER REPORT THE WHOLE FRAMEWORK, never the filtered set —
  * N5's rule, for N5's reason: "133 total · 1 inactive" is a fact about the
  * framework, and making it shrink under a filter would turn the one line whose
- * job is orientation into a lie.
+ * job is orientation into a lie. The chip counts follow the same rule.
+ *
+ * THE FILTER ITSELF LIVES IN `lib/control-filter.ts`, not here, because the
+ * editor's Previous/Next has to walk exactly the set this table renders. Two
+ * copies of that rule would agree until the day they did not.
  */
 export default async function AdminControlsIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ area?: string; ce?: string; state?: string }>;
+  searchParams: Promise<ControlFilterParams>;
 }) {
   await requireRole("admin");
-  const { area: areaParam, ce: ceParam, state: stateParam } = await searchParams;
+  const params = await searchParams;
   const fw = await getFramework();
 
-  const AREAS = ["Perspective", "People", "Practice"] as const;
-  const area = AREAS.includes(areaParam as (typeof AREAS)[number]) ? areaParam : null;
-  /* A competency filter only means something inside its own area, and picking
-     one implies the area — so `ce` wins and the area chips reflect it. */
-  const ce = fw.data.competence_elements.some((e) => e.code === ceParam) ? ceParam : null;
-  const state: "all" | "active" | "inactive" =
-    stateParam === "active" || stateParam === "inactive" ? stateParam : "all";
-
+  const filter = parseControlFilter(params, fw);
   const ceOf = (code: string) => fw.data.competence_elements.find((e) => e.code === code);
   const areaOfCe = (code: string) => ceOf(code)?.area ?? "";
 
-  const matches = (c: (typeof fw.controls)[number]) =>
-    (!ce ? (!area || areaOfCe(c.ce_code) === area) : c.ce_code === ce)
-    && (state === "all" || (state === "active" ? c.active : !c.active));
-
-  const rows = fw.controls.filter(matches);
+  const rows = filteredControls(fw, filter);
 
   /* Framework order — the ICB4 sequence the standard publishes and the PMs saw
      in the workbook, not alphabetical and not database order. */
@@ -64,25 +62,22 @@ export default async function AdminControlsIndex({
     .map((e) => ({ ce: e, controls: rows.filter((c) => c.ce_code === e.code) }))
     .filter((g) => g.controls.length > 0);
 
-  const href = (next: { area?: string | null; ce?: string | null; state?: string | null }) => {
-    const q = new URLSearchParams();
-    const a = next.area === undefined ? area : next.area;
-    const e = next.ce === undefined ? ce : next.ce;
-    const s = next.state === undefined ? state : next.state;
-    if (a) q.set("area", a);
-    if (e) q.set("ce", e);
-    if (s && s !== "all") q.set("state", s);
-    const qs = q.toString();
-    return qs ? `/admin/controls?${qs}` : "/admin/controls";
-  };
-
-  const filtered = area !== null || ce !== null || state !== "all";
+  const filtered = isFiltered(filter);
   /* Which competencies the area chips should offer. Selecting an area narrows
      this list; selecting a competency from another area would be unreachable
      rather than empty, so the list follows the area. */
   const cesForPicker = fw.data.competence_elements.filter(
-    (e) => !area || e.area === area,
+    (e) => !filter.area || e.area === filter.area,
   );
+
+  /* Only offer target chips for levels the framework actually uses. Six chips
+     where two are always empty is six chips of noise, and an admin clicking one
+     to find nothing learns to distrust the row. */
+  const targetsInUse = fw.scaleLevels
+    .map((s) => s.level)
+    .filter((lvl) => fw.controls.some((c) => c.target_level === lvl));
+  const untargeted = fw.controls.filter((c) => c.target_level === null).length;
+  const labelFor = (lvl: Level) => fw.labelOf(lvl);
 
   return (
     <div className="section">
@@ -96,13 +91,13 @@ export default async function AdminControlsIndex({
 
       <div className="filterbar">
         <span className="cap">Area</span>
-        <Link className="filterchip" href={href({ area: null, ce: null })}
-          aria-current={!area && !ce ? "true" : undefined}>
+        <Link className="filterchip" href={controlsHref(filter, { area: null, ce: null })}
+          aria-current={!filter.area && !filter.ce ? "true" : undefined}>
           All <span className="tnum">{fw.controls.length}</span>
         </Link>
         {AREAS.map((a) => (
-          <Link key={a} className="filterchip" href={href({ area: a, ce: null })}
-            aria-current={area === a && !ce ? "true" : undefined}>
+          <Link key={a} className="filterchip" href={controlsHref(filter, { area: a, ce: null })}
+            aria-current={filter.area === a && !filter.ce ? "true" : undefined}>
             {a}{" "}
             <span className="tnum">
               {fw.controls.filter((c) => areaOfCe(c.ce_code) === a).length}
@@ -115,8 +110,8 @@ export default async function AdminControlsIndex({
         <span className="cap">State</span>
         {([["all", "All"], ["active", "Active"], ["inactive", "Inactive"]] as const).map(
           ([value, label]) => (
-            <Link key={value} className="filterchip" href={href({ state: value })}
-              aria-current={state === value ? "true" : undefined}>
+            <Link key={value} className="filterchip" href={controlsHref(filter, { state: value })}
+              aria-current={filter.state === value ? "true" : undefined}>
               {label}{" "}
               <span className="tnum">
                 {value === "all"
@@ -128,18 +123,30 @@ export default async function AdminControlsIndex({
         )}
       </div>
 
+      {/* Target — the reason this table exists. "Find the controls whose target
+          is wrong" is the job before a cycle, and until now it meant reading a
+          column down 133 rows. The chip carries the LABEL as well as the number
+          because the PM picks a label and never a number (domain rule), so an
+          admin comparing targets should be reading the same words they will. */}
       <div className="filterbar">
-        <span className="cap">Competency</span>
-        <Link className="filterchip" href={href({ ce: null })}
-          aria-current={!ce ? "true" : undefined}>
-          All
+        <span className="cap">Target</span>
+        <Link className="filterchip" href={controlsHref(filter, { target: null })}
+          aria-current={filter.target === "all" ? "true" : undefined}>
+          All <span className="tnum">{fw.controls.length}</span>
         </Link>
-        {cesForPicker.map((e) => (
-          <Link key={e.code} className="filterchip" href={href({ ce: e.code, area: null })}
-            aria-current={ce === e.code ? "true" : undefined}>
-            <span className="tnum">{e.code}</span> {e.name}
+        {targetsInUse.map((lvl) => (
+          <Link key={lvl} className="filterchip" href={controlsHref(filter, { target: lvl })}
+            aria-current={filter.target === lvl ? "true" : undefined}>
+            <span className="tnum">{lvl}</span> {labelFor(lvl)}{" "}
+            <span className="tnum">{fw.controls.filter((c) => c.target_level === lvl).length}</span>
           </Link>
         ))}
+        {untargeted > 0 && (
+          <Link className="filterchip" href={controlsHref(filter, { target: "none" })}
+            aria-current={filter.target === "none" ? "true" : undefined}>
+            No target <span className="tnum">{untargeted}</span>
+          </Link>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -195,10 +202,12 @@ export default async function AdminControlsIndex({
                     {g.controls.map((c) => (
                       <tr key={c.code}>
                         <td data-label="Control">
-                          <Link className="rcode tnum" href={`/admin?c=${c.code}`}>{c.code}</Link>
+                          {/* The filter rides along, so the editor's Previous
+                              and Next walk this same view rather than all 133. */}
+                          <Link className="rcode tnum" href={editorHref(c.code, filter)}>{c.code}</Link>
                         </td>
                         <td data-label="Indicator">
-                          <Link href={`/admin?c=${c.code}`} style={{ color: "var(--ink)" }}>
+                          <Link href={editorHref(c.code, filter)} style={{ color: "var(--ink)" }}>
                             {c.indicator}
                           </Link>
                         </td>

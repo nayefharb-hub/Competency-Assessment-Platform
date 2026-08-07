@@ -577,6 +577,67 @@ online), N37 (competency as a section header), N41 (a PM cannot see their own
 results before approval), N42 (the assessor's Review & revise screen), N43 (the
 results screen needs its own session).
 
+## Making the framework admin workable (N46) — same branch, PR #26
+
+Six items from the owner editing the framework on a 27" display. Five shipped;
+one is held behind a design call (N47 below).
+
+The framework admin was built as a place to change one field, and the job is to
+review 133 controls. So: **a target filter on the table, and Previous/Next in
+the editor that walks the filtered view** — narrow to "targeted Competent", then
+walk those 41 rather than making 41 round trips to the list. Reason and KIB
+context became textareas (they run to two or three sentences and existed to be
+read), and the APM scale is now explained on the screen where the target is
+picked, with this control's own target marked.
+
+**The seam is the point.** The table decides which rows exist and the editor's
+Next walks that same set — two screens answering one question, which is exactly
+D29's shape and `commitLabel`'s. The predicate, the ORDER and the query string
+live in `lib/control-filter.ts` and nowhere else. A second copy would let Next
+land on a control the view does not contain with nothing red anywhere, because
+each screen would be self-consistent.
+
+**Two invariants were proved by breaking them**, per the ground rule that a test
+which has never been red is a decoration. A truthiness test on the target
+dropped `target=0` from the query string (level 0 is a real target — the
+`answeredBefore` trap again); returning the filtered array instead of the
+competency-grouped order made Next walk a different sequence than the table
+rendered. Each break turned checks red; reverting turned them green.
+
+**The e2e caught a defect in its own first cut, and it is worth not repeating.**
+`page.waitForURL(/\/admin\?c=/)` matches the URL the page is ALREADY on, so it
+resolved instantly and the assertion read the control the walk started from —
+reporting 4.3.1.2 → 4.3.1.2 → 4.3.1.4 and looking like the app had skipped a
+row. The walk now waits for the `c` parameter to CHANGE. Same family as the
+lesson in the milestone tests: a wait that cannot wait is not a wait.
+
+**The posted filter is re-parsed, never passed through** — it is a hidden field
+reaching a redirect target, which is `safeNext()`'s shape, and that one has been
+broken twice by trusting the input rather than the output.
+
+## The type scale is set for a laptop and read on a 27" (N47) — NOT BUILT
+
+Raised as "text is not taking the full space of the pane" and answered wrongly
+first, which is the part to keep. The prose was said to be capped at 68
+characters by `--measure`. Measured on the running build, `.ro p` renders **79**
+and `.measures li` 72 — both ABOVE the 60–70 `DESIGN.md` asks for. The line was
+already too long; the empty pane beside it is a container problem. The open item
+further down this file had recorded 72–73 all along.
+
+The scale is fixed `px` and does not respond to viewport, so 2560×1440,
+1440×900 and 390×844 all render identically. 13.5px subtends 19.7 arcminutes on
+a laptop at ~50cm and **15.5** on a 27" at ~70cm, against a 20–22′ comfort
+target: the laptop case set the size and the 27" inherited it.
+
+**Found while measuring:** every `.input` is 14px, and iOS Safari zooms the page
+when a field under 16px takes focus — so a PM tapping the evidence field on an
+iPhone gets the page jumping, on each of 132 controls.
+
+Proposed: root 16px stepping to 17px above 1600px, the scale in `rem`, inputs at
+16px minimum, `--measure` 52ch → 44ch. **Not built** — it moves every screen, so
+it gets its own diff and its own `/design-review`. A mockup is with the owner,
+and the two-column admin layout (N46 item 4) is held behind the same call.
+
 ## Next step
 
 **Invite the nine PMs, assign them the cycle, and run it.** Deployment is done

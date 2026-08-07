@@ -284,6 +284,56 @@ is refused by the server, not just hidden in the UI.
 
 ---
 
+## Tuning the framework
+
+**Framework** in the menu opens the whole framework as a table — control,
+indicator, target, priority, state — grouped by competency inside its area.
+
+### Finding the controls you want
+
+Four filters sit above the table: **Area**, **State**, **Target** and
+**Competency**. They combine, so "the active Perspective controls targeted
+Competent" is three clicks.
+
+The filter lives in the address bar, so a filtered view is something you can
+bookmark or send to someone. The counts in the header and on the chips always
+describe the **whole framework**, never the filtered subset — that line is there
+to orient you, so it does not shrink when you narrow the view.
+
+A filter value the framework cannot honour (a stale bookmark, a hand-edited
+address) shows you everything rather than nothing.
+
+### Working through them one at a time
+
+Click any row to open that control's editor. The filter comes with you, so
+**Previous** and **Next** step through the view you were just looking at rather
+than all 133 controls — narrow to a target, then walk it. The header says where
+you are: *4 of 41*.
+
+**Save changes** keeps you on the control and keeps your filter, so a pass over
+41 controls is one trip through the screen.
+
+### What you can change
+
+**Target level**, **Priority**, **Active**, a **Reason**, and **KIB context &
+clarification**. The ICB4 indicator, description and measures are shown for
+context and are read-only — the server refuses them outright, not just the form.
+
+A **reason is required** whenever a control is not Active/High, because a
+scoped-down control changes every rollup it appears in and the next person to
+read it needs to know why. Reason and KIB context are both multi-line: these
+run to two or three sentences and they exist to be read.
+
+**What the levels mean** expands the APM 0–5 scale with the wording for each
+level and marks the one this control targets, so you can see how Competent
+differs from Practised without leaving the screen. It is the same wording the
+PM is shown while self-scoring.
+
+Editing a target affects **future rollups only**. Assessments already approved
+keep the targets frozen at approval.
+
+---
+
 ## What the tool will not do
 
 - **It never edits ICB4 source text.** The framework wording is the standard's.
