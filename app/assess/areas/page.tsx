@@ -77,7 +77,7 @@ export default async function AreasPage() {
     <div className="section">
       <div className="progress-head">
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 680, marginBottom: 4 }}>Your self-assessment</h2>
+          <h2 style={{ fontSize: "1.375rem", fontWeight: 680, marginBottom: 4 }}>Your self-assessment</h2>
           {/* A count of competencies, not a prediction about the person (D15).
               "40 minutes left at your pace" is a promise the person falsifies;
               this is a fact, and it names the next action. */}

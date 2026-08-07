@@ -53,7 +53,7 @@ export default async function LoginPage({
   return (
     <div className="section" style={{ maxWidth: 420, margin: "48px auto 0" }}>
       <div className="card pad">
-        <h2 style={{ fontSize: 20, fontWeight: 680, marginBottom: 4 }}>Sign in</h2>
+        <h2 style={{ fontSize: "var(--fs-h2)", fontWeight: 680, marginBottom: 4 }}>Sign in</h2>
         <p className="note" style={{ marginBottom: 18 }}>
           KIB PMO competency assessment. Access is by invitation — if you need an
           account, ask the Head of PMO.

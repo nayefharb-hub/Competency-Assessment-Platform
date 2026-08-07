@@ -219,7 +219,7 @@ async function NotYet({
   return (
     <div className="section">
       <div className="card pad">
-        <h2 style={{ fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
+        <h2 style={{ fontSize: "1.125rem", fontWeight: 650, marginBottom: 6 }}>
           Results are not available yet
         </h2>
         <p className="note">
@@ -248,7 +248,7 @@ async function NotYet({
             <div className="cap" style={{ margin: "18px 0 6px" }}>APPROVED ASSESSMENTS</div>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {others.map((a) => (
-                <li key={a.id} style={{ fontSize: 13.5 }}>
+                <li key={a.id} style={{ fontSize: "var(--fs-ui)" }}>
                   <Link href={`/results?a=${a.id}`}>{a.assessee_name}</Link> · cycle {a.cycle}
                 </li>
               ))}

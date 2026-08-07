@@ -134,7 +134,7 @@ export default async function AdminPage({
         {/* read-only ICB4 source, for context while writing clarifications */}
         <div className="ro">
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-            <b style={{ fontSize: 14.5 }}>{control.indicator}</b>
+            <b style={{ fontSize: "var(--fs-prose)" }}>{control.indicator}</b>
             <span className="lock">🔒 ICB4 — read-only</span>
           </div>
           {control.description && <p>{control.description}</p>}

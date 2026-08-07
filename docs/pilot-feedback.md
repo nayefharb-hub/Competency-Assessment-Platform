@@ -2626,6 +2626,37 @@ controls. Raising inputs to 16px is the whole fix.
 from 52ch to 44ch (measured to land ~66 characters). Admin and PM get the same
 scale — same eyes, same desk — and differ only in container.
 
-**Not built.** It moves every screen, so it wants its own diff and its own
-`/design-review`. Mockup published for the owner's judgement; the two-column
-admin layout is held behind the same call.
+**BUILT 2026-08-07, owner approved.** Root at `100%` stepping to `106.25%`
+above 1600px, the whole scale in `rem`, inputs at 16px minimum, `--measure`
+52ch → 44ch. `DESIGN.md` carries the amendment and three decision-log rows.
+
+Measured after, on the running build:
+
+| | Before | After (laptop) | After (27") |
+|---|---|---|---|
+| ICB4 prose | 13.5px, **79 chars** | 16px | 17px, **67 chars** |
+| Inputs | 14px (iOS zooms) | **16px** | 17px |
+| Table cells | 13.5px | 15px | 16px |
+| Secondary | 12.5px | 14px | 15px |
+
+**Percentage, not a px root.** `html { font-size: 16px }` would override the
+reader's own browser font-size setting, which is the one accessibility control
+a person with poor eyesight actually uses. `100%` scales their choice instead of
+replacing it.
+
+**It broke the N14 guarantee, and the e2e caught it rather than the owner.**
+Bigger type made the six option rows taller and put Save **32px below the fold**
+at 1440×900, on 4.3.1.1 and 4.5.1.1 — precisely the defect N14 exists to
+prevent. Measured rather than eyeballed, then fixed with a `max-height: 950px`
+query: it is a HEIGHT constraint, so tightening every screen to pay for a
+laptop's short viewport would have been the wrong trade. Rows went 64px → 55px,
+still above the 44px touch minimum, and Save now sits 34px ABOVE the fold.
+
+**One thing the mechanical sweep got wrong.** Converting by old px value put
+`.ro p` — the ICB4 description, the longest thing anyone reads on either screen
+— on the "scanned" step rather than the prose one, because it happened to be
+13.5px before. It was briefly the smallest text on a screen whose whole job is
+reading it. Role, not number, is what the mapping should have followed.
+
+Final: **410 passed, 0 failed**, including all six N14 layout guarantees at
+three viewports and the reading-measure check.

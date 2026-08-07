@@ -213,9 +213,9 @@ export default async function AssessPage({
             )}
           </p>
 
-          <h2 style={{ fontSize: 17, fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
+          <h2 style={{ fontSize: "var(--fs-h3)", fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
           {control.description && (
-            <p className="lede" style={{ margin: "8px 0 0", fontSize: 15 }}>
+            <p className="lede" style={{ margin: "8px 0 0", fontSize: "var(--fs-prose)" }}>
               {control.description}
             </p>
           )}

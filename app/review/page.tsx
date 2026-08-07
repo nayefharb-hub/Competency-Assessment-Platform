@@ -119,7 +119,7 @@ export default async function ReviewPage({
                   <div className="rrow" key={c.code}>
                     <div className="rcode tnum">{c.code}</div>
                     <div>
-                      <div style={{ fontSize: 14.5, fontWeight: 600 }}>{c.indicator}</div>
+                      <div style={{ fontSize: "var(--fs-prose)", fontWeight: 600 }}>{c.indicator}</div>
                       <div className="note" style={{ marginTop: 3 }}>
                         PM self-scored{" "}
                         <b className="tnum">
@@ -157,7 +157,7 @@ export default async function ReviewPage({
                         ) : assessor !== null ? (
                           <span className="prefilled">Pre-filled from self-score</span>
                         ) : (
-                          <span className="muted" style={{ fontSize: 11.5 }}>Not set</span>
+                          <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Not set</span>
                         )}
                         {changed && (
                           <span className="note">

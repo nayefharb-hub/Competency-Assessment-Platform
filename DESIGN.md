@@ -32,8 +32,29 @@ decision; do not deviate without explicit approval.
   Geist. To finish: drop `GeneralSans-Semibold.woff2` into `app/fonts/`, load it
   with `next/font/local` exposing `--font-general-sans`; `--font-display` in
   `globals.css` already picks it up, no other change needed.
-- **Scale:** display 28/680 · h2 20/650 · h3 16–17/650 · body 15/400 · small 13–14 ·
-  label 12 uppercase, letter-spacing .06em.
+- **Scale (amended 2026-08-07, N47 — owner approved):** expressed in `rem` from a
+  root of `100%`, so it follows the reader's own browser font size rather than
+  overriding it, and steps to `106.25%` above 1600px. One knob, `html`.
+
+  | Role | Token | ≤1600px | ≥1600px |
+  |---|---|---|---|
+  | display | `--fs-display` | 28 | 29.75 |
+  | h2 | `--fs-h2` | 20 | 21.25 |
+  | h3 | `--fs-h3` | 17 | 18 |
+  | **prose and every input** | `--fs-prose` | **16** | **17** |
+  | scanned rows, table cells | `--fs-ui` | 15 | 16 |
+  | secondary, glosses, helper | `--fs-sm` | 14 | 15 |
+  | uppercase label, pills | `--fs-label` | 12 | 12.75 |
+
+  **Why it moved.** The old scale was fixed `px` and did not respond to viewport
+  at all: 2560×1440, 1440×900 and 390×844 rendered identically. Legibility is
+  *angular* — size over viewing distance — so 13.5px measured 19.7 arcminutes on
+  a laptop at ~50cm and only **15.5′** on a 27" at ~70cm, against a 20–22′
+  comfort target. The laptop case set the size and the 27" inherited it.
+
+  **16px is a hard floor on inputs, not a preference.** iOS Safari zooms the page
+  when a field under 16px takes focus. At 14px a PM tapping the evidence box on
+  an iPhone got the page jumping on each of 132 controls.
 - **Line height:** prose 1.6 · UI and dense data 1.5 · headings 1.25. Prose means
   anything read in sentences — ICB4 indicator descriptions, measures, notes,
   banners. UI means labels, table cells, pills, buttons.
@@ -81,10 +102,17 @@ decision; do not deviate without explicit approval.
   This is NOT the same as container width, and conflating the two is what
   produced 131-character lines in the first build — a container is how wide the
   page may get, a measure is how wide a *sentence* may get.
-  - Implemented as `--measure: 52ch`, **not** `68ch`. The CSS `ch` unit is the
-    width of the "0" glyph, and Geist's digits run about 1.3× its average
-    letter, so `ch` overshoots: `68ch` measured 89 real characters, `52ch`
-    lands at 68. Re-derive this if the body typeface ever changes.
+  - Implemented as `--measure: 44ch` (was `52ch` until 2026-08-07). The CSS `ch`
+    unit is the width of the "0" glyph, and Geist's digits run wider than its
+    average letter, so `ch` **understates** the character count.
+  - **The 52ch figure was wrong and said so for months.** This file claimed
+    "52ch lands at 68". Measured on the running build with `getComputedStyle`,
+    52ch rendered **79** characters in `.ro p` and 72 in `.measures li` — both
+    *above* the 60–70 band, not below it. `docs/STATUS.md` had recorded 72–73 the
+    whole time and the two were never reconciled. 44ch measures ~66.
+  - **Re-derive by MEASURING, never by reasoning about `ch`.** Both previous
+    values were arrived at by arithmetic and both were wrong; counting the
+    characters that actually render is the only thing that has ever settled it.
 - **Border radius:** inputs/buttons 6px · cards 10px · pills 999px.
 - **Touch targets: 44px minimum below 1100px.** Anything a finger commits with —
   the pinned action bar, the milestone's Continue and Take a break, the recap
@@ -125,4 +153,7 @@ decision; do not deviate without explicit approval.
 | 2026-08-04 | Scored-state emphasis is quiet (left edge + recession), decided after the filter | N4 was deliberately sequenced after N5, and the filter changed the answer: with "Not scored" one click away, shouting at every unscored row is noise. The badge stays as the accessible label — colour is never the only signal |
 | 2026-08-04 | Reading pages may widen to 1000px **when a control panel sits beside the prose**; measure unchanged | Self-assessment was 1515px tall at 1440px, 2048px and 2560px wide alike — height did not respond to width at all, because the card never exceeded 780px. Save & next landed 481px below the fold on a laptop, on every one of 132 controls. Stacking prose above a six-row radio group is what made it tall; the fix is to put them side by side, not to widen sentences (N14) |
 | 2026-08-04 | The scoring panel is sticky; below 1100px the action bar is | ICB4's longest indicator is 2,596 characters of text that is never edited, so "everything fits without scrolling" cannot be promised. What can be: the answer and Save never leave the screen |
+| 2026-08-07 | Type scale becomes `rem` from a `100%` root, stepping to `106.25%` above 1600px; prose and inputs to 16/17 | Fixed `px` did not respond to viewport, so the laptop set the size and the 27" inherited it: 13.5px measures 19.7 arcminutes at ~50cm but 15.5′ at ~70cm, against a 20–22′ target. Percentage rather than a px root so the reader's own browser font-size setting still governs. Inputs at 16px minimum because iOS Safari zooms the page on focus below that — a defect on every one of 132 controls (N47) |
+| 2026-08-07 | `--measure` 52ch → 44ch, and the old rationale retired as wrong | The file claimed 52ch = 68 characters. Measured, it rendered 79 in `.ro p` and 72 in `.measures li` — above the band this rule exists to hold, not below it. The line was already too long; the empty pane beside it was a container problem, which is a different fix (N47) |
+| 2026-08-07 | Option rows tighten only under `max-height: 950px`, not everywhere | The bigger type put Save 32px below the fold at 1440×900 — the exact defect N14 exists to prevent, caught by the e2e rather than the owner. It is a HEIGHT constraint, so it takes a height query: paying for a laptop's short viewport with a worse control on every other screen would be the wrong trade. Rows stay 55px, above the 44px touch minimum |
 | 2026-08-03 | Palette left unchanged after a readability complaint | Light ink-on-surface measures 16.4:1 vs dark mode's 14.1:1 — light is the harsher of the two. But measure was the dominant fatigue driver, so it is fixed first and the palette re-judged after. If still tiring, soften the reading **surface** toward dark's ~14:1 rather than lightening the ink: ink `#16202E` carries the "serious, trustworthy" anchor, and lifting it compresses the ink/muted hierarchy |

@@ -36,15 +36,15 @@ export default async function Home({
       )}
 
       <div className="card pad">
-        <h2 style={{ fontSize: 22, fontWeight: 680, marginBottom: 6 }}>
+        <h2 style={{ fontSize: "1.375rem", fontWeight: 680, marginBottom: 6 }}>
           Assess project managers against ICB4
         </h2>
-        <p className="note" style={{ fontSize: 14 }}>
+        <p className="note" style={{ fontSize: "var(--fs-prose)" }}>
           {fw.data.framework} · {fw.counts.active} active controls across {fw.counts.ces} competence
           elements · rated on the {fw.scale.name} ({fw.scale.axis} axis).
         </p>
         {!mine && (
-          <p className="note" style={{ fontSize: 14, marginTop: 10 }}>
+          <p className="note" style={{ fontSize: "var(--fs-prose)", marginTop: 10 }}>
             {archived ? (
               <>
                 Your {cycle} assessment was withdrawn by the Head of PMO.{" "}

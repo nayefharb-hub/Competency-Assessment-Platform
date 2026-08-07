@@ -20,7 +20,7 @@ export default function NotAssigned({
       <div className="card pad">
         {archived ? (
           <>
-            <h2 style={{ fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 650, marginBottom: 6 }}>
               Your {cycle} assessment was withdrawn
             </h2>
             <p className="note">
@@ -34,7 +34,7 @@ export default function NotAssigned({
           </>
         ) : (
           <>
-            <h2 style={{ fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 650, marginBottom: 6 }}>
               No assessment has been assigned to you
             </h2>
             <p className="note">
