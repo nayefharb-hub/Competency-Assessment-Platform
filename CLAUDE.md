@@ -156,19 +156,32 @@ written tests.
 | **Merging anything containing code** | `/review` on the diff |
 | A diff touching **auth, sessions, storage, or the allowlist** | `/cso` as well |
 | A **user-visible** change reaching a **preview someone is about to use** | `/qa` against that preview, before the merge |
-| A **user-visible** change reaching production | `/qa` after it deploys |
 | **Any push containing code** | Read the **SonarCloud** findings for it |
 
-**Why the preview row exists (added 2026-08-06, after N33).** The production
-row is right and it is also *late*: it fires after the nine PMs have the build.
-N33 — the milestone never rising on the path a PM walks — was invisible to 336
-green tests and to a full `/review` (five specialists, a red team, an
-adversarial pass), because a diff-reading pass can only check that the code does
-what the diff says. It cannot notice that every test describes a user who does
-not exist. It took ninety seconds of clicking to find, and the owner found it.
-`/qa` is the only gate that drives the running app, so it is the only one that
-would have caught it — and this branch carried three days of user-visible work
-without it ever running, because nothing had reached production.
+**`/qa` runs ONCE, on the preview. Production is the owner's own pass** (owner's
+call, 2026-08-06). There used to be a second row here — `/qa` after it deploys —
+and it was removed deliberately, so do not restore it: the owner is the second
+level of QA on production and does it by hand. Two automated passes over the
+same build would be the banner-that-fires-on-every-save failure, and the later
+one lands after the nine PMs already have it.
+
+That places the whole weight on the preview run, which is exactly where it
+belongs and also where it is easiest to skip. **N33 is why.** The milestone
+never rose on the path a PM walks; it was invisible to 336 green tests and to a
+full `/review` (five specialists, a red team, an adversarial pass), because a
+diff-reading pass can only check that the code does what the diff says. It
+cannot notice that every test describes a user who does not exist. It took
+ninety seconds of clicking to find, and the owner found it — on a branch that
+had carried three days of user-visible work with `/qa` never once run.
+
+**What "against that preview" currently means, measured 2026-08-06.** The Vercel
+preview is behind deployment protection: `curl` gets a 302 to
+`vercel.com/sso-api`, the egress policy blocks that host, and Chromium therefore
+gets `ERR_CONNECTION_RESET`. So `/qa` runs against a local production build of
+the same commit — same code and same database, but not Vercel's runtime, its
+edge, or real network latency. Disabling protection for the preview, or issuing
+an `x-vercel-protection-bypass` token, is what would let this gate run against
+the thing the owner actually opens. Until then, say which target was tested.
 
 **SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
 one of two answers, and the answer is written down: *fix it*, or *why it is a
