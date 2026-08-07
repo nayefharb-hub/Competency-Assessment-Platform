@@ -39,10 +39,16 @@ Two things still limit what an agent can verify against the deployed site, and
 they are not network problems:
 
 - **Preview deployments are behind Vercel Deployment Protection.** Any preview
-  URL 302s to `vercel.com/sso-api`. Since a PR's preview is the only place
-  unmerged work runs, an agent cannot QA a PR's own deployment without a
-  Protection Bypass for Automation token — which belongs in an environment
-  variable, never pasted into chat.
+  URL 302s to `vercel.com/sso-api` without a Protection Bypass for Automation
+  token — which belongs in an environment variable, never pasted into chat.
+  **This is solved as of 2026-08-07:** `E2E_BASE_URL=<preview> npm run e2e` runs
+  the WHOLE suite against the preview. It caps TLS to 1.2 (the egress proxy
+  resets Chromium's TLS 1.3 — see CLAUDE.md; curl and node fetch negotiate
+  differently and get 200, so the network looks fine until a browser touches
+  it), routes through `HTTPS_PROXY`, and attaches the bypass header to every
+  context. It refuses to run remote without the secret rather than reporting a
+  pass earned from redirects. First run on PR #26's preview: **382 passed, 1
+  failed** — the `viewerMemo` flake below, and nothing else.
 - **Production runs `main`,** so it only ever shows merged work.
 
 **Reaching a PREVIEW deployment.** The owner created a Vercel *Protection
