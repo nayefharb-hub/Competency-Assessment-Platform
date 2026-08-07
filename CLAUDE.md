@@ -169,6 +169,14 @@ trigger column says when.
 
 **Ground rules, each paid for once.**
 
+0. **A new regression test must be shown FAILING on the build that has the
+   bug, before it counts.** Not a preference and not TDD ceremony — it is the
+   only thing that separates a test from a decoration. Measured on N38/N40: the
+   walked test was written first and was still vacuous through THREE cuts. Cut
+   one because the write landed before the PM reached the second control, so no
+   render lagged; cut two because the owed list filled up going forward and
+   never wrapped; cut three finally went red. A test written first that has
+   never been red proves only that it agrees with the code in front of it.
 1. **A gate that has never run is not a gate.** `/qa` sat unrun for three days
    on a branch carrying the hottest screen in the product. That is how N33
    reached the owner.
@@ -260,8 +268,22 @@ TLS 1.3 handshake.** `curl` and node `fetch` negotiate differently and get
 handshake was capped. Disabling ECH, QUIC, HTTP/2 and post-quantum key agreement
 all failed; `--ssl-version-max=tls1.2` works.
 
-The recipe, verified against `/login`, `/assess`, `/results` and `/review` with
-assets loading, redirects correct and no page errors:
+**`scripts/e2e.mjs` now does this itself.** Set `E2E_BASE_URL` to the preview
+and the suite caps TLS, routes through the proxy, and attaches the bypass header
+to every context by wrapping `newContext` once — so the whole suite runs against
+the preview, not just a hand-written walk:
+
+```bash
+E2E_CHROMIUM=/opt/pw-browsers/chromium \
+E2E_BASE_URL=https://<preview-host> npm run e2e
+```
+
+It REFUSES to run remote without `Vercel_deployment_ByPass` rather than
+reporting a pass earned from thirty redirects to `vercel.com/sso-api`. First
+run against a preview: 382 passed, 1 failed — the documented `viewerMemo` flake.
+
+The underlying recipe, verified against `/login`, `/assess`, `/results` and
+`/review` with assets loading, redirects correct and no page errors:
 
 ```js
 chromium.launch({

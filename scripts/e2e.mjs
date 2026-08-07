@@ -212,7 +212,61 @@ await ensure(PM);
 await ensure(OTHER);
 await ensure(BOSS);
 
-const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
+/*
+ * RUNNING AGAINST A REAL VERCEL PREVIEW, not just localhost.
+ *
+ * `/qa` is a gate before merge and the thing it has to run against is the
+ * PREVIEW — the only place unmerged work actually runs. Two obstacles, and only
+ * one of them is the obvious one.
+ *
+ * DEPLOYMENT PROTECTION is the obvious one: every preview URL 302s to
+ * `vercel.com/sso-api` without a Protection Bypass for Automation secret. It
+ * lives in this environment as `Vercel_deployment_ByPass`, is passed BY
+ * REFERENCE, and must never be printed or committed. It has to be on EVERY
+ * request — assets and RSC payloads included — so it is attached by wrapping
+ * `newContext` once rather than by editing thirty call sites, which is exactly
+ * the kind of drift the ASSESS_HUB parser above exists to prevent.
+ *
+ * TLS IS THE ONE THAT COSTS A DAY. The egress proxy intercepts TLS, and its
+ * handshake RESETS Chromium's TLS 1.3 — every external host, not just Vercel.
+ * `curl` and node `fetch` negotiate differently and get 200, so the network
+ * looks fine right up until the browser touches it. Disabling ECH, QUIC, HTTP/2
+ * and post-quantum key agreement all failed; capping the version works. This
+ * was diagnosed twice as something else first — "the preview is unreachable"
+ * and "deployment protection blocks the browser" — and both wrong answers
+ * pointed the owner at a fix they did not need, which is why the mechanism is
+ * written down here rather than just the flag.
+ */
+const REMOTE = !BASE.startsWith("http://127.0.0.1") && !BASE.startsWith("http://localhost");
+const BYPASS = process.env.Vercel_deployment_ByPass;
+if (REMOTE && !BYPASS) {
+  throw new Error(
+    `E2E_BASE_URL is remote (${BASE}) but Vercel_deployment_ByPass is unset — every `
+    + "request would 302 to vercel.com/sso-api and the run would report a fake pass. "
+    + "The variable is injected at container start, so a session that predates it "
+    + "needs a new session, not a new variable.",
+  );
+}
+const browser = await chromium.launch({
+  ...(CHROME ? { executablePath: CHROME } : {}),
+  ...(REMOTE
+    ? {
+        args: ["--ssl-version-max=tls1.2"],
+        ...(process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {}),
+      }
+    : {}),
+});
+if (REMOTE) {
+  const openContext = browser.newContext.bind(browser);
+  browser.newContext = (opts = {}) => openContext({
+    ...opts,
+    extraHTTPHeaders: {
+      ...(opts.extraHTTPHeaders ?? {}),
+      "x-vercel-protection-bypass": BYPASS,
+    },
+  });
+  console.log(`  (running against ${BASE} — preview, with protection bypass)`);
+}
 // `closingOnPurpose` matters: teardown's own browser.close() fires this event,
 // so without the flag the diagnostic reports a disconnect on EVERY clean run —
 // it did exactly that on its first outing. A signal that always fires carries
