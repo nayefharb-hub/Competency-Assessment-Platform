@@ -486,9 +486,20 @@ INCONCLUSIVE instead of green.
 five consecutive runs rather than one.** `lib/auth.ts` gains `forgetViewer()`
 and `app/change-password/actions.ts` calls it after the write. The
 password-gate section was green in all five runs; before the fix the same suite
-produced 1, 1, 4 and 3 failures across four. The residual is unchanged and
-documented: under Fluid Compute a sibling instance keeps its own copy for up to
-2s, so this narrows the window rather than closing it. Original entry below,
+produced 1, 1, 4 and 3 failures across four.
+
+**And it holds on the PREVIEW, which is the run that counts.** This check failed
+on both earlier preview runs and passes now: **405 passed, 0 failed, 3 SKIPPED**
+against `cf7b2cf`. That matters more than the local runs because Fluid Compute
+and real latency exist only there, and they are the conditions the residual
+lives in. The three skips are the two round-trip budgets and the new JWKS check
+— all three read the server's own log, which cannot be reached remotely, and all
+three were green locally (411 passed, twice). A skip is not a pass.
+
+The residual is unchanged and documented: under Fluid Compute a sibling instance
+keeps its own copy for up to 2s, so this narrows the window rather than closing
+it. Nothing observed it in practice on the preview, which is evidence the window
+is small, not evidence it is closed. Original entry below,
 kept because the diagnosis is the reusable part.
 
 **The original report — and calling it a flake understated it.** "the app is reachable once the flag clears" fails intermittently
