@@ -62,7 +62,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <Link href="/analysis">Analysis</Link>
                 {isAssessor && <Link href="/review">Review</Link>}
                 {user.role === "admin" && <Link href="/admin/people">People</Link>}
-                {user.role === "admin" && <Link href="/admin">Framework</Link>}
+                {/* The LIST, not the editor. Landing on /admin put an admin
+                    inside one control with no view of the framework (N44). */}
+                {user.role === "admin" && <Link href="/admin/controls">Framework</Link>}
               </nav>
             )}
           </header>

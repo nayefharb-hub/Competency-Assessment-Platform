@@ -3297,6 +3297,93 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     .eq("id", asmt.id);
 }
 
+/* ------------------------------------- 17. the framework table (N44) */
+console.log("\n[17] Framework admin opens on a table you can filter (N44)");
+{
+  const ctx = await browser.newContext({ baseURL: BASE, storageState: await boss.ctx.storageState() });
+  const page = await ctx.newPage();
+
+  /* ARRIVES THE WAY AN ADMIN ARRIVES — clicking the nav, not a typed URL. The
+     defect was precisely that the nav landed on the single-control editor, and
+     a test that went straight to /admin/controls could never have seen it. */
+  await page.goto("/");
+  await page.click('.nav a:has-text("Framework")');
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: the Framework nav lands on the table, not the editor",
+    new URL(page.url()).pathname === "/admin/controls", page.url());
+
+  const rows = () => page.locator(".grid tbody tr").count();
+  const all = await rows();
+  check("N44: every control is listed, including the inactive one",
+    all === activeControls.length + 1, `${all} rows vs ${activeControls.length} active`);
+
+  const heads = (await page.locator(".grid thead th").allInnerTexts())
+    .slice(0, 5).map((h) => h.trim().toLowerCase());
+  check("N44: the columns the framework is actually tuned by are present",
+    ["control", "indicator", "target", "priority", "state"].every((h) => heads.includes(h)),
+    heads.join("|"));
+
+  /* The state filter, checked against the database rather than against itself:
+     the framework ships exactly one inactive control. */
+  await page.goto("/admin/controls?state=inactive");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: the inactive filter finds the one inactive control",
+    (await rows()) === 1, String(await rows()));
+
+  /* Area AND state together — the combination is where a filter usually breaks,
+     and the inactive control lives in Perspective, so Perspective's active count
+     must be exactly one short of its total. */
+  await page.goto("/admin/controls?area=Perspective");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const persp = await rows();
+  await page.goto("/admin/controls?area=Perspective&state=active");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: area and state compose — Perspective loses exactly its inactive one",
+    (await rows()) === persp - 1, `${await rows()} of ${persp}`);
+
+  /* A competency narrows to one group, and the group is the right one. */
+  await page.goto("/admin/controls?ce=4.5.2");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const groups = await page.locator(".card.pad").count();
+  check("N44: a competency filter leaves exactly its own group", groups === 1, String(groups));
+
+  /* Nonsense in the query string shows everything rather than nothing — a
+     stale bookmark or a hand-edited URL must not present an empty framework as
+     if it were the truth. */
+  await page.goto("/admin/controls?area=Nope&ce=9.9.9&state=maybe");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: unknown filter values fall back to the whole framework",
+    (await rows()) === all, String(await rows()));
+
+  /* The round trip that makes the table useful: open a control, come back to
+     where you were rather than to the top of 133 rows. */
+  await page.goto("/admin/controls?ce=4.5.2");
+  await page.waitForSelector(".grid tbody tr");
+  await page.locator(".grid tbody tr .rcode").first().click();
+  await page.waitForURL(/\/admin\?c=/, { timeout: 20_000 }).catch(() => {});
+  check("N44: a row opens that control's editor",
+    /\/admin\?c=4\.5\.2\.1/.test(page.url()), page.url());
+  await page.locator(".assess-nav a").first().click();
+  await page.waitForURL(/\/admin\/controls/, { timeout: 20_000 }).catch(() => {});
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 }).catch(() => {});
+  check("N44: and the way back returns to the competency, not the top of the list",
+    /ce=4\.5\.2/.test(page.url()) && (await rows()) === 3, `${page.url()} rows=${await rows()}`);
+
+  /* A PM must not reach it — the framework carries every target, which is the
+     one thing the assessment blinds them to. */
+  const pmCtx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+  const pmPage = await pmCtx.newPage();
+  await pmPage.goto("/admin/controls");
+  await pmPage.waitForLoadState("networkidle");
+  check("N44: a PM is kept out of the framework table",
+    !new URL(pmPage.url()).pathname.startsWith("/admin"), pmPage.url());
+  const leaked = await pmPage.content();
+  check("N44: and no target reaches their payload from it",
+    !/target_level/.test(leaked));
+  await pmCtx.close();
+  await ctx.close();
+}
+
 /* ---------------------------------------------------------------- cleanup */
 await teardown();
 

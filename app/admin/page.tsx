@@ -48,8 +48,11 @@ export default async function AdminPage({
 
       <div className="card pad">
         <div className="assess-nav">
-          <Link className="btn btn-secondary btn-sm" href="/admin/controls">
-            ← Pick another control
+          {/* Back to the framework table, filtered to this control's competency
+              — an admin editing 4.5.2.3 is working on 4.5.2, and dropping them
+              at the top of 133 rows would make them find their place again. */}
+          <Link className="btn btn-secondary btn-sm" href={`/admin/controls?ce=${ce?.code ?? ""}`}>
+            ← {ce?.code ? `${ce.code} ${ce.name}` : "All controls"}
           </Link>
           <span className="note">
             Editing <b className="tnum">{control.code}</b>
