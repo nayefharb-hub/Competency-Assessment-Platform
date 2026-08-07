@@ -130,6 +130,52 @@ gstack is installed automatically by the SessionStart hook. When a request
 matches a skill, invoke it via the Skill tool rather than answering ad hoc —
 the skills carry checklists and quality gates. When in doubt, invoke the skill.
 
+### The loop (owner's, 2026-08-07)
+
+The order things happen in. Not every stage fires for every change — the
+trigger column says when.
+
+| # | Stage | Skill | Fires when |
+|---|---|---|---|
+| 1 | Is it worth building | `/office-hours` | a new idea or a scope question |
+| 2 | Scope and ambition | `/plan-ceo-review` | anything larger than a fix |
+| 3 | How it should feel | `/design-consultation`, then `/plan-design-review` | the change is visible to a PM |
+| 4 | Architecture | `/plan-eng-review` | **gate** — the plan must end with no unresolved decisions |
+| 5 | Backlog item | `/spec` | the work is being handed off or deferred |
+| 6 | **Build** | — | to the approved plan, not around it |
+| 7 | Diff review | `/review` | **gate — before merge** |
+| 7b | Security | `/cso` | **only** a diff touching auth, sessions, storage, or the allowlist |
+| 8 | Does it actually work | `/qa` | **gate — before merge**, against the preview build |
+| 9 | Ship | `/ship`, then `/land-and-deploy` | |
+| 10 | Production | — | **the owner's own pass, by hand** |
+| 11 | Release notes | `/document-release` | a user-visible change shipped |
+| 12 | Product documentation | `/document-generate` → `docs/user-guide.md` | **every feature** — the manual is kept current, not appended to |
+| 13 | Compound | `/retro`, `/learn` | weekly |
+| ⚡ | Something is broken | `/investigate` | **an interrupt, at any point** — never a scheduled stage |
+
+**Ground rules, each paid for once.**
+
+1. **A gate that has never run is not a gate.** `/qa` sat unrun for three days
+   on a branch carrying the hottest screen in the product. That is how N33
+   reached the owner.
+2. **A review round that produces non-trivial fixes gets reviewed.** Measured
+   here: `/review` on the N33 fix found two defects *in the fix*, one of them a
+   fresh regression. Repair-then-merge is how a fix ships a new bug.
+3. **Every finding gets a written answer — fixed, or why it is a false
+   positive.** Same rule the SonarCloud section already states, for the same
+   reason: an un-triaged list trains the next reader to skim.
+4. **Conditional gates stay conditional.** `/cso` on auth and storage diffs,
+   `/design-review` on visual ones. Firing everything every time is the
+   banner-on-every-save failure.
+5. **Docs are part of the diff, not a follow-up.** Three doc claims went stale
+   inside one day and a review pass had to catch them.
+6. **No fix without a root cause** — `/investigate`'s own iron law, and what
+   turned "sometimes it works" into a one-line mechanism.
+7. **The product documentation is a manual, not a changelog.** `docs/user-guide.md`
+   describes the product as it is today. History belongs in
+   `docs/pilot-feedback.md` and the release notes; a manual that accretes
+   "and then we added…" stops being usable at about the third feature.
+
 | Situation | Skill |
 |---|---|
 | Bug, error, "why is this broken" | `/investigate` |
@@ -174,14 +220,28 @@ cannot notice that every test describes a user who does not exist. It took
 ninety seconds of clicking to find, and the owner found it — on a branch that
 had carried three days of user-visible work with `/qa` never once run.
 
-**What "against that preview" currently means, measured 2026-08-06.** The Vercel
-preview is behind deployment protection: `curl` gets a 302 to
-`vercel.com/sso-api`, the egress policy blocks that host, and Chromium therefore
-gets `ERR_CONNECTION_RESET`. So `/qa` runs against a local production build of
-the same commit — same code and same database, but not Vercel's runtime, its
-edge, or real network latency. Disabling protection for the preview, or issuing
-an `x-vercel-protection-bypass` token, is what would let this gate run against
-the thing the owner actually opens. Until then, say which target was tested.
+**What "against that preview" currently means, measured 2026-08-07. The earlier
+version of this paragraph was wrong and the correction matters.** It blamed
+Vercel's deployment protection and said a bypass token would unlock the gate.
+The token exists, it is in this environment as `Vercel_deployment_ByPass`, and
+it works: `curl` and node `fetch` both get **200** and real HTML from the
+preview with `x-vercel-protection-bypass`. Chromium still cannot reach it — and
+cannot reach `example.com` either, direct or through the egress proxy
+(`ERR_TUNNEL_CONNECTION_FAILED`). **The browser has no external network in this
+container at all.** No token or Vercel setting changes that; it is the
+environment's network policy.
+
+So, until the environment permits browser egress:
+
+- **`/qa` runs against a local production build of the same commit** — same code
+  and same database, not Vercel's runtime, its edge, or real latency. **Name the
+  target in the report**, every time, so nobody reads "preview: clean" and
+  believes Vercel was tested.
+- **HTTP-level checks CAN hit the real preview** with the bypass header — status
+  codes, redirects, security headers, rendered HTML. Use them for anything that
+  does not need a click.
+- The click-through pass on the real preview is the owner's, on their own
+  machine. That is not a gap in the gate; it is where the gate physically ends.
 
 **SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
 one of two answers, and the answer is written down: *fix it*, or *why it is a
