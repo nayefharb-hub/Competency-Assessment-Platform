@@ -2401,3 +2401,41 @@ cut: exactly two holes in the whole framework, so the wrap puts the near one at
 the front. That fails on the pre-fix build and passes on the fixed one, and the
 premise — "the write really was still in flight" — is asserted, so a run where
 the race falls the other way reports INCONCLUSIVE rather than green.
+
+### The commit decision became a module you can enumerate
+
+Six defects have lived in one nested ternary — N30, N33, N38, N40, and the two
+review found inside the N38/N40 fix. Every one was a single row reading wrong,
+and every one was found by a person noticing rather than a test failing, because
+the table sat inside a client component wired to an outbox, a router and a race.
+
+`lib/commit-label.ts` now owns it: six inputs in, `{ label, raisesCard }` out.
+Five booleans and a zero/non-zero count is 64 rows — small enough to ENUMERATE,
+which is why there is no pairwise sampling. Pairwise exists for spaces too large
+to walk; exhaustive is strictly stronger when you can afford it, and here it
+costs milliseconds with no browser and no database.
+
+**The tests are properties, not a 64-row expected table.** A hand-written
+expected table is the implementation retyped, and it agrees with the bug as
+readily as with the fix — which is how six milestone tests stayed green against
+a build where the feature did not work. So the checks state things true of every
+row: a label may only claim a completion when this click caused one; the
+assessment is only claimed complete when nothing is left; the card rises exactly
+when the completion is this click's news; a click that navigates names where it
+is going; and **no label is unreachable** — the check that finds wording nobody
+can ever see, which review had to spot by hand last round.
+
+Verified by mutation rather than by assertion count, per ground rule 0:
+
+| Reintroduced defect | Killed by |
+|---|---|
+| Label claims completion whenever the competency is whole (the pre-review bug) | 4 checks |
+| Card gated on `ceComplete` alone (traps a PM re-reading a finished competency) | 2 checks |
+| Fall through to "Review before submitting" with holes open (N38 itself) | 3 checks |
+
+Behaviour is unchanged — 388 e2e / 0 failed, both round-trip budgets held. The
+browser tests now only have to prove the wiring, not every combination.
+
+The idea came from a community skill (Pypict, combinatorial test generation).
+The tool was the wrong fit and the instinct was right, which is worth recording
+as its own lesson: the value was in noticing that this decision IS a table.

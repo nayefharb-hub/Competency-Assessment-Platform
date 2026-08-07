@@ -90,7 +90,7 @@ npm run verify:db          # expect 11/11
 npm run build
 npm start > /tmp/next.log 2>&1 &
 E2E_SERVER_LOG=/tmp/next.log npm run e2e   # writes, then cleans up after itself
-npm run test:unit                          # expect 85/85 — pure logic, no database
+npm run test:unit                          # expect 103/103 — pure logic, no database
 npm run perf:save                          # 10 real saves, split by where the time goes
 ```
 
@@ -464,7 +464,7 @@ control, press Next, and the recap on the card that advertises itself as "the
 last easy moment to change an answer" showed the answer you had just replaced.
 Three specialists found (2) independently. Both now have walked tests.
 
-388 e2e / 0 failed / 2 skipped without `E2E_SERVER_LOG`, 85 unit — the unit count includes a new
+388 e2e / 0 failed / 2 skipped without `E2E_SERVER_LOG`, 103 unit — the unit count includes a new
 `scripts/outbox.test.mjs`, because three of the paths that make `answered` safe
 (the clear on a user change, the delete on a refusal, the assessment scoping)
 cannot be reached from a browser test without a second account, a second

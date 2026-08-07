@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "@/app/link";
 import { answeredLevel, commit, pendingFor } from "@/lib/outbox";
 import { createDwellClock, type DwellClock } from "@/lib/dwell";
+import { decideCommit } from "@/lib/commit-label";
 import type { Milestone } from "@/lib/shape";
 import MilestoneCard from "./milestone-card";
 
@@ -310,12 +311,6 @@ export default function ScorePanel({
    * which is the thing whose effect is being asked about. */
   const priorHere = known[control] ?? queued[control] ?? ceLevels?.[control] ?? savedLevel;
   const atCeEnd = !!milestone && milestone.done !== "mid";
-  /** This click is what made the competency whole — the control had no answer
-   *  before it. The only thing that can truthfully be called "completing". */
-  const causedIt = ceComplete && priorHere === null;
-  /** The card should rise: either the click caused the completion, or the PM
-   *  reached the competency's end with it whole and the recap is the point. */
-  const completesCe = ceComplete && (atCeEnd || causedIt);
 
   /* WHERE "I HAVE FINISHED SOMETHING, TAKE ME ON" GOES (N38/N39/N40).
    *
@@ -403,11 +398,14 @@ export default function ScorePanel({
        competencies does mean five cards; Enter dismisses each, and each is
        telling the truth.
 
-       THE CONDITION IS `completesCe`, NOT `ceComplete` — see its derivation. A
-       competency that was already whole before this click has no news to
-       announce, and gating on `ceComplete` here would have trapped a PM
-       re-reading a finished competency on its first control. */
-    if (milestone && completesCe) { setReached(true); return; }
+       THE CONDITION IS `raisesCard`, NOT `ceComplete`. A competency that was
+       already whole before this click has no news to announce, and gating on
+       `ceComplete` here would have trapped a PM re-reading a finished
+       competency on its first control. `lib/commit-label.ts` owns the
+       distinction, so the button and this branch cannot drift apart — they are
+       two fields of one answer. (Declared below: `goNext` only runs on a click,
+       long after the const is initialised.) */
+    if (milestone && raisesCard) { setReached(true); return; }
 
     // Never ask the browser to navigate when it has told us it cannot
     // (decision D13). Measured: router.push falls back to a hard navigation,
@@ -529,66 +527,35 @@ export default function ScorePanel({
   });
 
   /*
-   * ONE label, used by both the button and the hint above it.
+   * ONE label, used by both the button and the hint above it — and now decided
+   * in `lib/commit-label.ts` rather than here.
    *
    * They used to be computed separately — the hint from `nextControl`, the
    * button from the boundary — so at a competency boundary the hint said
    * "Next control saves it" above a button reading "Back to the list". It named
    * a button that was not on screen. Two notions of "what happens next",
-   * rendered side by side; deriving both from this removes the possibility
+   * rendered side by side; deriving both from one call removes the possibility
    * rather than fixing the symptom.
    *
-   * THE RULE, decided by the owner after walking the assessment (N38/N40):
-   * **the button names what the click COMPLETES if it completes something, and
-   * otherwise names where it GOES.** "Completes something" is `completesCe`,
-   * which is deliberately narrower than "the competency is now whole" — a
-   * competency that was already whole when the PM arrived is not completed by
-   * looking at it again.
+   * WHY IT MOVED OUT. Six defects have lived in this decision (N30, N33, N38,
+   * N40, and two more found by review inside the N38/N40 fix). Every one was a
+   * row in a table nobody could read, because the table was a nested ternary
+   * inside a component whose other inputs are an outbox, a router and a race.
+   * As a pure function it is 64 combinations and `scripts/commit-label.test.mjs`
+   * walks all of them in milliseconds. This file now supplies the facts and
+   * renders the answer; it no longer holds the rule.
    *
-   * What it replaced was three positional inputs pretending to be one question.
-   * `milestone` was non-null only on a competency's LAST control; `done ===
-   * "assessment"` meant the last control of the framework; `nextControl` meant
-   * "is there another control after this one". So at control 132 with holes
-   * still open, the label fell through to "Review before submitting" — the PM
-   * had run out of controls to walk past, which is not the same as having
-   * answered them — and a skipped control filled mid-competency read "Next
-   * control" even when that answer finished the competency. Same defect as N30
-   * and N33: a label describing where you stand rather than what you did.
-   *
-   * Completion is a fact about ANSWERS, so it is asked of answers. Position is
-   * still what decides where you go next, and the two no longer share an
-   * expression.
-   *
-   * AND "COMPLETES" MEANS `causedIt`, NOT `completesCe`. The two differ on one
-   * screen: the PM re-opens the last control of a competency that is already
-   * whole. The card still rises there — that is where a revision is shown back
-   * to them (N33c) — but nothing was completed by the click, so a label saying
-   * "Complete the assessment" would be describing an event that happened last
-   * week. Review found it: on a fully answered assessment, re-opening control
-   * 132 promised to complete something that was already complete.
-   *
-   * So that screen names what the click DOES: it shows the competency back.
-   * When there is genuinely nothing left anywhere, the more useful thing to
-   * name is the next step, which is the review — and that is the one state in
-   * which "Review before submitting" is honest. (Reaching it through the
-   * ordinary fall-through below is impossible, which review also found: no
-   * `nextControl` means the framework's last control, where `atCeEnd` holds, so
-   * either the competency is whole or its hole is owed. The wording survives
-   * because this branch gives it a real home.)
+   * The facts are all client-side for the same reason as `ceComplete`: the
+   * server render is one answer behind at exactly the moment the label matters.
    */
-  const completesAssessment = causedIt && assessmentRemaining === 0;
-  const commitLabel = completesCe
-    ? (causedIt
-        ? (assessmentRemaining === 0 ? "Complete the assessment" : "Finish this competency")
-        : (assessmentRemaining === 0 ? "Review before submitting" : "Review this competency"))
-    : nextControl
-      ? "Next control"
-      : nextOwed
-        ? "Next unanswered control"
-        /* Unreachable today (see above), kept as the honest default rather than
-           a throw: if a future shape change makes it reachable, a PM with
-           nothing owed should be pointed at the review, not at a crash. */
-        : "Review before submitting";
+  const { label: commitLabel, raisesCard } = decideCommit({
+    ceComplete,
+    atCeEnd,
+    answeredBefore: priorHere !== null,
+    assessmentRemaining,
+    hasNextControl: nextControl !== null,
+    hasNextOwed: nextOwed !== null,
+  });
 
   if (reached && milestone) {
     return (
