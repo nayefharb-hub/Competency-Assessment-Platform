@@ -148,8 +148,8 @@ trigger column says when.
 | 8 | Does it actually work | `/qa` | **gate — before merge**, against the preview build |
 | 9 | Ship | `/ship`, then `/land-and-deploy` | |
 | 10 | Production | — | **the owner's own pass, by hand** |
-| 11 | Release notes | `/document-release` | a user-visible change shipped |
-| 12 | Product documentation | `/document-generate` → `docs/user-guide.md` | **every feature** — the manual is kept current, not appended to |
+| 11 | Release notes | **`/ship` writes the `CHANGELOG.md` entry**, `/document-release` polishes it and syncs the rest | a user-visible change shipped |
+| 12 | Product documentation | `/document-generate`, **consolidated into `docs/user-guide.md`** | **every feature** — the manual is kept current, not appended to |
 | 13 | Compound | `/retro`, `/learn` | weekly |
 | ⚡ | Something is broken | `/investigate` | **an interrupt, at any point** — never a scheduled stage |
 
@@ -175,6 +175,16 @@ trigger column says when.
    describes the product as it is today. History belongs in
    `docs/pilot-feedback.md` and the release notes; a manual that accretes
    "and then we added…" stops being usable at about the third feature.
+
+**Which skill owns which document — checked against the skills, not assumed.**
+
+| Document | Written by | Notes |
+|---|---|---|
+| `docs/user-guide.md` | `/document-generate` | Left alone it emits a Diátaxis *set* (`docs/reference-*.md`, `docs/explanation-*.md`, separate how-tos). **Point it at the single manual**, or it scatters files. |
+| `CHANGELOG.md` | **`/ship`** (its Step 13, from the diff) | Does not exist yet; `/ship` creates the first entry on the first real release. |
+| Changelog polish, README / ARCHITECTURE / CONTRIBUTING / CLAUDE.md sync, TODOS, diagram drift | `/document-release` | It is a post-ship docs SYNC, not a release-notes author. Its own rule: *"Never clobber CHANGELOG. Polish wording only."* |
+| `docs/pilot-feedback.md` | `/investigate` | One entry per defect, with the mechanism. |
+| `docs/STATUS.md` | whoever ships the change | Current state and open decisions, in the same diff as the code. |
 
 | Situation | Skill |
 |---|---|
@@ -220,28 +230,42 @@ cannot notice that every test describes a user who does not exist. It took
 ninety seconds of clicking to find, and the owner found it — on a branch that
 had carried three days of user-visible work with `/qa` never once run.
 
-**What "against that preview" currently means, measured 2026-08-07. The earlier
-version of this paragraph was wrong and the correction matters.** It blamed
-Vercel's deployment protection and said a bypass token would unlock the gate.
-The token exists, it is in this environment as `Vercel_deployment_ByPass`, and
-it works: `curl` and node `fetch` both get **200** and real HTML from the
-preview with `x-vercel-protection-bypass`. Chromium still cannot reach it — and
-cannot reach `example.com` either, direct or through the egress proxy
-(`ERR_TUNNEL_CONNECTION_FAILED`). **The browser has no external network in this
-container at all.** No token or Vercel setting changes that; it is the
-environment's network policy.
+**`/qa` CAN drive the real Vercel preview from this container. Solved
+2026-08-07, and the two earlier versions of this paragraph were both wrong** —
+recorded because each wrong version pointed at a fix the owner would have had to
+make, and neither was needed.
 
-So, until the environment permits browser egress:
+- Wrong once: "the preview is unreachable". It is reachable.
+- Wrong twice: "deployment protection blocks it; a bypass token would unlock the
+  browser". The token was never the browser's problem, and no Vercel setting or
+  environment network policy needed changing.
 
-- **`/qa` runs against a local production build of the same commit** — same code
-  and same database, not Vercel's runtime, its edge, or real latency. **Name the
-  target in the report**, every time, so nobody reads "preview: clean" and
-  believes Vercel was tested.
-- **HTTP-level checks CAN hit the real preview** with the bypass header — status
-  codes, redirects, security headers, rendered HTML. Use them for anything that
-  does not need a click.
-- The click-through pass on the real preview is the owner's, on their own
-  machine. That is not a gap in the gate; it is where the gate physically ends.
+**The actual cause: the egress proxy's TLS interception resets Chromium's
+TLS 1.3 handshake.** `curl` and node `fetch` negotiate differently and get
+`200`. Chromium got `ERR_CONNECTION_RESET` on *every* external host until the
+handshake was capped. Disabling ECH, QUIC, HTTP/2 and post-quantum key agreement
+all failed; `--ssl-version-max=tls1.2` works.
+
+The recipe, verified against `/login`, `/assess`, `/results` and `/review` with
+assets loading, redirects correct and no page errors:
+
+```js
+chromium.launch({
+  executablePath: "/opt/pw-browsers/chromium",
+  args: ["--ssl-version-max=tls1.2"],        // the proxy resets TLS 1.3
+  proxy: { server: process.env.HTTPS_PROXY },
+})
+// and on the context, so every request carries it — assets and RSC included:
+{ extraHTTPHeaders: { "x-vercel-protection-bypass": process.env.Vercel_deployment_ByPass } }
+```
+
+The bypass secret lives in this environment as `Vercel_deployment_ByPass`. It is
+a secret: pass it by env reference, never print it, never commit it.
+
+**So `/qa` runs against the real preview URL, and the report says so.** If a run
+ever falls back to a local production build — a proxy change, a missing secret —
+that is a different target and the report must name it, so nobody reads
+"preview: clean" and believes Vercel was tested.
 
 **SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
 one of two answers, and the answer is written down: *fix it*, or *why it is a
