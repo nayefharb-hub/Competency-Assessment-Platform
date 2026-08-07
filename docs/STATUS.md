@@ -482,15 +482,38 @@ where the feature did not work at all on the walked path. The suite now walks
 it, with the premise asserted so a run where the race falls the other way says
 INCONCLUSIVE instead of green.
 
-**One known flake, diagnosed and deliberately not fixed here.** "the app is
-reachable once the flag clears" (the change-password block) fails intermittently:
-`viewerMemo` in `lib/auth.ts` caches `must_change_password` for 2s, and the test
-navigates inside that window, so the gate fires once more against a row the
-database has already updated. That is the documented staleness bound behaving as
-designed — `lib/auth.ts:109` states it — not a defect. The product fix, if it is
-wanted, is for the change-password action to delete the memo entry for the
-current token the way sign-in already does at `lib/auth.ts:240`; that touches
-auth, so it needs `/cso` and its own diff.
+**One known failure — and calling it a flake understated it. FIX BEFORE THE
+PILOT.** "the app is reachable once the flag clears" fails intermittently
+locally and failed on BOTH runs against the Vercel preview. The mechanism was
+right all along: `viewerMemo` (`lib/auth.ts:111`) caches the viewer for 2s
+keyed by access token, and `app/change-password/actions.ts` clears
+`must_change_password` in Postgres and redirects WITHOUT evicting the memo — so
+the redirect's render can answer from a cached viewer that still says the flag
+is set, and the gate at `lib/auth.ts:213` bounces the PM back to the screen
+they just completed.
+
+What was wrong was the conclusion, not the diagnosis. This was filed as "the
+documented staleness bound behaving as designed", which is true and beside the
+point: **the path it lands on is the first thing all nine PMs will do.** Sign
+in with the password the Head of PMO gave you, set your own, and be returned to
+"set your own password" with no explanation. It clears within 2s and a reload
+gets them in, so it is not a blocker — but it is a bad first thirty seconds, on
+the one screen with no prior context to fall back on, and it is now measured on
+the deployment they will actually use.
+
+The fix mirrors what sign-out already does one function over — `signOut()`
+deletes the entry for the current token at `lib/auth.ts:239`, for exactly this
+reason, and the password change never got the same treatment:
+
+```ts
+const { data } = await auth.auth.getSession();
+if (data.session?.access_token) viewerMemo.delete(data.session.access_token);
+```
+
+**Not done in PR #26.** It touches auth, so per CLAUDE.md it needs `/cso` and
+its own diff. Under Fluid Compute a sibling instance keeps its own copy for up
+to 2s regardless, so eviction narrows the window rather than closing it; whether
+that is enough is the question the security pass should answer.
 
 ## The owner's walk-through (N34–N44) — same branch, PR #26
 

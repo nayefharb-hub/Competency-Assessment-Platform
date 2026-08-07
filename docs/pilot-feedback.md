@@ -2439,3 +2439,34 @@ browser tests now only have to prove the wiring, not every combination.
 The idea came from a community skill (Pypict, combinatorial test generation).
 The tool was the wrong fit and the instinct was right, which is worth recording
 as its own lesson: the value was in noticing that this decision IS a table.
+
+### N45 — changing your password can bounce you straight back to the gate
+
+**Found by running the e2e suite against the Vercel preview**, which is the
+thing that changed the verdict. Locally "the app is reachable once the flag
+clears" fails intermittently and had been filed as a test flake — the
+documented 2s `viewerMemo` staleness bound behaving as designed. Against the
+preview it failed on both runs.
+
+**Mechanism.** `viewerMemo` (`lib/auth.ts:111`) caches the resolved viewer for
+2s, keyed by access token. `app/change-password/actions.ts` clears
+`must_change_password` in Postgres and redirects, but never evicts the memo, so
+the redirect's own render can answer from a cached viewer that still carries the
+flag — and the gate at `lib/auth.ts:213` sends the PM back to the screen they
+just finished.
+
+**Why the old conclusion was wrong.** "Behaving as designed" was true and beside
+the point. The path is the FIRST thing all nine PMs will do: sign in with the
+password the Head of PMO gave you, choose your own, and land back on "set your
+own password" with no explanation. It clears within 2s and a reload gets them
+in, so it is not a blocker — but it is a bad first thirty seconds on the one
+screen with no prior context, and a PM's reasonable read is "it didn't save".
+
+**Fix** — the same eviction `signOut()` already does one function over
+(`lib/auth.ts:239`), which exists for exactly this reason and was never applied
+to the password change. Under Fluid Compute a sibling instance keeps its own
+copy for up to 2s regardless, so eviction narrows the window rather than closing
+it; whether that is sufficient is a question for `/cso`.
+
+**Deliberately not in PR #26** — it touches auth, so it gets its own diff and a
+security pass. Worth doing before the pilot starts.
