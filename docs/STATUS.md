@@ -99,8 +99,8 @@ If `verify:db` fails, stop: it is credentials or network, not code.
 **Read the tally, not just the ✗ count.** The suite reports skips: *"388 passed,
 0 failed, 2 SKIPPED (…)"*. A skip is not a pass. `E2E_SERVER_LOG` in particular
 gates the **two round-trip budgets** — a warm commit + navigation at 5 calls, a
-competency-boundary commit at 3, the assertions behind CLAUDE.md's "round trips
-are counted, not estimated" — and without it those checks silently do not run. It was found un-run on 2026-08-05 after several green runs had
+commit that COMPLETES a competency at 3 (completion, not position, since N40),
+the assertions behind CLAUDE.md's "round trips are counted, not estimated" — and without it those checks silently do not run. It was found un-run on 2026-08-05 after several green runs had
 been reported, which is why skips are now counted rather than mentioned.
 
 **If `e2e` dies with "Executable doesn't exist at /opt/pw-browsers/…":** the
