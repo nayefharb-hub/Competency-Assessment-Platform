@@ -2172,3 +2172,109 @@ never drains never forgets, so it tested the failure path and never the
 successful one. **Success is what deletes the evidence.** Seeding state and
 opening the end of a competency tests the render; it cannot test the flow that
 produces the state.
+
+---
+
+## The owner's full walk-through, 2026-08-07 (N34–N44)
+
+The owner took the assessment end to end on the preview — control 132 of 132 —
+and reported eleven items in one pass. Logged together because they came from
+one sitting; each is worked separately. Severity is the owner's framing:
+"enhancement" where they said so, defect where the screen contradicts itself.
+
+### N34 — the right pane changes height when the milestone replaces the panel
+
+The card is a different height from the scoring panel it swaps for, so the
+whole right column jumps. A PM clicking in one place repeatedly — which is the
+rhythm the keyboard support and the in-place milestone exist to protect — has
+the target move under them every fifth control.
+
+**Owner: enhancement, needs a UX decision.** Options run from reserving a
+minimum height on the column to animating the swap to accepting the jump as a
+deliberate punctuation. Not obvious which is right; it wants deciding rather
+than patching.
+
+### N35 — the evidence field is one line
+
+*Evidence or example (optional, not scored)* is an `<input>`. A PM writing a
+real example needs two or three lines and cannot see what they typed.
+**Enhancement**: a textarea that grows, without letting it dominate a panel
+whose job is the six levels.
+
+### N36 — "it will send when you are back online" on every Next, while online
+
+Reported as: *"every time I click next control I get this message… I am
+definitely not offline."*
+
+**Mechanism, and it is a real defect.** `app/assess/score-panel.tsx` renders the
+commit hint while `dirty && level !== null`, choosing between two strings on
+`queued[control] === level`. Clicking Next calls `commit()`, sets `queued`, then
+navigates — so for the whole navigation window the PM is still looking at the
+control they just answered, with `queued[control] === level` true. The offline
+copy therefore fires on the **normal online path**, once per control, 132 times.
+The message is not wrong about the data (the answer IS on the device and will
+send) but it is wrong about the situation, and it trains a PM to distrust a
+banner that should only appear when something is actually wrong.
+
+### N37 — you cannot feel which competency you are in
+
+The competency line exists (N31 raised it to heading weight) but reads as
+metadata attached to the control rather than as the section you are inside.
+**Owner's suggestion:** promote it to a section header sitting with the area
+navigation above, so the hierarchy is area → competency → control on the screen
+as well as in the data.
+
+### N38 — "Review before submitting" appears with controls still unscored
+
+The owner skipped some controls, reached the end, and the button read *"Review
+before submitting"* — which reads as "you have finished". The label is chosen by
+POSITION: at control 132 there is no next control, so the else-branch of
+`commitLabel` picks the review wording regardless of what is unanswered. Same
+family as N30 and N33: a label derived from where you are standing rather than
+from what is true.
+
+### N39 — getting back to the skipped controls is cumbersome
+
+Finding and reaching each unscored control takes several navigations through
+hub → area → competency → control. For a PM finishing up, "show me what I still
+owe and let me work through it" is a single intent and should be a single path.
+
+### N40 — the last skipped control still says "Next control"
+
+Scoring a control that was skipped earlier, mid-competency, still offers *"Next
+control"* even when it completes the competency or the assessment.
+
+**The owner's read, and it is the right one:** `nextControl` and "what does this
+click complete" are two different questions answered by one expression. They
+need decoupling. **UX decision required** — this is N38's twin and the two
+should be settled together rather than patched separately.
+
+### N41 — a PM cannot see their own results until the assessor approves
+
+**Owner: they should be able to**, with the state named honestly — *completed*,
+not *approved*. Seeing your own submitted self-assessment is not the same as
+seeing an approved capability record, and the screen can say which it is.
+
+### N42 — the assessor's Review & revise screen is cumbersome
+
+Reviewing and approving 132 controls for nine people is the Head of PMO's whole
+job in this tool, and the screen makes it laborious. Needs its own design pass.
+
+### N43 — the results screen needs its own session
+
+Owner's call: not a list of tweaks, a proper pass. Deferred deliberately.
+
+### N44 — the framework screen should open on a filterable table
+
+**Today:** the Framework nav lands on `/admin`, which is the editor for a single
+control — so an admin arrives inside one control with no sense of the whole.
+`/admin/controls` has the list, but it is a nested set of link lists (area →
+competency → control) that cannot be sorted, filtered or scanned.
+
+**What the owner wants:** clicking Framework shows **all controls first**, in a
+**table**, grouped by area and competency, with **target level, priority and
+active/inactive** as columns, and **filters across area, competency and active
+state**. The single-control editor stays — it is what you open from a row.
+
+Taken first, because it is the most specified and the least entangled with the
+assessment flow.
