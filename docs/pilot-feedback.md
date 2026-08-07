@@ -2468,8 +2468,42 @@ to the password change. Under Fluid Compute a sibling instance keeps its own
 copy for up to 2s regardless, so eviction narrows the window rather than closing
 it; whether that is sufficient is a question for `/cso`.
 
-**Deliberately not in PR #26** — it touches auth, so it gets its own diff and a
-security pass. Worth doing before the pilot starts.
+**FIXED 2026-08-07, owner's call, with `/cso --diff --scope auth`.**
+
+The mechanism was confirmed by reading the path rather than inferred:
+`changePasswordAction` calls `requireUser({ skipPasswordGate: true })` on the
+way in, which POPULATES `viewerMemo` with `must_change_password: true`. It then
+clears the flag in Postgres and redirects. The redirect renders as a second pass
+of the same request, well inside the 2s TTL, so it answers from that entry and
+the gate bounces the PM back.
+
+`lib/auth.ts` gains `forgetViewer()`, and `app/change-password/actions.ts` calls
+it AFTER the write. After, deliberately: evicting first would leave the window
+between eviction and write open for a concurrent pass to re-populate the memo
+with the stale value, which is the same race in a smaller box.
+
+**What `/cso` checked, and what it found.**
+
+| Question | Answer |
+|---|---|
+| Can eviction grant access? | No. It can only force a fresh resolution — deleting a cached positive is fail-safe in this direction. |
+| Reachable from a client? | No. `lib/auth.ts` is `import "server-only"`, `forgetViewer` is called only from the server action, and no `"use client"` file imports `lib/auth`. |
+| Does the token leak? | No. `access_token` appears three times in the codebase, all as a map key. Never logged, never in a URL. |
+| On a failed write? | `fail()` redirects before the eviction, so a failed clear leaves the memo holding the value that is still true. |
+| Does it weaken revocation? | No — it only removes a cached positive, so it shortens the documented 2s window, never lengthens it. |
+
+**What it does NOT fix, stated because the fix reads stronger than it is.** Under
+Fluid Compute a sibling instance that resolved the same token seconds earlier
+still answers from its own map until the 2s expires. This narrows the window to
+that bound; it does not close it. Closing it means shared invalidation — a
+network hop on the hot path, which is the trade `docs/deploy.md` argues against
+for a 2s bound.
+
+**Verified to the standard this entry itself set: five consecutive runs, not
+one.** The password-gate section was green in all five (410 passed / 0 failed in
+runs 1, 2, 3, 5; run 4's single failure was the round-trip budget, unrelated —
+see below). Before the fix the same suite produced 1, 1, 4 and 3 failures across
+four runs.
 
 **2026-08-07, and this makes it worse than filed: it is not ONE check.** Four
 consecutive local runs of the same green build, no code change between them:
@@ -2660,3 +2694,82 @@ reading it. Role, not number, is what the mapping should have followed.
 
 Final: **410 passed, 0 failed**, including all six N14 layout guarantees at
 three viewports and the reading-measure check.
+
+---
+
+### N48 — the framework filter hid the levels nobody was targeting
+
+Reported as "add filtering by target score, ex: aware, practised, unaware" — for
+a filter that had already shipped in N46. Both halves of that are findings.
+
+**Half one: the owner was on a pinned deployment URL.** The screenshots came from
+`competency-assessment-platform-htxo4sij4-…vercel.app`, which is a *deployment*
+URL — Vercel mints a new one per push and each serves its own commit forever. The
+branch alias (`…-git-claude-c-cf41ac-…`) is the one that follows the head. Three
+rounds of "where is the filter" were spent before the host in the screenshot was
+read. **Check the host before debugging the feature.**
+
+**Half two, and this one is a real defect.** Even on the right build, the Target
+row offered only levels some control currently targets. The framework targets
+Aware (1), Practised (20) and Competent (111) — so **Unaware, Proficient and
+Expert were absent**, which is exactly the set the owner went looking for.
+
+The original reasoning was "six chips where three are always empty is noise, and
+an admin clicking one to find nothing learns to distrust the row." That is a fair
+rule for a *reading* screen and wrong for this one:
+
+- it is the EDITING screen. A level with no controls today has some the moment an
+  admin retargets one, and a filter that appears and disappears as a side effect
+  of your own edits is not a filter you can trust;
+- zero is information. "Nothing targets Expert" is a fact about the framework
+  worth seeing while tuning it, not an absence to hide;
+- a hidden control cannot be discovered. A dimmed one explains itself — and the
+  empty state below already answers honestly.
+
+All six levels now render, dimmed at zero and still clickable.
+
+**The lesson is not "show everything".** It is that hiding a capability because
+it is currently empty makes the capability look absent, and the person who then
+reports it missing is right about the experience even when the code is present.
+
+---
+
+### N49 — the round-trip budget counted a bootstrap as per-request work
+
+Found by running the suite five times to verify N45 rather than once. Four runs
+read 3 round trips for a boundary commit; one read **4**, the extra being
+`/auth/v1/.well-known/jwks.json`.
+
+`getClaims()` verifies the session signature locally against a JWKS cached at
+module scope, so fetching it is a once-per-INSTANCE bootstrap, not per-request
+work. The budget counted every `[supabase ` line, so whichever run happened to
+warm a cold instance went red — a load-bearing assertion failing at random,
+which trains precisely the skimming that "round trips are counted, not
+estimated" exists to prevent.
+
+**The exclusion is paired with its own assertion, or it would be a free pass.**
+Simply dropping jwks from the count would hide a genuine regression — someone
+making it a per-request fetch would leave the budgets reading 3 and 5 while every
+save quietly paid an extra auth round trip. So `supabaseCalls()` excludes it and
+a new check asserts JWKS is fetched **at most once for the whole run**. Together
+they say what the single count was trying to: our per-request calls are 3 or 5,
+and the bootstrap happens once.
+
+Same family as the favicon exclusion in the theme check, and the same rule: a
+verdict decided by incidental traffic is worthless in both directions.
+
+**Two harness traps hit while verifying this, both worth not repeating.**
+
+1. **Deleting a log a running process holds does not give you a fresh log.** On
+   Linux the server keeps writing to the unlinked inode, so the new path stays
+   empty. `E2E_SERVER_LOG` then pointed at a 359-byte stub and all four
+   round-trip budgets read `0:` — four red checks that looked like a regression
+   and were an artefact. Kill the server FIRST, then remove the log.
+2. **`pgrep -f next-server | xargs kill -9` kills the shell running it.** Already
+   in STATUS as a diagnostic trap; it is also a foot-gun as a fix. Scan `/proc`
+   for the cmdline instead, and trust `ss -tln | grep :3000` for whether the
+   port is actually free.
+
+Both cost a full verification cycle. The rule underneath is the one this file
+keeps relearning: **when a check goes red, ask what it measured before asking
+what broke.**

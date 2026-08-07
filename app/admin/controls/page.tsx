@@ -70,12 +70,27 @@ export default async function AdminControlsIndex({
     (e) => !filter.area || e.area === filter.area,
   );
 
-  /* Only offer target chips for levels the framework actually uses. Six chips
-     where two are always empty is six chips of noise, and an admin clicking one
-     to find nothing learns to distrust the row. */
-  const targetsInUse = fw.scaleLevels
-    .map((s) => s.level)
-    .filter((lvl) => fw.controls.some((c) => c.target_level === lvl));
+  /* EVERY level on the scale, including the ones no control currently targets.
+
+     This showed only levels in use, on the reasoning that empty chips are
+     noise. That was wrong here, and the owner found it the direct way: the
+     framework targets only Aware, Practised and Competent today, so Unaware,
+     Proficient and Expert were absent from the row — and looking for "filter by
+     target Unaware" and finding no such chip reads as "this screen cannot do
+     that", which is what was reported.
+
+     Three reasons the full scale is right on THIS screen:
+       - it is the EDITING screen. A level with no controls today has some the
+         moment an admin retargets one, and a filter that appears and disappears
+         as a side effect of your own edits is not a filter you can trust.
+       - zero is information. "Nothing targets Expert" is a fact about the
+         framework worth seeing while tuning it, not an absence to hide.
+       - a hidden control cannot be discovered; a dimmed one explains itself.
+
+     Empty chips are dimmed rather than removed, and stay clickable — the empty
+     state below already says "No controls match that combination" with a way
+     back, so the answer is honest either way. */
+  const targetCount = (lvl: Level) => fw.controls.filter((c) => c.target_level === lvl).length;
   const untargeted = fw.controls.filter((c) => c.target_level === null).length;
   const labelFor = (lvl: Level) => fw.labelOf(lvl);
 
@@ -134,13 +149,18 @@ export default async function AdminControlsIndex({
           aria-current={filter.target === "all" ? "true" : undefined}>
           All <span className="tnum">{fw.controls.length}</span>
         </Link>
-        {targetsInUse.map((lvl) => (
-          <Link key={lvl} className="filterchip" href={controlsHref(filter, { target: lvl })}
-            aria-current={filter.target === lvl ? "true" : undefined}>
-            <span className="tnum">{lvl}</span> {labelFor(lvl)}{" "}
-            <span className="tnum">{fw.controls.filter((c) => c.target_level === lvl).length}</span>
-          </Link>
-        ))}
+        {fw.scaleLevels.map((s) => {
+          const n = targetCount(s.level);
+          return (
+            <Link key={s.level}
+              className={n === 0 ? "filterchip is-empty" : "filterchip"}
+              href={controlsHref(filter, { target: s.level })}
+              aria-current={filter.target === s.level ? "true" : undefined}>
+              <span className="tnum">{s.level}</span> {labelFor(s.level)}{" "}
+              <span className="tnum">{n}</span>
+            </Link>
+          );
+        })}
         {untargeted > 0 && (
           <Link className="filterchip" href={controlsHref(filter, { target: "none" })}
             aria-current={filter.target === "none" ? "true" : undefined}>

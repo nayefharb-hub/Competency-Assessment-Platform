@@ -441,6 +441,39 @@ textarea.input {
   .scorepanel { position: sticky; top: 24px; }
 }
 
+/* ---------- framework admin: source left, tuning right (N46 item 4) ----------
+   The complaint was "text is not taking the full space of the pane". Measuring
+   it (N47) showed the sentences were already too LONG at 79 characters, not too
+   short — so the dead space beside them was a container problem, and widening
+   the prose would have made the real defect worse.
+
+   This is the same exception DESIGN.md grants the self-assessment: a reading
+   page may use a wider container when its second column is a CONTROL GROUP
+   rather than prose. `--measure` still caps every sentence, so paragraphs do
+   not gain a single character; the extra width is spent putting the fields
+   BESIDE the source text instead of below it.
+
+   Below 1100px it returns to the 780px reading width and stacks, source first —
+   an admin on a laptop reads the control before deciding its target. */
+.admin-wide { max-width: 780px; margin-left: auto; margin-right: auto; }
+.admin-grid { display: grid; gap: 20px; align-items: start; }
+
+@media (min-width: 1100px) {
+  .admin-wide { max-width: 1000px; }
+  /* 380px holds the six-level segmented picker without its labels wrapping,
+     and the two textareas at a usable width. */
+  .admin-grid { grid-template-columns: minmax(0, 1fr) 380px; }
+  /* Sticky for the same reason the scoring panel is: ICB4's longest indicator
+     is 2,596 characters, so "everything fits" cannot be promised — but Save
+     staying on screen while the source scrolls past it can be. */
+  .admin-panel { position: sticky; top: 24px; }
+  /* `.cols` pairs fields two-up, which is right in a 780px card and wrong in a
+     380px panel: it would give each ~180px and wrap the segmented picker's
+     level labels. The panel is already the narrow column, so its rows stack. */
+  .admin-panel .cols { grid-template-columns: 1fr; }
+  .admin-panel .cols .field + .field { margin-top: 14px; }
+}
+
 .assess-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 
 /* One column: no room to sit beside anything, so the actions pin to the
@@ -511,6 +544,15 @@ textarea.input {
   background: var(--selected); border-color: var(--selected); color: #fff;
 }
 .filterchip[aria-current="true"] .tnum { opacity: 0.8; }
+/* A level nothing currently targets. Dimmed, not hidden: on the framework
+   EDITING screen an empty level is one edit away from being occupied, and a
+   chip that vanishes when its count hits zero makes the whole capability look
+   absent — which is exactly how "add filtering by target score" came to be
+   reported for a filter that already shipped. Still clickable; the empty state
+   answers honestly. */
+.filterchip.is-empty { opacity: 0.45; }
+.filterchip.is-empty:hover { opacity: 0.75; }
+.filterchip.is-empty[aria-current="true"] { opacity: 1; }
 
 .crow {
   padding: 4px 0 4px 10px;

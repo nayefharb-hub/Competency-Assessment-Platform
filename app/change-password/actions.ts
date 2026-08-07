@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { authClient, requireUser } from "@/lib/auth";
+import { authClient, forgetViewer, requireUser } from "@/lib/auth";
 import { db } from "@/lib/supabase/server";
 
 /** Long enough to matter, short enough that nobody writes it on a sticky note. */
@@ -52,6 +52,19 @@ export async function changePasswordAction(formData: FormData): Promise<void> {
     .eq("id", user.id)
     .select("id");
   if (cleared.error) fail(`Password changed, but clearing the prompt failed: ${cleared.error.message}`);
+
+  /* N45. The flag is now false in Postgres, but this request has already cached
+     a viewer that says otherwise: `requireUser` above populated `viewerMemo` on
+     the way in, keyed by access token, with a 2s life. The redirect below
+     renders as a second pass of this same request — comfortably inside that
+     window — so without this it answers from the memo, still sees the flag, and
+     sends the PM straight back to the screen they just finished. First thing
+     they ever do in this app, no explanation offered.
+
+     AFTER the write, deliberately: evicting before it would reopen the same
+     race in a smaller box. `signOut()` has always done this; the password
+     change was the one credential change that did not. */
+  await forgetViewer();
 
   revalidatePath("/", "layout");
   redirect("/?password_changed=1");

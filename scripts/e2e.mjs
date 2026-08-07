@@ -92,6 +92,39 @@ const BOSS = {
 };
 
 let pass = 0, fail = 0;
+/**
+ * The Supabase round trips a REQUEST made, for the budget assertions.
+ *
+ * JWKS IS EXCLUDED, and the exclusion is defended by its own check below.
+ * `getClaims()` verifies the session signature locally against a JWKS that is
+ * cached module-globally, so fetching it is a once-per-INSTANCE bootstrap, not
+ * per-request work. Counting it made the boundary-commit budget read 4 instead
+ * of 3 on whichever run happened to warm a cold instance — measured, one red in
+ * five identical runs. A load-bearing budget that goes red at random trains
+ * exactly the skimming CLAUDE.md's "round trips are counted, not estimated"
+ * rule exists to prevent.
+ *
+ * Excluding it would ALSO hide a real regression — someone making JWKS a
+ * per-request fetch — so `jwksFetches()` below asserts it stays at most one for
+ * the whole run. The budget and that check together say what the old single
+ * count was trying to: our per-request calls are 3 or 5, and the bootstrap
+ * happens once.
+ */
+/* Where the server log stood when this run began.
+   Without it, a check that reads the whole file measures the log's LIFETIME,
+   not the run's — and /tmp/next.log survives across suite runs against one
+   long-lived `next start`. The first cut of the JWKS check below did exactly
+   that and reported "6 fetches" for eight runs' worth of log, which looked like
+   a finding and was an artefact. */
+const RUN_MARK = (() => {
+  const f = process.env.E2E_SERVER_LOG;
+  if (!f) return 0;
+  try { return readFileSync(f, "utf8").length; } catch { return 0; }
+})();
+
+const supabaseCalls = (text) =>
+  text.split("\n").filter((l) => l.includes("[supabase ") && !l.includes("jwks.json"));
+
 const check = (name, ok, detail = "") => {
   if (ok) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
@@ -1655,8 +1688,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
       await committed;
       await pm.page.waitForLoadState("networkidle");
       await new Promise((r) => setTimeout(r, 500)); // let the server log flush
-      const lines = readFileSync(LOG, "utf8").slice(mark)
-        .split("\n").filter((l) => l.includes("[supabase "));
+      const lines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
       const writes = lines.filter((l) => l.includes("/rest/v1/score"));
       check("a warm commit + navigation costs 5 supabase round trips",
         lines.length === 5, `${lines.length}: ${lines.join(" | ")}`);
@@ -3363,8 +3395,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
       await committed;
       await page.waitForSelector(".milestone");
       await new Promise((r) => setTimeout(r, 500));
-      const commitLines = readFileSync(LOG, "utf8").slice(mark)
-        .split("\n").filter((l) => l.includes("[supabase "));
+      const commitLines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
       check("a boundary commit costs 3 round trips — it navigates nowhere",
         commitLines.length === 3, `${commitLines.length}: ${commitLines.join(" | ")}`);
 
@@ -3379,8 +3410,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
       await page.waitForSelector(".optlist", { timeout: 10_000 });
       await page.waitForLoadState("networkidle");
       await new Promise((r) => setTimeout(r, 500));
-      const navLines = readFileSync(LOG, "utf8").slice(mark2)
-        .split("\n").filter((l) => l.includes("[supabase "));
+      const navLines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark2));
       check("and Continue costs the navigation's 2 — 5 across the pair, as before",
         navLines.length === 2, `${navLines.length}: ${navLines.join(" | ")}`);
       await ctx.close();
@@ -4043,6 +4073,31 @@ console.log("\n[18] Framework admin: filter by target, walk it, and read it");
     seeded !== null);
 
   await ctx.close();
+}
+
+/* ------------------------------- 19. the JWKS exclusion is not a free pass */
+const JWKS_LOG = process.env.E2E_SERVER_LOG;
+if (JWKS_LOG) {
+  /* The budgets above exclude jwks.json because it is a once-per-instance
+     bootstrap. That is only honest while it STAYS once — if getClaims() ever
+     started fetching it per request, the budgets would keep reading 3 and 5
+     while every save quietly paid an extra auth round trip, which is the exact
+     failure mode "round trips are counted, not estimated" exists to catch.
+     So the exclusion is paired with its own assertion. */
+  const fetches = readFileSync(JWKS_LOG, "utf8").slice(RUN_MARK)
+    .split("\n").filter((l) => l.includes("jwks.json")).length;
+  /* THE BOUND IS "NOT PER-REQUEST", NOT "EXACTLY ONCE", and the difference is
+     honest rather than convenient. This run makes hundreds of authenticated
+     requests; a per-request fetch would show hundreds. A warm process reuses a
+     JWKS cached by an earlier run and fetches none, and auth-js may legitimately
+     refetch once if a key rotates. Anything in low single digits proves the
+     cache is doing its job; the failure this guards against is three orders of
+     magnitude away, so a tight bound would only buy flakiness. */
+  check("JWKS is cached, not fetched per request",
+    fetches <= 2, `${fetches} fetches during this run`);
+} else {
+  skip("the JWKS bootstrap check",
+    "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
 }
 
 /* ---------------------------------------------------------------- cleanup */

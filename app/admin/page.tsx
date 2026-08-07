@@ -57,7 +57,7 @@ export default async function AdminPage({
     : ce?.code ? `${ce.code} ${ce.name}` : "All controls";
 
   return (
-    <div className="section reading">
+    <div className="section admin-wide">
       <div className="sec-head">
         <h2>Framework admin</h2>
         <span className="rule" />
@@ -131,25 +131,33 @@ export default async function AdminPage({
           </span>
         </div>
 
-        {/* read-only ICB4 source, for context while writing clarifications */}
-        <div className="ro">
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-            <b style={{ fontSize: "var(--fs-prose)" }}>{control.indicator}</b>
-            <span className="lock">🔒 ICB4 — read-only</span>
+        {/* TWO COLUMNS ABOVE 1100px (owner's call, N46 item 4).
+            Source text left, the tuning layer right — see .admin-grid in
+            globals.css for why this is the same exception DESIGN.md already
+            grants the self-assessment, and why the prose does NOT widen. */}
+        <div className="admin-grid">
+          <div>
+            {/* read-only ICB4 source, for context while writing clarifications */}
+            <div className="ro">
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                <b style={{ fontSize: "var(--fs-prose)" }}>{control.indicator}</b>
+                <span className="lock">🔒 ICB4 — read-only</span>
+              </div>
+              {control.description && <p>{control.description}</p>}
+              {measures.length > 0 && (
+                <>
+                  <div className="mh">Measures (read-only)</div>
+                  <ul className="measures">
+                    {measures.map((m) => (
+                      <li key={`${m.control_code}-${m.no}`}>{m.text}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           </div>
-          {control.description && <p>{control.description}</p>}
-          {measures.length > 0 && (
-            <>
-              <div className="mh">Measures (read-only)</div>
-              <ul className="measures">
-                {measures.map((m) => (
-                  <li key={`${m.control_code}-${m.no}`}>{m.text}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
 
+          <div className="admin-panel">
         <form action={saveControlAction}>
           <input type="hidden" name="control" value={control.code} />
           {/* The filter survives the save, so an admin working through a
@@ -285,6 +293,8 @@ export default async function AdminPage({
             )}
           </div>
         </form>
+          </div>
+        </div>
       </div>
     </div>
   );

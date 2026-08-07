@@ -482,8 +482,16 @@ where the feature did not work at all on the walked path. The suite now walks
 it, with the premise asserted so a run where the race falls the other way says
 INCONCLUSIVE instead of green.
 
-**One known failure — and calling it a flake understated it. FIX BEFORE THE
-PILOT.** "the app is reachable once the flag clears" fails intermittently
+**FIXED 2026-08-07 (N45), with `/cso --diff --scope auth`, and verified over
+five consecutive runs rather than one.** `lib/auth.ts` gains `forgetViewer()`
+and `app/change-password/actions.ts` calls it after the write. The
+password-gate section was green in all five runs; before the fix the same suite
+produced 1, 1, 4 and 3 failures across four. The residual is unchanged and
+documented: under Fluid Compute a sibling instance keeps its own copy for up to
+2s, so this narrows the window rather than closing it. Original entry below,
+kept because the diagnosis is the reusable part.
+
+**The original report — and calling it a flake understated it.** "the app is reachable once the flag clears" fails intermittently
 locally and failed on BOTH runs against the Vercel preview. The mechanism was
 right all along: `viewerMemo` (`lib/auth.ts:111`) caches the viewer for 2s
 keyed by access token, and `app/change-password/actions.ts` clears
