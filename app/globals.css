@@ -404,7 +404,17 @@ h1, h2, h3 {
     background: var(--surface); border-top: 1px solid var(--border);
     box-shadow: 0 -4px 16px rgba(16, 32, 46, 0.08);
   }
-  .assess-actions .btn { flex: 1 1 auto; text-align: center; }
+  /* 44px, per DESIGN.md's touch rule. `.btn` is 9px padding on a 14px/1.5
+     line box = 41px, which is fine under a pointer and short of the guideline
+     under a thumb — and it sat directly beside `.milestone-revise` rows that
+     were already 44px, so the card's own affordances disagreed with each other.
+     inline-flex rather than a bare min-height: `.btn` is inline-block, so
+     min-height would grow the box and leave the label sitting at the top of it. */
+  .assess-actions .btn {
+    flex: 1 1 auto; text-align: center;
+    min-height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
   /* so the bar never covers the last thing on the page */
   .assess-wide { padding-bottom: 76px; }
 }

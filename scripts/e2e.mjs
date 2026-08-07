@@ -2753,6 +2753,14 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
       await page.setViewportSize({ width: w, height: h });
       const cont = page.locator('.milestone button:has-text("Continue")');
       const btn = (await cont.count()) === 1 ? await cont.boundingBox() : null;
+      /* DESIGN.md: 44px minimum below 1100px, where a thumb is committing. It
+         was 41px — under the guideline and, worse, disagreeing with the recap
+         rows on the same card, which were already 44. Found by /qa against the
+         preview, not by a test, which is why there is now a test. */
+      if (w < 1100) {
+        check(`the milestone's Continue meets the 44px touch target at ${w}x${h}`,
+          !!btn && btn.height >= 44, btn ? `${Math.round(btn.height)}px` : "no button");
+      }
       check(`the milestone's Continue is on screen without scrolling at ${w}x${h}`,
         !!btn && btn.y + btn.height <= h, btn ? `bottom ${Math.round(btn.y + btn.height)} > ${h}` : "no button");
     }

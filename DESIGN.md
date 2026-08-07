@@ -86,6 +86,13 @@ decision; do not deviate without explicit approval.
     letter, so `ch` overshoots: `68ch` measured 89 real characters, `52ch`
     lands at 68. Re-derive this if the body typeface ever changes.
 - **Border radius:** inputs/buttons 6px · cards 10px · pills 999px.
+- **Touch targets: 44px minimum below 1100px.** Anything a finger commits with —
+  the pinned action bar, the milestone's Continue and Take a break, the recap
+  rows. Above 1100px a pointer is doing the work and the padding scale governs
+  instead; WCAG 2.5.8's 24px floor is the hard minimum there, not the goal.
+  This was an unwritten rule enforced twice in CSS comments before it was ever
+  stated here, which is how the action bar ended up at 41px while the recap rows
+  beside it were at 44px.
 
 ## Motion
 - **Approach:** minimal-functional. 150ms transitions on hover/focus/state; no
