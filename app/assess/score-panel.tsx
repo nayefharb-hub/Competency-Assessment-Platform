@@ -551,8 +551,22 @@ export default function ScorePanel({
   const { label: commitLabel, raisesCard } = decideCommit({
     ceComplete,
     atCeEnd,
+    /* STRICT, because level 0 is a real answer. "Unaware" is the bottom of the
+       APM scale, not the absence of a score, and `priorHere` is `number | null`
+       — so this is the exact negation of the old `priorHere === null`, at 0 as
+       everywhere else. Every `??` on the path is nullish and every completeness
+       test is a strict comparison for the same reason; a single `||` or a bare
+       truthiness test anywhere here would silently erase every PM who answered
+       "Unaware". */
     answeredBefore: priorHere !== null,
     assessmentRemaining,
+    /* ALSO STRICT, where the old ternary used bare truthiness. Review flagged
+       the difference: they diverge only if a control code were ever the empty
+       string, which the framework cannot produce. Kept strict deliberately
+       rather than restored to `!!` — `goNext` navigates to `nextControl ??
+       nextOwed`, which is nullish, so the strict form is the one that AGREES
+       with where the click actually goes. The old pair could in principle have
+       said "Next unanswered control" and then navigated to the next control. */
     hasNextControl: nextControl !== null,
     hasNextOwed: nextOwed !== null,
   });
