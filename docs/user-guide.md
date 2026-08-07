@@ -100,9 +100,21 @@ into your score.
 
 **Picking a level saves nothing.** Change your mind as often as you like.
 
-**The button is the save.** *"Next control →"* confirms your answer and moves
-on. While an answer is unconfirmed you will see *"Not saved yet — Next control
-saves it"* under the panel.
+**The button is the save.** It confirms your answer and moves on. While an
+answer is unconfirmed you will see *"Not saved yet — <the button> saves it"*
+under the panel, naming whichever button is on screen.
+
+**The button always says what your click will do.** If confirming this answer
+completes something, it says so; otherwise it says where you are going:
+
+| The button reads | Because |
+|---|---|
+| **Next control →** | there is more to do in this competency |
+| **Finish this competency →** | this answer completes the competency you are in — wherever in it you are standing |
+| **Next unanswered control →** | there is nothing after this one, but you skipped something earlier |
+| **Complete the assessment →** | this was the last unanswered control anywhere |
+| **Review before submitting →** | everything is answered |
+| **Skip for now →** | you have not picked a level |
 
 You never wait for the save. The answer is handed to a queue and the screen
 moves immediately, so a slow connection never slows you down.
@@ -131,21 +143,36 @@ normally.
 
 ## Finishing a competency
 
-When you confirm the last control of a competency, the panel is replaced — in
-place, without a page change — by a short card:
+When your answer completes a competency, the panel is replaced — in place,
+without a page change — by a short card. It does not matter where in the
+competency you were: going back to fill a control you skipped in week one
+finishes that competency just as much as walking it in order does, and you get
+the same card.
 
 - **"<Competency> complete"** and how many controls that was.
 - A **recap** of every control in it with the level you gave. **Any row is
   clickable** to go back and change that answer. This is the easiest moment to
   revise something.
 - **Next:** the competency you are about to start.
-- **Continue →** carries straight on to the next competency's first unanswered
-  control. **Enter** does the same.
+- **Continue →** carries straight on — to the next competency's first unanswered
+  control, or, if there is no competency ahead, to whatever you still owe.
+  **Enter** does the same.
 - **Take a break** returns you to the list.
 
 If you skipped something in that competency, no card appears — the competency is
 not finished, and the button will have said *"Next control"* rather than *"Finish
 this competency"*.
+
+If you have finished everything, the card says **"Every competency scored"** and
+offers **Review and submit**. If you are at the end of the framework but skipped
+something along the way, it says how many controls elsewhere still need a score
+and Continue takes you to one of them — you are never told you have finished
+when you have not.
+
+Re-opening a competency you already finished does not raise the card again; the
+button reads *"Next control"* and you can read back through your answers
+normally. Reaching its last control shows the card, so a change you make there
+is shown back to you.
 
 ## Picking up where you left off
 
@@ -286,7 +313,14 @@ control list always reflect what you have actually answered.
 
 **I finished a competency but got no card.**
 One of its controls was skipped. The button says *"Next control"* rather than
-*"Finish this competency"* when that happens.
+*"Finish this competency"* when that happens — so read the button before you
+click it: it always names what your click will do.
+
+**Where are the controls I skipped?**
+*Your assessment* filters to what is not scored. You can also just keep going:
+once there is nothing ahead of you, the button reads *"Next unanswered
+control"*, and Continue on a competency card takes you to a gap rather than
+nowhere.
 
 **I forgot my password.**
 Ask the Head of PMO for a reset; they can issue a new starting password.

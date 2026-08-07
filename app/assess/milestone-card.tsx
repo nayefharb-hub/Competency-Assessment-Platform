@@ -44,6 +44,7 @@ export default function MilestoneCard({
   busy,
   areaRemaining,
   assessmentRemaining,
+  canContinue,
   onContinue,
   onRevise,
 }: {
@@ -61,6 +62,11 @@ export default function MilestoneCard({
   areaRemaining: number;
   /** Controls in the WHOLE ASSESSMENT still without an answer. */
   assessmentRemaining: number;
+  /** Whether there is anywhere left to continue TO — the next competency's
+   *  first unscored control, or, for a competency finished in the middle of the
+   *  run, whatever is still owed. `milestone.nextControl` alone cannot answer
+   *  this since N40: it is null for a mid-competency finish. */
+  canContinue: boolean;
   onContinue: () => void;
   /** Go back to a control in the competency just finished. */
   onRevise: (code: string) => void;
@@ -107,19 +113,30 @@ export default function MilestoneCard({
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
       const typing = el && /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName);
-      if (e.key === "Enter" && !typing && !el?.isContentEditable && milestone.nextControl) {
+      if (e.key === "Enter" && !typing && !el?.isContentEditable && canContinue) {
         e.preventDefault();
         onContinue();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [offline, busy, armed, milestone.nextControl, onContinue]);
+  }, [offline, busy, armed, canContinue, onContinue]);
 
-  /* Positional `done` says where the PM stood; the remaining counts say what is
-     true. Both have to agree before the card makes the wider claim. */
-  const finishedEverything = milestone.done === "assessment" && assessmentRemaining === 0;
-  const areaFinished = milestone.done !== "ce" && areaRemaining === 0;
+  /* THE COUNTS DECIDE, NOT THE POSITION (N38/N40).
+   *
+   * This used to require `done === "assessment"` as well as a zero remaining
+   * count — position AND truth. That was the safe direction when the card only
+   * ever rose at a competency's last control, and it becomes wrong the moment
+   * the card can rise wherever a competency is finished: a PM whose final
+   * unanswered control sits in the middle of the framework really has finished
+   * everything, and the card would have refused to say so because they were not
+   * standing in the right place.
+   *
+   * The counts can only ever UNDERSTATE — the client cannot see answers made on
+   * another device — so a zero is a fact and a non-zero is a maybe. Claiming on
+   * zero is therefore still the conservative direction. */
+  const finishedEverything = assessmentRemaining === 0;
+  const areaFinished = !finishedEverything && areaRemaining === 0;
 
   return (
     <div className="card pad milestone">
@@ -135,10 +152,20 @@ export default function MilestoneCard({
           : <>
               All <b className="tnum">{milestone.ce.total}</b> controls answered
               {areaFinished && <> · {milestone.area.name} finished</>}
-              {milestone.done === "assessment" && assessmentRemaining > 0 && (
+              {assessmentRemaining > 0 && !milestone.nextControl && (
                 /* Positionally the end, but not actually finished. Saying so here
                    is the difference between a tool that supports a decision and
-                   one that congratulates you into a refused Submit. */
+                   one that congratulates you into a refused Submit.
+
+                   GATED ON `nextControl`, NOT ON `canContinue`. They were the
+                   same test until N38 gave the card somewhere to continue TO
+                   when the run has holes behind it — and that silently deleted
+                   this sentence on the one screen it was written for, the last
+                   control of the framework. `nextControl` is the honest test:
+                   it is null exactly when there is no competency ahead, which
+                   is when a PM could believe they had finished. Mid-run it is
+                   set, so this does not become "127 controls elsewhere" on
+                   every one of the 28 milestones. */
                 <> · <b className="tnum">{assessmentRemaining}</b>
                   {assessmentRemaining === 1 ? " control" : " controls"} elsewhere
                   still need a score</>
@@ -184,7 +211,7 @@ export default function MilestoneCard({
       )}
 
       <div className="assess-actions">
-        {milestone.nextControl && (
+        {canContinue && (
           <button
             className="btn btn-primary"
             type="button"

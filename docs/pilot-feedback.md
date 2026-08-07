@@ -2278,3 +2278,72 @@ state**. The single-control editor stays — it is what you open from a row.
 
 Taken first, because it is the most specified and the least entangled with the
 assessment flow.
+
+---
+
+## What shipped from that walk-through, 2026-08-07
+
+### N44 — the framework table
+
+`/admin/controls` is now a table: Control · Indicator · Target · Priority ·
+State, grouped by competency inside area, with filters on area, competency and
+active state carried in the query string rather than in client state (the N5
+precedent — a filtered view is addressable, bookmarkable and survives a
+reload). The Framework nav points at it; the single-control editor is what a
+row opens, and the way back returns to the filtered view rather than the top of
+133 rows. Unknown filter values fall back to the whole framework: a stale
+bookmark must not present an empty framework as if it were the truth.
+
+The header counts always report the WHOLE framework, never the filtered subset.
+A count that changes with the filter reads as "this is what exists".
+
+### N38 · N39 · N40 — the button names what the click completes
+
+All three were one defect. `commitLabel` answered "what does this click
+complete?" with three positional inputs: `milestone` was non-null only on a
+competency's LAST control, `done === "assessment"` meant the last control of
+the framework, and `nextControl` meant "is there another control after this
+one". So:
+
+- at control 132 with holes still open, the label fell through to *"Review
+  before submitting"* — the PM had run out of controls to WALK PAST, which is
+  not the same as having answered them (N38);
+- a hole filled mid-competency read *"Next control"* even when that answer
+  finished the competency (N40);
+- and there was no path from "I have finished something" to the holes left
+  behind, because Continue only ever knew about the next competency (N39).
+
+**The rule now, the owner's call:** the button names what the click COMPLETES
+if it completes something, and otherwise names where it GOES. Completion is a
+fact about ANSWERS, so it is asked of answers (`lib/shape.ts:ceContextAt` gives
+the panel its competency at EVERY control, not only at a boundary); position is
+still what decides where you go next, and the two no longer share an
+expression. `owedAfter` supplies the controls still unanswered, forward then
+wrapping, so Continue always has somewhere honest to go — which is N39.
+
+**And the card rises wherever a competency is completed**, not only at its
+positional end. The owner's reason was consistency: the same words have to
+produce the same outcome every time.
+
+**"Completes something" is narrower than "is now complete", and the e2e caught
+the first cut of this out.** Gating on *the competency is whole after this
+click* meant a PM re-opening a competency they had already finished — which is
+exactly what the milestone card's own recap rows invite — was told *"Finish
+this competency"* on every control in it, and the card rose instead of moving
+on, so walking a finished competency through the primary button became
+impossible. The completion is news in two cases and no others: this click
+caused it (a hole filled, anywhere), or the PM arrived at the competency's end
+with it whole (which is where a revision gets shown back to them, N33c). A
+revision in the middle of a finished competency is neither, so it moves on.
+
+**Second thing the suite caught:** giving the card somewhere to continue TO
+silently deleted the sentence that says how many controls are still owed. It
+was gated on "there is nowhere to continue", which had been the same test as
+"there is no competency ahead" until N38 made them different. It is now gated
+on `nextControl` directly — null exactly when a PM could believe they had
+finished, and set mid-run, so it does not become "127 controls elsewhere" on
+every one of the 28 milestones.
+
+Round trips are unmoved: the in-memory shape derivations add no query, and both
+budgets are asserted from the server's own log — a warm commit + navigation is
+5, a boundary commit is 3.

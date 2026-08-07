@@ -7,7 +7,7 @@ import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
-import { nextAfter, scoredCodes, shapeOf } from "@/lib/shape";
+import { ceContextAt, owedAfter, scoredCodes, shapeOf } from "@/lib/shape";
 import NotAssigned from "./not-assigned";
 import ScorePanel from "./score-panel";
 
@@ -100,16 +100,29 @@ export default async function AssessPage({
      making fast. */
   const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
     fw.data.areas.map((a) => a.name));
-  const milestone = nextAfter(areas, control);
+  /* ALWAYS, not only at a competency's last control (N38/N40). The button has
+     to name what the click COMPLETES, and completion is a fact about answers
+     rather than about position — so the panel needs this competency's controls
+     wherever the PM is standing in it. `ceContextAt` derives it from `areas`,
+     which is already in memory; no round trip moves. */
+  const milestone = ceContextAt(areas, control);
+  /* Where "I have finished something, take me on" should go. Not the next
+     control — that is `next` below, and it stays right while walking forward —
+     but the next control still UNANSWERED, wrapping past the end to holes left
+     behind. Several, because the server's list is one answer behind and the
+     client is the only thing that knows what it is holding. */
+  const owed = owedAfter(areas, new Set(scored), control);
 
-  /* The recap needs the PM's answers for the competency that just ended. No new
-     query: findAssessmentWithScores already returned every score for the
-     assessment in one embedded select, so this is a lookup over data in hand.
+  /* The PM's answers for the competency they are in. No new query:
+     findAssessmentWithScores already returned every score for the assessment in
+     one embedded select, so this is a lookup over data in hand.
 
-     Built only when there IS a milestone. `nextAfter` returns null for every
-     control that is not last-in-CE — 104 of the 132 — so without the guard four
-     of five loads of this route allocated a 132-entry array and a 132-entry Map
-     and then read nothing out of either. */
+     Now built at EVERY control rather than only at a competency's last one. The
+     old guard existed because the map was read only by the milestone card, and
+     four of five loads allocated it for nothing; since N38/N40 the button reads
+     it too, at every control, to know what this click completes. The allocation
+     is bounded by the competency — 3 to 6 entries, never 132 — so the reason
+     for the guard went away with the reason for the map. */
   const ceLevels: Record<string, number | null> = {};
   if (milestone) {
     const byCode = new Map(scores.map((s) => [s.control_code, s.self_level ?? null]));
@@ -246,6 +259,7 @@ export default async function AssessPage({
             locked={locked}
             milestone={milestone}
             ceLevels={ceLevels}
+            owed={owed}
           />
         </div>
       </div>

@@ -173,8 +173,17 @@ export interface Milestone {
   nextControl: string | null;
   /** What the PM is about to start, for the "next up" line. */
   nextCe: { code: string; name: string } | null;
-  /** Which boundary this is POSITIONALLY — a competency, an area, or the end. */
-  done: "ce" | "area" | "assessment";
+  /**
+   * Which boundary this is POSITIONALLY — a competency, an area, the end, or
+   * `"mid"` for a control that ends nothing by position.
+   *
+   * `"mid"` exists because completion stopped being a positional question
+   * (N38/N40): a control in the middle of a competency can still be the answer
+   * that finishes it. `done` remains strictly about POSITION — it is the card's
+   * business to know whether crossing this control also crosses an area — and
+   * whether the competency is FINISHED is decided by the client from answers.
+   */
+  done: "ce" | "area" | "assessment" | "mid";
   /**
    * COUNTS, NOT VERDICTS, at the two wider scopes — for the same reason `ce` is
    * a count. `done` is POSITIONAL: it says the PM stood on the last control of
@@ -197,6 +206,87 @@ export interface Milestone {
   assessment: { scored: number; total: number };
   /** Where "take a break" goes. Also the fallback if Continue cannot run. */
   listHref: string;
+}
+
+/**
+ * The competency the PM is standing in — ALWAYS, wherever they are standing in
+ * it (N38/N40).
+ *
+ * WHY THIS EXISTS BESIDE `nextAfter`. `nextAfter` answers a POSITIONAL question:
+ * "is this the last control of its competency, and what boundary is that?" It
+ * returns null for the other 104 controls, which was right for the milestone and
+ * wrong for the button. The owner walked the assessment and found both halves of
+ * the same defect: at control 132 with holes still open the button read "Review
+ * before submitting" (there is no next control, so the label fell through to the
+ * end-of-assessment wording), and a skipped control filled mid-competency read
+ * "Next control" even when that answer completed the competency.
+ *
+ * The rule that came out of it: **the button names what the click COMPLETES if
+ * it completes something, and otherwise names where it GOES.** Completion is a
+ * fact about answers, not about position, so the panel needs the competency's
+ * controls at every control — not only at its last one.
+ *
+ * COUNTS, NEVER VERDICTS — the same contract `nextAfter` already carries and for
+ * the same reason. This reports which controls the competency contains and what
+ * the server has persisted; the client adds what it holds and decides. Deciding
+ * here would be deciding from a render that is always one answer behind.
+ *
+ * COSTS NOTHING EXTRA. Everything is derived from `areas`, which `shapeOf`
+ * already built in memory from data the page had fetched. No round trip moves.
+ */
+export function ceContextAt(
+  areas: AreaShape[],
+  control: Control,
+): Milestone | null {
+  const area = areas.find((a) => a.name === control.area);
+  const ce = area?.ces.find((c) => c.code === control.ce_code);
+  if (!area || !ce) return null;
+
+  const positional = nextAfter(areas, control);
+  if (positional) return positional;
+
+  /* Mid-competency. The competency is the same; what differs is that finishing
+     it here is not also crossing an area or the end of the framework, so `done`
+     says so and the wider scopes still report their counts. */
+  return {
+    ce: { code: ce.code, name: ce.name, scored: ce.scored, total: ce.controls.length },
+    controls: ce.controls.map((c) => ({ code: c.code, indicator: c.indicator })),
+    nextControl: null,
+    nextCe: null,
+    done: "mid",
+    area: { name: area.name, scored: area.scored, total: area.controls },
+    assessment: {
+      scored: areas.reduce((n, a) => n + a.scored, 0),
+      total: areas.reduce((n, a) => n + a.controls, 0),
+    },
+    listHref: `/assess/area/${encodeURIComponent(area.name)}`,
+  };
+}
+
+/**
+ * The next control the PM still OWES, in framework order, wrapping past the end.
+ *
+ * Not "the next control" — that is `neighbours()`, and it is the right answer
+ * while walking forward. This is the answer to "where do I go now that I have
+ * finished something", which is what Continue asks, and after a PM has skipped
+ * around it is not the same place.
+ *
+ * RETURNS SEVERAL, and the client picks. The server's list is one answer behind
+ * by construction (D9), so the first entry may be the control the PM is standing
+ * on — the one they are answering right now — or one they answered seconds ago
+ * that has not landed. The client knows both and skips them. Five is far more
+ * than the outbox can plausibly hold at once and costs five short strings.
+ */
+export function owedAfter(
+  areas: AreaShape[],
+  scored: Set<string>,
+  from: Control,
+  limit = 5,
+): string[] {
+  const ordered = areas.flatMap((a) => a.ces.flatMap((c) => c.controls));
+  const at = ordered.findIndex((c) => c.code === from.code);
+  const wrapped = at < 0 ? ordered : [...ordered.slice(at + 1), ...ordered.slice(0, at + 1)];
+  return wrapped.filter((c) => !scored.has(c.code)).slice(0, limit).map((c) => c.code);
 }
 
 /**

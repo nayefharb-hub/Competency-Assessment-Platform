@@ -2624,6 +2624,30 @@ console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
 }
 
 
+/* CLEARING THE SCORES IS ITSELF A RACE, and it fails as a crash rather than a
+   check. Every block below leaves the browser at a control whose answer left in
+   the same breath as the navigation (D9) — that is the product — so a commit
+   POST can still be on the wire when the context closes, and land AFTER the
+   next block's delete. The next insert then hits the (assessment, control)
+   unique index and the whole section dies with "duplicate key", ten checks
+   short, on a run where nothing is wrong with the app.
+
+   So the delete is confirmed rather than assumed. This is FIXTURE setup, not
+   the step under test: the rule that a test must not await the commit applies
+   to the control being exercised, and waiting here is how the previous
+   sitting's writes are made to have finished before this one begins. */
+async function clearScores(assessmentId) {
+  for (let i = 0; i < 20; i++) {
+    await db.from("score").delete().eq("assessment_id", assessmentId);
+    const { count } = await db.from("score")
+      .select("control_id", { count: "exact", head: true })
+      .eq("assessment_id", assessmentId);
+    if ((count ?? 0) === 0) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("could not clear scores — a writer is still landing rows");
+}
+
 /* ------------------------------------------- 16. the milestone, in place (N32) */
 console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
 {
@@ -2647,7 +2671,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     await db.from("assessment")
       .update({ state: "draft", submitted_at: null, approved_at: null })
       .eq("id", asmt.id);
-    await db.from("score").delete().eq("assessment_id", asmt.id);
+    await clearScores(asmt.id);
     if (codes.length === 0) return;
     const { error } = await db.from("score").insert(codes.map((code) => ({
       assessment_id: asmt.id, control_id: idFor(code), self_level: 3,
@@ -3133,7 +3157,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     const skipped = activeControls[0];
     const rest = activeControls.filter(
       (c) => c.code !== skipped.code && !lastCe.some((l) => l.code === c.code));
-    await db.from("score").delete().eq("assessment_id", asmt.id);
+    await clearScores(asmt.id);
     await db.from("score").insert(
       [...rest, ...lastCe.slice(0, -1)].map((c) => ({
         assessment_id: asmt.id, control_id: c.id, self_level: 3,
@@ -3160,7 +3184,7 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
     for (const c of activeControls) byCe.set(c.ce_id, (byCe.get(c.ce_id) ?? 0) + 1);
     const [biggestCe, size] = [...byCe.entries()].sort((a, b) => b[1] - a[1])[0];
     const inCe = activeControls.filter((c) => c.ce_id === biggestCe);
-    await db.from("score").delete().eq("assessment_id", asmt.id);
+    await clearScores(asmt.id);
     await db.from("score").insert(inCe.slice(0, -1).map((c) => ({
       assessment_id: asmt.id, control_id: c.id, self_level: 3,
     })));
@@ -3291,6 +3315,160 @@ console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
   /* Leave the fixture as the rest of the suite expects it. The state reset in
      seed() is undone here rather than described in a comment, so appending a
      section after this one does not inherit a draft assessment. */
+  await db.from("score").delete().eq("assessment_id", asmt.id);
+  await db.from("assessment").update({ state: fixtureState.state,
+    submitted_at: fixtureState.submitted_at, approved_at: fixtureState.approved_at })
+    .eq("id", asmt.id);
+}
+
+/* --------------------- 16b. the label says what the click COMPLETES (N38/N40) */
+console.log("\n[16b] The button names what the click completes (N38, N40)");
+{
+  const CE = ["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4", "4.3.1.5"];
+  const asmt = await assessmentOf(PM.email);
+  const idFor = (code) => activeControls.find((c) => c.code === code).id;
+  const { data: fixtureState } = await db.from("assessment")
+    .select("state, submitted_at, approved_at").eq("id", asmt.id).single();
+
+  const seed = async (codes) => {
+    await db.from("assessment")
+      .update({ state: "draft", submitted_at: null, approved_at: null }).eq("id", asmt.id);
+    await clearScores(asmt.id);
+    if (codes.length === 0) return;
+    const { error } = await db.from("score").insert(codes.map((code) => ({
+      assessment_id: asmt.id, control_id: idFor(code), self_level: 3,
+    })));
+    if (error) throw new Error(`seeding failed: ${error.message}`);
+  };
+  const labelAt = async (page) =>
+    (await page.locator(".assess-actions button").first().innerText()).trim();
+
+  /* --- N40: a hole in the MIDDLE of a competency, whose filling completes it.
+     The old label read "Next control" here, because `milestone` was null for
+     any control that was not positionally last. --- */
+  {
+    await seed(["4.3.1.1", "4.3.1.3", "4.3.1.4", "4.3.1.5"]);   // .2 is the hole
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.2");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    const label = await labelAt(page);
+    check("N40: filling a mid-competency hole says it FINISHES the competency",
+      /finish this competency/i.test(label), JSON.stringify(label));
+
+    /* And the card rises there — the owner's consistency call: the same words
+       must produce the same outcome wherever the PM is standing. */
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("N40: and the card rises mid-competency, not only at its last control",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    await ctx.close();
+  }
+
+  /* --- The owner's question: I complete a competency while holes remain
+     ELSEWHERE. Label names what the click completes; Continue goes to the hole. --- */
+  {
+    // 4.3.1 all but its last; a hole left far away in another area
+    await seed(["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4"]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.5");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    check("N38: completing a competency says so even with holes elsewhere",
+      /finish this competency/i.test(await labelAt(page)), await labelAt(page));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const card = (await page.locator(".milestone").count()) === 1
+      ? await page.locator(".milestone").innerText() : "";
+    check("N38: and the card does NOT claim the assessment is finished",
+      !/every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+
+    const cont = page.locator('.milestone button:has-text("Continue")');
+    check("N38: Continue is offered — there is still work to go to",
+      (await cont.count()) === 1);
+    await cont.click();
+    await page.waitForSelector(".optlist", { timeout: 20_000 }).catch(() => {});
+    const landed = new URL(page.url()).searchParams.get("c");
+    check("N38: and it lands on a control that is actually unanswered",
+      landed !== null && landed !== "4.3.1.5", String(landed));
+    await ctx.close();
+  }
+
+  /* --- N38 proper: the LAST control of the framework with holes still open.
+     This is what the owner saw: "Review before submitting" on an assessment
+     that could not be submitted. --- */
+  {
+    const last = activeControls[activeControls.length - 1].code;
+    await seed(activeControls.slice(0, -1).map((c) => c.code).filter((c) => c !== "4.3.1.1"));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto(`/assess?c=${last}`);
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    const label = await labelAt(page);
+    check("N38: the last control does not offer a review while a hole is open",
+      !/review before submitting/i.test(label), JSON.stringify(label));
+    check("N38: it points at what is still owed instead",
+      /next unanswered control|finish this competency/i.test(label), JSON.stringify(label));
+    await ctx.close();
+  }
+
+  /* --- The last hole ANYWHERE completes the assessment, wherever it sits. --- */
+  {
+    await seed(activeControls.map((c) => c.code).filter((c) => c !== "4.3.1.1"));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.1");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    check("N38: the final hole says it completes the ASSESSMENT, not the competency",
+      /complete the assessment/i.test(await labelAt(page)), await labelAt(page));
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const card = (await page.locator(".milestone").count()) === 1
+      ? await page.locator(".milestone").innerText() : "";
+    check("N38: and the card says every competency is scored, from the count not the position",
+      /every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+    await ctx.close();
+  }
+
+  /* --- The other half of the rule, and the one that caught the first cut of
+     this change out. "Finish this competency" must mean the click FINISHED
+     something. A competency that was already whole when the PM opened it is not
+     finished by re-reading it — so a middle control there moves on, exactly as
+     it did before N40, and only the competency's END still raises the card
+     (which is where a revision gets shown back to them, N33c).
+
+     The first cut gated on "the competency is whole after this click" and
+     therefore said "Finish this competency" on every control of a finished
+     competency, raising the card instead of moving — which made walking a
+     finished competency through the primary button impossible. --- */
+  {
+    await seed(CE);                                   // the whole competency, done
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.2");             // a MIDDLE control of it
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="5"]');   // a revision, not a fill
+    check("N40: re-reading a finished competency does not claim to finish it again",
+      /next control/i.test(await labelAt(page)), await labelAt(page));
+
+    await page.click(".assess-actions button");
+    await page.waitForFunction(
+      () => new URL(location.href).searchParams.get("c") === "4.3.1.3",
+      null, { timeout: 20_000 }).catch(() => {});
+    check("N40: it moves on, the way Next always has",
+      new URL(page.url()).searchParams.get("c") === "4.3.1.3", page.url());
+    check("N40: and no milestone rose on the way",
+      (await page.locator(".milestone").count()) === 0);
+    await page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 })
+      .catch(() => {});
+    await ctx.close();
+  }
+
   await db.from("score").delete().eq("assessment_id", asmt.id);
   await db.from("assessment").update({ state: fixtureState.state,
     submitted_at: fixtureState.submitted_at, approved_at: fixtureState.approved_at })

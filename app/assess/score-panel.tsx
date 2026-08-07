@@ -39,6 +39,7 @@ export default function ScorePanel({
   locked,
   milestone,
   ceLevels,
+  owed,
 }: {
   control: string;
   /** Which record this screen is about. Scopes the client's memory of what it
@@ -51,10 +52,14 @@ export default function ScorePanel({
   savedLevel: number | null;
   savedEvidence: string;
   locked: boolean;
-  /** Set when this control ends a competency or an area (D25, revised by N32). */
+  /** The competency this control sits in — at every control, not only at its
+   *  last one (N38/N40). `done` says whether this is also a positional boundary. */
   milestone?: Milestone | null;
   /** Persisted levels for the competency this control belongs to — the recap. */
   ceLevels?: Record<string, number | null>;
+  /** Controls still unanswered, in framework order, wrapping past the end.
+   *  Several, because the first may be this control or one still in flight. */
+  owed?: string[];
 }) {
   const router = useRouter();
   const [level, setLevel] = useState<number | null>(savedLevel);
@@ -254,6 +259,46 @@ export default function ScorePanel({
     ? milestone.controls.every((c) => effectiveLevel(c.code) !== null)
     : false;
 
+  /* IS THE COMPETENCY'S COMPLETION THIS CLICK'S NEWS?
+   *
+   * `ceComplete` alone is not enough, and the e2e found it: a PM who opens a
+   * competency they already finished — which is exactly what the milestone
+   * card's own recap rows invite them to do — would have been told "Finish this
+   * competency" on every control in it, and the card would have risen instead
+   * of taking them to the next control. Walking a finished competency would
+   * have become impossible through the primary button.
+   *
+   * The completion is news in two cases and no others:
+   *
+   *   - THIS CLICK CAUSED IT. The control had no answer before now, and with it
+   *     the competency is whole. That is N40 — a hole filled anywhere, not only
+   *     at a positional boundary — and it is the case the old code could not
+   *     see at all.
+   *   - THE PM ARRIVED AT THE COMPETENCY'S END with it whole. That is the
+   *     original milestone, and it has to survive a REVISION: change the last
+   *     control's answer and the card is where the revised recap is shown back
+   *     (N33c).
+   *
+   * A revision in the MIDDLE of a finished competency is neither, so it moves
+   * on — which is what a PM re-reading their own answers means by Next.
+   *
+   * `priorHere` deliberately does not read `level`: that is the pick on screen,
+   * which is the thing whose effect is being asked about. */
+  const priorHere = known[control] ?? queued[control] ?? ceLevels?.[control] ?? savedLevel;
+  const atCeEnd = !!milestone && milestone.done !== "mid";
+  const completesCe = ceComplete && (atCeEnd || priorHere === null);
+
+  /* WHERE "I HAVE FINISHED SOMETHING, TAKE ME ON" GOES (N38/N39/N40).
+   *
+   * The server's owed list is one answer behind by construction, so the first
+   * entry is routinely this very control — the one being answered — or one
+   * answered seconds ago that has not landed. Skip anything this device knows
+   * it has answered. Null means nothing is owed anywhere, which is the only
+   * state in which "review and submit" is a true thing to offer. */
+  const nextOwed = (owed ?? []).find(
+    (code) => code !== control && known[code] === undefined && queued[code] === undefined,
+  ) ?? null;
+
   /* Answers this client holds that the server has not counted. Only this
      competency's are knowable here, which is why the wider claims can only
      ever UNDERSTATE — see the Milestone docstring in lib/shape.ts. */
@@ -307,8 +352,23 @@ export default function ScorePanel({
        this happens whether or not the browser is online. The card disables
        every action while offline and says why (review decision A1); withholding
        the milestone would deny the PM the one moment that makes 132 controls
-       feel finishable, precisely when the app is already frustrating them. */
-    if (milestone && ceComplete) { setReached(true); return; }
+       feel finishable, precisely when the app is already frustrating them.
+
+       WHEREVER THE COMPETENCY IS FINISHED, not only at its last control — the
+       owner's call on N40, and the reason is consistency: the button says
+       "Finish this competency" exactly when the click completes one, and the
+       same words have to produce the same outcome every time. Raising the card
+       only at the positional boundary would have made the label mean two
+       different things depending on where the PM happened to be standing, which
+       is the defect one level up. Mopping up five holes across five
+       competencies does mean five cards; Enter dismisses each, and each is
+       telling the truth.
+
+       THE CONDITION IS `completesCe`, NOT `ceComplete` — see its derivation. A
+       competency that was already whole before this click has no news to
+       announce, and gating on `ceComplete` here would have trapped a PM
+       re-reading a finished competency on its first control. */
+    if (milestone && completesCe) { setReached(true); return; }
 
     // Never ask the browser to navigate when it has told us it cannot
     // (decision D13). Measured: router.push falls back to a hard navigation,
@@ -321,7 +381,15 @@ export default function ScorePanel({
     // Re-read rather than trusting the render-time value: the click can be
     // arbitrarily long after the render that produced it.
     if (offline || navigator.onLine === false) return;
-    router.push(nextControl ? `/assess?c=${nextControl}` : "/assess/controls?saved=1");
+    /* Walking forward, the next control is the next control — that is what a PM
+       working through the framework means by it, and jumping them past controls
+       they answered out of order would be the surprise. Only when there is
+       nothing after this one does "what do I still owe" take over, which is the
+       case that used to offer a Submit the server would refuse (N38), and is
+       also the answer to "getting back to the skipped ones is cumbersome"
+       (N39). */
+    const target = nextControl ?? nextOwed;
+    router.push(target ? `/assess?c=${encodeURIComponent(target)}` : "/assess/controls?saved=1");
   }
 
   /** Every navigation out of the milestone. Offline, none of them may run. */
@@ -334,7 +402,7 @@ export default function ScorePanel({
        action is "Finish this competency", and whose milestone therefore rises
        again for work done days ago. The design doc lists honouring `cap.last`
        as an explicit constraint of this flow. */
-    const target = milestone?.nextControl;
+    const target = milestone?.nextControl ?? nextOwed;
     if (target) {
       const secure = location.protocol === "https:" ? "; Secure" : "";
       document.cookie =
@@ -343,9 +411,17 @@ export default function ScorePanel({
     startNavigating(() => router.push(href));
   }
 
-  /** Continue, from the milestone. */
+  /**
+   * Continue, from the milestone.
+   *
+   * `nextControl` is the next competency's first unscored control — the right
+   * answer when the PM is walking the framework in order. `nextOwed` is the
+   * fallback for a competency finished in the middle of the run, or one
+   * finished last with holes left behind: there is no "next competency" to
+   * carry into, and the honest place to go is whatever is still owed.
+   */
   function continueRun() {
-    const next = milestone?.nextControl;
+    const next = milestone?.nextControl ?? nextOwed;
     leaveMilestone(next ? `/assess?c=${encodeURIComponent(next)}` : (milestone?.listHref ?? "/assess/controls?saved=1"));
   }
 
@@ -418,12 +494,38 @@ export default function ScorePanel({
    * a button that was not on screen. Two notions of "what happens next",
    * rendered side by side; deriving both from this removes the possibility
    * rather than fixing the symptom.
+   *
+   * THE RULE, decided by the owner after walking the assessment (N38/N40):
+   * **the button names what the click COMPLETES if it completes something, and
+   * otherwise names where it GOES.** "Completes something" is `completesCe`,
+   * which is deliberately narrower than "the competency is now whole" — a
+   * competency that was already whole when the PM arrived is not completed by
+   * looking at it again.
+   *
+   * What it replaced was three positional inputs pretending to be one question.
+   * `milestone` was non-null only on a competency's LAST control; `done ===
+   * "assessment"` meant the last control of the framework; `nextControl` meant
+   * "is there another control after this one". So at control 132 with holes
+   * still open, the label fell through to "Review before submitting" — the PM
+   * had run out of controls to walk past, which is not the same as having
+   * answered them — and a skipped control filled mid-competency read "Next
+   * control" even when that answer finished the competency. Same defect as N30
+   * and N33: a label describing where you stand rather than what you did.
+   *
+   * Completion is a fact about ANSWERS, so it is asked of answers. Position is
+   * still what decides where you go next, and the two no longer share an
+   * expression.
    */
-  const commitLabel = milestone && ceComplete
-    ? (milestone.done === "assessment" && assessmentRemaining === 0
-        ? "Review before submitting"
-        : "Finish this competency")
-    : (nextControl ? "Next control" : "Review before submitting");
+  const completesAssessment = completesCe && assessmentRemaining === 0;
+  const commitLabel = completesAssessment
+    ? "Complete the assessment"
+    : completesCe
+      ? "Finish this competency"
+      : nextControl
+        ? "Next control"
+        : nextOwed
+          ? "Next unanswered control"
+          : "Review before submitting";
 
   if (reached && milestone) {
     return (
@@ -438,6 +540,7 @@ export default function ScorePanel({
         busy={navigating}
         areaRemaining={areaRemaining}
         assessmentRemaining={assessmentRemaining}
+        canContinue={!!(milestone.nextControl ?? nextOwed)}
         onContinue={continueRun}
         onRevise={reviseControl}
       />

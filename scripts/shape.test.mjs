@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { estimateMinutes, estimateLabel, measureIndex } from "../lib/duration.ts";
-import { shapeOf, nextAfter, scoredCodes, isComplete } from "../lib/shape.ts";
+import { shapeOf, nextAfter, ceContextAt, owedAfter, scoredCodes, isComplete } from "../lib/shape.ts";
 import { hasStalled, daysSince, STALL_DAYS } from "../lib/stall.ts";
 
 const ctl = (code, area, ce, words) => ({
@@ -330,4 +330,61 @@ test("a scored code that is not in the active list cannot complete it", () => {
   // An inactive control's score must not hold the assessment open OR close it.
   const active = [ctl("1.1.1.1", "A", "1.1.1", 10)];
   assert.equal(isComplete(active, new Set(["9.9.9.9"])), false);
+});
+
+/* ------------------------------------ ceContextAt / owedAfter (N38, N40) */
+
+/** Two competencies: 1.1.1 has three controls, 1.1.2 has two. */
+const FIVE = [
+  ctl("1.1.1.1", "People", "1.1.1", 10),
+  ctl("1.1.1.2", "People", "1.1.1", 10),
+  ctl("1.1.1.3", "People", "1.1.1", 10),
+  ctl("1.1.2.1", "People", "1.1.2", 10),
+  ctl("1.1.2.2", "People", "1.1.2", 10),
+];
+const shaped = (scored = new Set()) => shapeOf(FIVE, ceOf, [], scored, ["People"]);
+
+test("the competency is described at EVERY control, not only its last", () => {
+  const areas = shaped();
+  for (const c of FIVE) {
+    const ctx = ceContextAt(areas, c);
+    assert.ok(ctx, `${c.code} must know which competency it is in`);
+    assert.equal(ctx.ce.code, c.ce_code);
+  }
+  assert.equal(nextAfter(areas, FIVE[0]), null,
+    "nextAfter stays positional — that is still its job");
+});
+
+test("mid-competency says so, and still carries the wider counts", () => {
+  const ctx = ceContextAt(shaped(), FIVE[0]);
+  assert.equal(ctx.done, "mid");
+  assert.equal(ctx.ce.total, 3, "it lists the whole competency, not the part behind you");
+  assert.equal(ctx.assessment.total, 5);
+  assert.equal(ctx.controls.length, 3);
+});
+
+test("the last control of a competency is unchanged — still positional", () => {
+  const ctx = ceContextAt(shaped(), FIVE[2]);
+  assert.equal(ctx.done, "ce");
+  assert.equal(ctx.nextCe?.code, "1.1.2", "it names what comes next");
+});
+
+test("owed lists what is unanswered AFTER here, then wraps to what is behind", () => {
+  // everything answered except the first and the last
+  const scored = new Set(["1.1.1.2", "1.1.1.3", "1.1.2.1"]);
+  const owed = owedAfter(shaped(scored), scored, FIVE[2]);
+  assert.deepEqual(owed, ["1.1.2.2", "1.1.1.1"],
+    "forward first, then the hole left behind — a PM mopping up goes forward before back");
+});
+
+test("owed excludes nothing on the client's behalf — the caller skips what it holds", () => {
+  const scored = new Set();
+  const owed = owedAfter(shaped(scored), scored, FIVE[0], 3);
+  assert.equal(owed[0], "1.1.1.2");
+  assert.equal(owed.length, 3, "several, because the first may be in flight");
+});
+
+test("nothing owed is an empty list, which is the only true 'ready to submit'", () => {
+  const scored = new Set(FIVE.map((c) => c.code));
+  assert.deepEqual(owedAfter(shaped(scored), scored, FIVE[0]), []);
 });

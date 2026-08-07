@@ -1,6 +1,6 @@
 # Project status & handoff
 
-Last updated: 2026-08-06 (the continuous assessment run: PR #26 — milestone in place, competency legibility, keyboard scoring; reviewed and fixed, NOT yet merged). Read this first — it says where the build is and what the next step is.
+Last updated: 2026-08-07 (PR #26 — the continuous assessment run, plus the owner's walk-through items N44 and N38/N39/N40; reviewed, tested, NOT yet merged). Read this first — it says where the build is and what the next step is.
 Everything referenced here is committed.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
@@ -84,17 +84,17 @@ npm run verify:db          # expect 11/11
 npm run build
 npm start > /tmp/next.log 2>&1 &
 E2E_SERVER_LOG=/tmp/next.log npm run e2e   # writes, then cleans up after itself
-npm run test:unit                          # expect 50/50 — pure logic, no database
+npm run test:unit                          # expect 82/82 — pure logic, no database
 npm run perf:save                          # 10 real saves, split by where the time goes
 ```
 
 If `verify:db` fails, stop: it is credentials or network, not code.
 
-**Read the tally, not just the ✗ count.** The suite reports skips: *"237 passed,
+**Read the tally, not just the ✗ count.** The suite reports skips: *"373 passed,
 0 failed, 2 SKIPPED (…)"*. A skip is not a pass. `E2E_SERVER_LOG` in particular
-gates the **warm-save round-trip budget** — the assertion behind CLAUDE.md's
-"round trips are counted, not estimated" — and without it that check silently
-does not run. It was found un-run on 2026-08-05 after several green runs had
+gates the **two round-trip budgets** — a warm commit + navigation at 5 calls, a
+competency-boundary commit at 3, the assertions behind CLAUDE.md's "round trips
+are counted, not estimated" — and without it those checks silently do not run. It was found un-run on 2026-08-05 after several green runs had
 been reported, which is why skips are now counted rather than mentioned.
 
 **If `e2e` dies with "Executable doesn't exist at /opt/pw-browsers/…":** the
@@ -438,7 +438,7 @@ control, press Next, and the recap on the card that advertises itself as "the
 last easy moment to change an answer" showed the answer you had just replaced.
 Three specialists found (2) independently. Both now have walked tests.
 
-347 e2e / 0 failed / 0 skipped, 76 unit — the unit count includes a new
+373 e2e / 0 failed / 2 skipped without `E2E_SERVER_LOG`, 82 unit — the unit count includes a new
 `scripts/outbox.test.mjs`, because three of the paths that make `answered` safe
 (the clear on a user change, the delete on a refusal, the assessment scoping)
 cannot be reached from a browser test without a second account, a second
@@ -465,6 +465,68 @@ designed — `lib/auth.ts:109` states it — not a defect. The product fix, if i
 wanted, is for the change-password action to delete the memo entry for the
 current token the way sign-in already does at `lib/auth.ts:240`; that touches
 auth, so it needs `/cso` and its own diff.
+
+## The owner's walk-through (N34–N44) — same branch, PR #26
+
+The owner walked the whole assessment on 2026-08-07 and logged eleven items;
+they are in `docs/pilot-feedback.md`, and what shipped is recorded at the end of
+that file. Two are done.
+
+**N44 — the framework screen opens on a table.** `/admin/controls` is a
+filterable table (Control · Indicator · Target · Priority · State), grouped by
+competency inside area, filtered through the QUERY STRING rather than client
+state so a filtered view is addressable and survives a reload (the N5
+precedent). The Framework nav points at it; a row opens the single-control
+editor and the way back returns to the filtered view. Unknown filter values
+fall back to the whole framework — a stale bookmark must not present an empty
+framework as the truth — and the header counts always report the whole
+framework, never the filtered subset.
+
+**N38 · N39 · N40 — the button names what the click completes.** All three were
+one defect: `commitLabel` answered "what does this click complete?" using three
+POSITIONAL inputs, so control 132 with holes open read "Review before
+submitting", a hole filled mid-competency read "Next control" even when it
+finished the competency, and Continue had nowhere to go but the next competency.
+
+**The rule, and it is the owner's:** the button names what the click COMPLETES
+if it completes something, and otherwise names where it GOES. Completion is a
+fact about ANSWERS and is now asked of answers; position still decides where
+you go, and the two no longer share an expression. `lib/shape.ts` gained
+`ceContextAt` (the competency context at EVERY control — `done: "mid"` when the
+control is not a positional boundary) and `owedAfter` (unanswered controls,
+forward then wrapping). `nextAfter` is deliberately unchanged and still
+positional. Both derivations are in-memory over data already fetched: **the
+round-trip budgets are unmoved and both are asserted from the server's own log
+— a warm commit + navigation is 5, a boundary commit is 3.**
+
+**"Completes something" is narrower than "is now complete", and the e2e caught
+the first cut of this.** Gating on *the competency is whole after this click*
+meant a PM re-opening a competency they had already finished — which the
+milestone card's own recap rows invite them to do — was told "Finish this
+competency" on every control in it and got the card instead of moving on, so
+walking a finished competency through the primary button became impossible. The
+completion is news in exactly two cases: this click caused it (a hole filled,
+anywhere), or the PM reached the competency's END with it whole (which is where
+a revision is shown back to them, N33c). Neither, and it moves on.
+
+The suite also caught the second-order one: giving the card somewhere to
+continue TO silently deleted the "N controls elsewhere still need a score"
+sentence, which had been gated on "there is nowhere to continue". That was the
+same test as "there is no competency ahead" until N38 made them different; it is
+now gated on `nextControl` directly.
+
+**And `clearScores()` replaced the raw delete in the [16]/[16b] fixtures.** The
+section died mid-run with a duplicate-key crash: every block leaves the browser
+at a control whose answer left with the navigation (D9), so a commit POST can
+land AFTER the next block's delete. The delete is now confirmed rather than
+assumed. Fixture setup, not the step under test — the rule against awaiting the
+commit applies to the control being exercised.
+
+Still open from that walk-through: N34 (right-pane height jump), N35 (evidence
+field is single-line), N36 (the offline message appears on every Next while
+online), N37 (competency as a section header), N41 (a PM cannot see their own
+results before approval), N42 (the assessor's Review & revise screen), N43 (the
+results screen needs its own session).
 
 ## Next step
 
