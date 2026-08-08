@@ -952,6 +952,26 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    and worth closing whenever this area is next touched: a run that dies
    silently on the count is the same shape of missing signal that let the
    original flake hide for three rounds.
+14. **EXPLORING, not building: framework profiles (N52).** The owner wants named
+   target sets — "Standard Out of Box", "Junior PM KIB 2026", "Senior Level PM
+   KIB 2026" — with the shipped baseline recoverable. `/office-hours` output is
+   `docs/design-framework-profiles.md`. Two findings worth carrying:
+
+   - **The near-term ask is already met.** All 133 `target_level` values match
+     `supabase/seed.sql` exactly — measured 2026-08-08, zero drift. The baseline
+     is recoverable; what is missing is a button, not the data. Editing the
+     framework while exploring is safe.
+   - **The feature is roughly half built, and the built half is the hard half.**
+     `benchmark_profile` (4 rows), `benchmark_target` (116), `assessment.profile_id`,
+     `targetsForProfile()`, the approval snapshot and the results display are all
+     wired end to end. What is missing is *selection* — `assignAssessment`
+     hardcodes `DEFAULT_PROFILE` and nothing ever asks.
+
+   Four gaps and a naming collision (`benchmark_profile` already means APM's
+   published role levels, not a KIB-authored set) are in the design doc. Also
+   flagged: "weightage" does not exist in the data model, and adding it would
+   change the rollup arithmetic — a much larger claim than changing targets.
+
 13. **DEFERRED post-pilot: the framework memo makes admin edits flicker (N51).**
    Owner's call — logged, not built, and it is an architecture change rather
    than a fix. `lib/framework.ts` caches the framework per instance with a
