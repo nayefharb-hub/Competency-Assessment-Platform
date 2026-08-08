@@ -2886,3 +2886,47 @@ reflect the data being edited.
 picked up, it wants `/plan-eng-review` first: it touches the seam the whole
 performance arc was built around, and "add a call back" is exactly the kind of
 change that arc exists to make people argue for rather than assume.
+
+#### New evidence, 2026-08-08: it now costs a flaky merge gate
+
+Found while running the preview e2e for the CE-target rollup change (`419c56e`),
+and recorded because it moves N51 from "cosmetic flicker an admin might notice"
+to "an automated gate that sometimes goes red for no reason" — which is
+decision-relevant to whether it stays deferred.
+
+**Observed:** across five consecutive preview runs of the same build, runs 2 and
+4 failed one check and runs 1, 3 and 5 passed:
+
+```
+✗ N50: the priority filter matches the database — 111 vs 112 at High
+```
+
+**The database was never wrong** — checked directly, immediately after:
+High/active **112**, Medium/active 17, Low/active 3, Low/**inactive** 1
+(`4.3.2.6`), zero null priorities. Exactly the documented distribution. So the
+page under-counted by one; the data did not.
+
+**Why it is N51 and not a new defect.** `saveControlAction` (`app/actions.ts:171`)
+writes `priority` on **every** save — and defaults it to `"High"` when the field
+is absent — alongside `active` and `target_level`. Section [18] of the suite saves
+`4.3.1.3` during the admin walk and restores it afterwards. Under Fluid Compute a
+sibling instance can hold a framework snapshot captured *between* those two
+writes and serve it for up to ten minutes, because `invalidateFramework()` only
+clears the instance that handled the POST. One control in an intermediate state
+is one row fewer in the `priority=High` view. That is 111 against 112.
+
+Every observation fits: **preview-only** (locally there is one instance and the
+memo is cleared in-process — 420/420 twice), **intermittent** (depends which
+instance serves the request), and **off by exactly one** (one control is edited).
+
+**Not fixed here, and deliberately so.** The iron law is no fix without a root
+cause, and the root cause is the deferred architecture item, not this diff — which
+touches neither the filter, the editor, nor the save path. Two things follow for
+whoever picks N51 up:
+
+- The e2e's `state`/`priority`/`target` count assertions are the canary. They
+  compare a rendered count against a live database count, which is only sound if
+  the render is not from a stale snapshot. Any fix should make one of them fail
+  *before* the fix and pass after.
+- Skipping the framework memo on `/admin/*` (the recommendation above) would also
+  close this, because every count assertion in the suite reads an admin screen.

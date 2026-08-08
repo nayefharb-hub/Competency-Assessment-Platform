@@ -1,7 +1,35 @@
 # Project status & handoff
 
-Last updated: 2026-08-07 (PR #26 — the continuous assessment run, plus the owner's walk-through items N44 and N38/N39/N40; reviewed, tested, NOT yet merged). Read this first — it says where the build is and what the next step is.
-Everything referenced here is committed.
+Last updated: 2026-08-08 (PR #26 — the continuous assessment run, the owner's
+walk-through items N44 and N38/N39/N40, N45–N50, and the CE-target rollup change
+at `419c56e`; NOT yet merged). Read this first — it says where the build is and
+what the next step is. Everything referenced here is committed.
+
+**The change in flight: the competency target is now the mean of its active
+control targets** (owner's decision 2026-08-08, for the pilot). Spec first
+(`docs/rollup-spec.md` §3, `6a4be6c`), then `/plan-eng-review`, then the engine.
+It fixes a defect worth naming: 4 of 28 competencies handed a **Minor Gap to a PM
+who had hit every single control target** — 4.3.1, 4.3.2, 4.3.3 and 4.5.8, all
+reading a published 3 against a control mean of 2.6–2.8. Verified gone against the
+live database. 6 of 28 targets are now genuinely fractional, so results, review and
+the admin table show competency targets to one decimal.
+`competence_element.target_level` is retained as the recoverable APM anchor and is
+read by nothing.
+
+**Gate state for `419c56e`:** 146 unit and 420 local e2e green, budgets still 5 and
+3; preview 414 passed / 0 failed / 3 SKIPPED (the two round-trip budgets and the
+JWKS check read the server log and cannot run remotely — **a skip is not a pass**;
+all three are green locally). Still owed before merge: `/review` on the diff and
+`/qa` against the preview. `/cso` does not apply. The **outside voice did not run**
+— Codex is absent from this container — so this change has had one model's review,
+not two.
+
+**One preview flake, root-caused to N51 and not fixed here.** Two of five
+consecutive preview runs of the same build failed `N50: the priority filter matches
+the database — 111 vs 112 at High`. The database was checked and is correct; the
+page under-counted by one. Mechanism, evidence and what a fix must prove are in
+`docs/pilot-feedback.md` N51 ("New evidence, 2026-08-08"). It is the deferred
+framework-memo item, not this diff.
 
 **Live.** Deployed on Vercel from `main`. Migrations `0003`, `0004` and
 `0005` are applied (`0005` on 2026-08-05, by the owner, in the SQL Editor).
