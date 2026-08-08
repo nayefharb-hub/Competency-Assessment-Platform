@@ -289,3 +289,90 @@ feature this decision argues for; profiles are the one after it, and only if the
   design conversation and is explicitly out of scope until a pilot earns it.
 - **The seed and the database diverge** → B stops being optional, because the
   baseline would no longer be recoverable.
+
+---
+
+## 9. Office hours — how should the competency target be set? (2026-08-08)
+
+The owner accepted that control and competency targets must be set together, and
+asked the remaining question:
+
+> should the competency target be an average of all controls under it, or a
+> published target to hit? If it is the average that would be a more realistic
+> view; if it is a set number, then even if PMs hit their target they might fall
+> short from the competency, or actually go beyond it.
+
+### The question underneath
+
+Not "average or published" — **is the competency bar a separate judgement, or a
+summary of judgements already made at control level?**
+
+For most competencies it is a summary. For a few it genuinely is not, and 4.5.8
+Resources shows why in APM's own hand: *Competent* at Resources overall, but
+*Aware* of "develop strategic resource plan", because writing the organisation's
+resource strategy is not a PM's job. It sits in the framework for completeness,
+not as an expectation of the role.
+
+**That is the cause of every divergence in the current data.** Not a
+disagreement about arithmetic — controls that are not fully this role's job.
+
+### What changes the answer: two guards already exist
+
+The standard objection to averaging is that a good mean hides one bad control.
+`lib/rollup.ts` already prevents that, twice:
+
+- **Escalation.** Any single active control **2+ levels below its own target**
+  forces Capability Deficit regardless of the mean.
+- **The weakest active control is displayed beside the mean**, always.
+
+So averaging here is materially safer than in a naive design, and the usual
+argument against it does not apply.
+
+### The mechanism that makes averaging honest
+
+| Situation | Use | Effect on the competency mean |
+|---|---|---|
+| Not a KIB PM's job at all | **`active = false`** | Leaves the rollup entirely |
+| Their job, at a lower bar | **lower its target** | Pulls the mean down — correctly |
+| Their job at full bar | leave it | none |
+
+Used honestly, the mean stops being a distortion and becomes a true statement:
+*the average of what we actually expect*. The 4.5.8 case is an `active`
+question wearing a target's clothes.
+
+### Recommendation
+
+**Default the competency target to the mean of its control targets; allow a
+deliberate override; show both numbers whenever one is edited.**
+
+- Default = the mean. Hitting every control target then means Role Ready, which
+  removes the "did everything right, still shows a gap" result that 4 of 28
+  competencies produce today.
+- Override for the genuine whole-differs-from-parts case, typed by a human.
+- Showing *"mean of your control targets: 2.6 — currently set to 3"* turns a
+  silent divergence into a visible decision. Today 4 competencies diverge and
+  nobody chose that; it is inherited from two independently seeded sources.
+
+### The honest cost, stated because the recommendation is not free
+
+Averaging lets a **scoping decision move a published standard**. Scope one
+control down for local authority reasons and the competency bar follows. For a
+bank capability record that is a real loss: the claim "measured against APM's
+published bar for Strategy" no longer holds. The override buys it back where it
+matters, but only where someone remembers to use it.
+
+If preserving the APM anchor everywhere matters more than internal consistency,
+choose published-and-independent instead and accept explaining the gaps. That is
+a defensible answer — it is simply not the one that fits a benchmark year whose
+bar is KIB's own, being read by nine people looking at their own results for the
+first time.
+
+### Not built
+
+Needs a competency-target editor — `saveControlAction` writes the `control`
+table only, and nothing in the app can set `competence_element.target_level`.
+Contained, but it changes a number the rollup depends on, so it wants
+`/plan-eng-review` and a `rollup-spec.md` amendment first: that file currently
+states *"target(CE) = the APM published value (NEVER computed or averaged)"*,
+which this recommendation directly contradicts. **Change the spec, then the
+code** — the file says so itself.
