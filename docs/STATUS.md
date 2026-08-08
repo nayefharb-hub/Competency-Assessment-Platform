@@ -39,6 +39,45 @@ pass**); all three are green locally. `/cso` does not apply.
   (`targetsForProfile` joins on mismatched `apm_competence` formats, overlap zero
   against the live database). Pre-existing, not pilot-blocking, own diff.
 
+**N53 is now RESOLVED BY REMOVAL, not repair** (owner's call, 2026-08-08 —
+"labels + plumbing", the recommended option of three). The feature was never
+wired at either end: no UI ever chose a profile, and the join matched nothing.
+
+- **Removed:** the two read-only labels (review, results), `targetsForProfile`,
+  `targetsByProfile`, the unread `benchmarks` grid on the Framework API, and
+  `Assessment.profile` with the `benchmark_profile` fetch that fed it —
+  `assembleAssessment` drops 4 parallel calls to 3, `listAssessments` 3 to 2.
+- **Kept deliberately:** `benchmark_profile` and `benchmark_target` with all
+  **116 published rows** (`verify:db` still asserts 4 and 116), plus
+  `assessment.profile_id` and `DEFAULT_PROFILE`, which `assignAssessment` needs
+  because the column is NOT NULL. The code is the cheap half and would be
+  rewritten to re-add the feature; the published APM figures are the expensive
+  half to re-source.
+- **Why the label had a clock on it:** "Benchmark: Intermediate" was true only by
+  coincidence, and the 2026 re-baseline was about to make it false — on the
+  permanent record of what a PM was judged against.
+- **Proven no-op before the change:** 4 profiles x 133 controls compared between
+  `targets.get(code) ?? c.target_level` and `c.target_level` against the live
+  database — 532 comparisons, zero differences. The two approved assessments
+  freeze identical values.
+
+**Gate state for `96098b1`:** `/review` and `/qa` have both run on the removal.
+**152 unit**, **420 local e2e / 0 failed on a COLD server** with budgets green at
+5 and 3, **preview 414 passed / 0 failed / 3 SKIPPED**. The preview target was
+`d2492d9`, confirmed to be byte-identical to HEAD for build purposes (`96098b1`
+changes only `scripts/e2e.mjs` and docs, neither of which enters the build).
+`/cso` does not apply — no auth, session, storage or allowlist code is touched.
+
+`/review` produced two findings, both fixed:
+1. The approval-snapshot assertion carried **±5 slack** that only existed because
+   the snapshot used to route through `targetsForProfile`. Now exact. Not
+   cosmetic: 131/132 passed the old predicate and fails the new one.
+2. **N51 is not preview-only, and the doc said it was.** Controlled experiment:
+   cold server 420/0 twice, warm server 419/1 twice, same build and database.
+   The diagnosis is unchanged and strengthened — but N51 now reproduces on demand
+   in one local run instead of needing five preview runs. **A green local run on
+   a warm server is weaker evidence than one on a cold server.**
+
 **What `/qa` does not cover, stated so nobody reads more into it.** The suite now
 asserts the CE target *on the rendered page* and that at least one is genuinely
 fractional, so the number is verified where a PM sees it. It cannot judge how
