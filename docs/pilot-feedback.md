@@ -3050,3 +3050,45 @@ override never fires, an admin's hand-edited control target survives approval
 untouched. Fix the join and it will not — `approveAssessment` would begin
 overwriting admin edits with the profile's published value at approval time. That
 interaction needs deciding as part of the fix, not discovered after it.
+
+### N54 — an unsaved edit in the framework editor rides between controls
+
+**Status:** Fixed · reported by the owner using the framework editor, 2026-08-08
+
+**What was observed.** Open a control whose target is, say, 2. Change it to 3
+**without saving** and press Next. The next control shows 3 — the pick just made
+on the previous control, not its own stored target. Press Previous back and that
+first control now also shows 3. An uncommitted pick presented as if it were the
+record, on the screen whose whole job is to set that record correctly.
+
+**The mechanism, confirmed on a production build (red→green), not inferred.**
+Every field in `app/admin/page.tsx` is *uncontrolled*: the target radios use
+`defaultChecked`, the priority/active `<select>`s and the reason/kib `<textarea>`s
+use `defaultValue`. Previous/Next/Skip navigate to `/admin?c=<other>` — the SAME
+route — so Next.js does a **soft client-side navigation**: it re-renders this
+server component with the new control's data and reconciles the RSC payload into
+the existing DOM. React applies `defaultChecked`/`defaultValue` only at **mount**
+and never overwrites a field the admin has touched, and the form had no identity
+tied to the control, so the input DOM nodes were reused across the navigation and
+carried the unsaved edits onto the next control and back.
+
+**Why the tests and dev never caught it.** It reproduces on the **production**
+build only. In `next dev` (Turbopack / Fast Refresh) the subtree remounts on
+navigation, re-applying the per-control defaults, so the leak is invisible — the
+same dev≠prod trap the round-trip work already paid for. A page load (`goto`)
+also remounts, so any test that arrived by `goto` rather than walking Next/Previous
+would have been green against the broken build.
+
+**The fix (one line).** Key the form on the control: `<form … key={control.code}>`.
+A changed key gives the form a new identity, so React unmounts the old inputs and
+mounts fresh ones initialised from *this* control's values on every navigation.
+No client component is added — `key` is a reconciliation hint, honoured during
+soft-nav on a server-rendered tree, so the editor stays server-only.
+
+**Regression test.** `scripts/e2e.mjs` §10a walks the editor as an admin does:
+click a target the control does not have, press Next, and assert the next control
+shows **its own** stored target (and Previous shows the first control's own again),
+with nothing written to Postgres. Shown failing on the pre-fix production build
+first — `shown 0, own 3` on Next and `shown 0, own 2` on Previous — then green.
+Because it only bites on a prod build, the local suite must run against
+`next start`, not `next dev`.

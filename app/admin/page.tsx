@@ -158,7 +158,25 @@ export default async function AdminPage({
           </div>
 
           <div className="admin-panel">
-        <form action={saveControlAction}>
+        {/* REMOUNT THE FORM PER CONTROL — key on control.code.
+
+            Every field below is UNCONTROLLED (defaultChecked / defaultValue),
+            and Previous/Next/Skip navigate to /admin?c=<other> — the SAME route,
+            so Next.js soft-navigates: it re-renders this server component and
+            reconciles the result into the existing DOM. React honours
+            defaultChecked/defaultValue only at MOUNT and never overwrites a
+            field the admin has touched, so without a per-control identity the
+            input DOM nodes are reused and an UNSAVED edit rode onto the next
+            control and back — an admin's uncommitted pick shown as if it were
+            the stored target. (It reproduced on the production build only; dev's
+            Fast Refresh remounts and hid it, which is why it reached the owner.)
+
+            The key gives the form a new identity whenever the control changes,
+            so React unmounts the old inputs and mounts fresh ones initialised
+            from THIS control's values on every navigation. No client component:
+            key is a reconciliation hint, honoured during soft-nav on a
+            server-rendered tree. */}
+        <form action={saveControlAction} key={control.code}>
           <input type="hidden" name="control" value={control.code} />
           {/* The filter survives the save, so an admin working through a
               filtered set is not dumped back into all 133 by pressing Save. */}

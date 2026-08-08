@@ -2264,6 +2264,65 @@ console.log("\n[10] Framework admin writes the tunable layer only");
     restored.kib_note === original.kib_note, `${restored.kib_note}`);
 }
 
+/* ------------------------- 10a. an unsaved edit must not ride between controls
+ *
+ * N54. The editor's fields are UNCONTROLLED (defaultChecked / defaultValue) and
+ * Previous/Next navigate to /admin?c=<other> — the SAME route, so Next.js
+ * soft-navigates and reconciles into the existing DOM. React applies the
+ * defaults only at mount, so without a per-control remount key the input nodes
+ * were reused and a target the admin CLICKED BUT NEVER SAVED appeared on the
+ * next control, and back on the one they left — an uncommitted pick shown as if
+ * it were the stored target. The fix keys the form on control.code.
+ *
+ * This is walked (clicks, not goto), because a page load re-mounts the form and
+ * would hide exactly the bug: it lived on the soft-navigation path a real admin
+ * takes. It also only shows on a PRODUCTION build — dev's Fast Refresh remounts
+ * and masks it — which is why the local suite runs against `next start`.
+ */
+{
+  const codeShown = () => boss.page.locator(".crumb b").last().innerText();
+  const checkedTarget = async () =>
+    Number(await boss.page.locator('input[name="target"]:checked').getAttribute("value"));
+
+  await boss.page.goto("/admin?c=4.3.1.1");
+  await boss.page.waitForLoadState("networkidle");
+  const storedA = await checkedTarget();
+
+  // Read the Next control's code from the DOM so the test doesn't hardcode the
+  // neighbour order, and its own target straight from Postgres.
+  const nextHref = await boss.page.locator('.assess-nav a[href*="c="]').first().getAttribute("href");
+  const nextCode = new URL(nextHref, "http://x").searchParams.get("c");
+  const { data: bRow } = await db.from("control").select("target_level").eq("code", nextCode).single();
+  const storedB = bRow.target_level ?? 3; // the editor's own default when null
+
+  // A level to click that differs from BOTH stored targets, so a leak is
+  // unambiguous — not merely a value that happened to match.
+  const unsaved = [0, 1, 2, 3, 4, 5].find((n) => n !== storedA && n !== storedB);
+
+  await boss.page.click(`label[for="target-${unsaved}"]`);
+  check("an unsaved target edit registers on 4.3.1.1", (await checkedTarget()) === unsaved);
+
+  await boss.page.locator(`a[href*="c=${nextCode}"]`).first().click();
+  await boss.page.waitForURL(`**/admin?c=${nextCode}*`, { timeout: 15_000 });
+  await boss.page.waitForLoadState("networkidle");
+  check("Next lands on the next control", (await codeShown()) === nextCode, await codeShown());
+  check("the next control shows ITS OWN target, not the unsaved pick from the last",
+    (await checkedTarget()) === storedB,
+    `shown ${await checkedTarget()}, own ${storedB}, unsaved was ${unsaved}`);
+
+  await boss.page.locator('a[href*="c=4.3.1.1"]').first().click();
+  await boss.page.waitForURL("**/admin?c=4.3.1.1*", { timeout: 15_000 });
+  await boss.page.waitForLoadState("networkidle");
+  check("Previous returns to 4.3.1.1", (await codeShown()) === "4.3.1.1", await codeShown());
+  check("the unsaved pick did not persist on the control it was made on",
+    (await checkedTarget()) === storedA,
+    `shown ${await checkedTarget()}, own ${storedA}, unsaved was ${unsaved}`);
+
+  const { data: aAfter } = await db.from("control").select("target_level").eq("code", "4.3.1.1").single();
+  check("and an unsaved edit reached Postgres for none of it",
+    (aAfter.target_level ?? 3) === storedA, `${aAfter.target_level}`);
+}
+
 
 /* ------------------------------- 11. password gate and the People screen */
 console.log("\n[11] Password gate (A1)");
