@@ -2,10 +2,9 @@ import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
 import {
-  AREAS, controlsHref, editorHref, filteredControls, isFiltered, parseControlFilter,
+  controlsHref, editorHref, filteredControls, isFiltered, parseControlFilter, valuesInUse,
   type ControlFilterParams,
 } from "@/lib/control-filter";
-import type { Level } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -51,9 +50,6 @@ export default async function AdminControlsIndex({
   const fw = await getFramework();
 
   const filter = parseControlFilter(params, fw);
-  const ceOf = (code: string) => fw.data.competence_elements.find((e) => e.code === code);
-  const areaOfCe = (code: string) => ceOf(code)?.area ?? "";
-
   const rows = filteredControls(fw, filter);
 
   /* Framework order — the ICB4 sequence the standard publishes and the PMs saw
@@ -70,29 +66,14 @@ export default async function AdminControlsIndex({
     (e) => !filter.area || e.area === filter.area,
   );
 
-  /* EVERY level on the scale, including the ones no control currently targets.
-
-     This showed only levels in use, on the reasoning that empty chips are
-     noise. That was wrong here, and the owner found it the direct way: the
-     framework targets only Aware, Practised and Competent today, so Unaware,
-     Proficient and Expert were absent from the row — and looking for "filter by
-     target Unaware" and finding no such chip reads as "this screen cannot do
-     that", which is what was reported.
-
-     Three reasons the full scale is right on THIS screen:
-       - it is the EDITING screen. A level with no controls today has some the
-         moment an admin retargets one, and a filter that appears and disappears
-         as a side effect of your own edits is not a filter you can trust.
-       - zero is information. "Nothing targets Expert" is a fact about the
-         framework worth seeing while tuning it, not an absence to hide.
-       - a hidden control cannot be discovered; a dimmed one explains itself.
-
-     Empty chips are dimmed rather than removed, and stay clickable — the empty
-     state below already says "No controls match that combination" with a way
-     back, so the answer is honest either way. */
-  const targetCount = (lvl: Level) => fw.controls.filter((c) => c.target_level === lvl).length;
-  const untargeted = fw.controls.filter((c) => c.target_level === null).length;
-  const labelFor = (lvl: Level) => fw.labelOf(lvl);
+  /* THE CHIPS ARE THE DATA. Every filter row below offers exactly the values
+     the framework currently contains — no chip for a level nothing targets, no
+     hardcoded list of area names. Retarget a control to a level nothing used
+     and its chip appears on the next render; move the last control off a level
+     and its chip goes. See lib/control-filter.ts for why validation is looser
+     than this on purpose. */
+  const facets = valuesInUse(fw);
+  const untargeted = facets.untargeted;
 
   return (
     <div className="section">
@@ -110,13 +91,10 @@ export default async function AdminControlsIndex({
           aria-current={!filter.area && !filter.ce ? "true" : undefined}>
           All <span className="tnum">{fw.controls.length}</span>
         </Link>
-        {AREAS.map((a) => (
-          <Link key={a} className="filterchip" href={controlsHref(filter, { area: a, ce: null })}
-            aria-current={filter.area === a && !filter.ce ? "true" : undefined}>
-            {a}{" "}
-            <span className="tnum">
-              {fw.controls.filter((c) => areaOfCe(c.ce_code) === a).length}
-            </span>
+        {facets.areas.map((a) => (
+          <Link key={a.name} className="filterchip" href={controlsHref(filter, { area: a.name, ce: null })}
+            aria-current={filter.area === a.name && !filter.ce ? "true" : undefined}>
+            {a.name} <span className="tnum">{a.count}</span>
           </Link>
         ))}
       </div>
@@ -138,6 +116,22 @@ export default async function AdminControlsIndex({
         )}
       </div>
 
+      {/* Priority has no definition table, so the column IS its own vocabulary —
+          the purest Excel-autofilter case on this screen. */}
+      <div className="filterbar">
+        <span className="cap">Priority</span>
+        <Link className="filterchip" href={controlsHref(filter, { priority: null })}
+          aria-current={!filter.priority ? "true" : undefined}>
+          All <span className="tnum">{fw.controls.length}</span>
+        </Link>
+        {facets.priorities.map((p) => (
+          <Link key={p.name} className="filterchip" href={controlsHref(filter, { priority: p.name })}
+            aria-current={filter.priority === p.name ? "true" : undefined}>
+            {p.name} <span className="tnum">{p.count}</span>
+          </Link>
+        ))}
+      </div>
+
       {/* Target — the reason this table exists. "Find the controls whose target
           is wrong" is the job before a cycle, and until now it meant reading a
           column down 133 rows. The chip carries the LABEL as well as the number
@@ -149,18 +143,14 @@ export default async function AdminControlsIndex({
           aria-current={filter.target === "all" ? "true" : undefined}>
           All <span className="tnum">{fw.controls.length}</span>
         </Link>
-        {fw.scaleLevels.map((s) => {
-          const n = targetCount(s.level);
-          return (
-            <Link key={s.level}
-              className={n === 0 ? "filterchip is-empty" : "filterchip"}
-              href={controlsHref(filter, { target: s.level })}
-              aria-current={filter.target === s.level ? "true" : undefined}>
-              <span className="tnum">{s.level}</span> {labelFor(s.level)}{" "}
-              <span className="tnum">{n}</span>
-            </Link>
-          );
-        })}
+        {facets.targets.map((t) => (
+          <Link key={t.level} className="filterchip"
+            href={controlsHref(filter, { target: t.level })}
+            aria-current={filter.target === t.level ? "true" : undefined}>
+            <span className="tnum">{t.level}</span> {t.label}{" "}
+            <span className="tnum">{t.count}</span>
+          </Link>
+        ))}
         {untargeted > 0 && (
           <Link className="filterchip" href={controlsHref(filter, { target: "none" })}
             aria-current={filter.target === "none" ? "true" : undefined}>

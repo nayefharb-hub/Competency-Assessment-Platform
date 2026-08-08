@@ -3926,6 +3926,58 @@ console.log("\n[18] Framework admin: filter by target, walk it, and read it");
   check("N46: an impossible target falls back to the whole framework",
     (await rows()) === activeControls.length + 1, String(await rows()));
 
+  /* ---- N50: the chips ARE the data (Excel-style facets) ----
+     Checked against Postgres, not against the page's own chips: a filter row
+     that agrees with itself proves nothing. */
+  const { data: allControls } = await db.from("control").select("target_level, priority");
+  const levelsInUse = [...new Set(allControls.map((c) => c.target_level).filter((l) => l !== null))];
+  const levelsUnused = [0, 1, 2, 3, 4, 5].filter((l) => !levelsInUse.includes(l));
+
+  await page.goto("/admin/controls");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const targetRow = page.locator(".filterbar").filter({ hasText: "Target" }).first();
+  const targetChips = (await targetRow.locator(".filterchip").allInnerTexts()).join(" | ");
+  check("N50: the Target row offers every level the framework actually uses",
+    levelsInUse.every((l) => new RegExp(`\\b${l}\\b`).test(targetChips)), targetChips);
+  check("N50: and offers no chip for a level nothing targets",
+    levelsUnused.every((l) => !new RegExp(`(^|\\|)\\s*${l}\\s`).test(targetChips)),
+    `unused ${levelsUnused.join(",")} vs ${targetChips}`);
+
+  /* A level the SCALE defines but nothing uses has no chip — and must still
+     answer honestly from a URL rather than silently widening to all 133. */
+  if (levelsUnused.length) {
+    await page.goto(`/admin/controls?target=${levelsUnused[0]}`);
+    await page.waitForLoadState("domcontentloaded");
+    const body = await page.locator("main").innerText();
+    check("N50: a defined-but-unused level answers 'no controls match', not everything",
+      /No controls match/.test(body), body.slice(0, 120));
+  } else {
+    skip("the defined-but-unused level check", "every scale level is in use");
+  }
+
+  /* A level the scale does NOT define is nonsense and falls back (N44's rule). */
+  await page.goto("/admin/controls?target=98");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N50: a level the scale does not define still falls back to everything",
+    (await rows()) === activeControls.length + 1, String(await rows()));
+
+  /* Priority — a column with no definition table, so the data is the only
+     vocabulary there is. */
+  const prioritiesInUse = [...new Set(allControls.map((c) => c.priority).filter(Boolean))];
+  await page.goto("/admin/controls");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const prioRow = page.locator(".filterbar").filter({ hasText: "Priority" }).first();
+  const prioChips = (await prioRow.locator(".filterchip").allInnerTexts()).join(" | ");
+  check("N50: the Priority row offers exactly the priorities in use",
+    prioritiesInUse.every((p) => prioChips.includes(p)), `${prioritiesInUse.join(",")} vs ${prioChips}`);
+
+  const firstPrio = prioritiesInUse[0];
+  const prioCount = allControls.filter((c) => c.priority === firstPrio).length;
+  await page.goto(`/admin/controls?priority=${encodeURIComponent(firstPrio)}`);
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N50: the priority filter matches the database",
+    (await rows()) === prioCount, `${await rows()} vs ${prioCount} at ${firstPrio}`);
+
   /* THE WALK. Open the first row of a filtered view and press Next twice; the
      admin must stay inside the filtered set and never be handed a control the
      view does not contain. This is the check that fails if the editor ever

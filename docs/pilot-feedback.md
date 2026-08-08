@@ -2773,3 +2773,116 @@ verdict decided by incidental traffic is worthless in both directions.
 Both cost a full verification cycle. The rule underneath is the one this file
 keeps relearning: **when a check goes red, ask what it measured before asking
 what broke.**
+
+---
+
+### N50 — the filters become the data (Excel-style facets)
+
+The owner's reframing, and it is the clearest statement of the product's premise
+so far:
+
+> building a structure for competency assessment that can take a standard
+> framework and model it by Area → Competency → Control … having dynamic
+> filtering based on the content being filtered is a great feature, regardless
+> of what the control values are … you show the framework table, read the values
+> and populate filters against it … think excel style filtering
+
+**The premise is explicitly unverified.** Area → Competency → Control fits IPMA
+ICB4. Whether every standard models that way has not been tested. That is worth
+holding onto, because it is the one assumption the whole data model rests on.
+
+**Excel-style facets are the right answer whether or not the premise holds**, and
+that is the interesting part. An autofilter dropdown offers the distinct values
+in its column. It never needs to know what the column MEANS — so a filter layer
+built this way encodes no assumption about ICB4, about APM, or about a scale
+running 0–5. It is the one piece that cannot be wrong about a framework it has
+never seen.
+
+**What was hardcoded before this:**
+
+| | Was | Now |
+|---|---|---|
+| Area chips | `["Perspective","People","Practice"] as const` | distinct areas holding controls |
+| Target chips | every scale level, dimmed at zero | distinct levels in use |
+| Target validation | `/^[0-5]$/` | any level the scale defines |
+| Priority | no filter at all | distinct priorities in use |
+| `AreaFilter` type | union of three ICB4 literals | `string` |
+
+**THREE SOURCES, DELIBERATELY DIFFERENT — this is the design and it should not
+be collapsed.**
+
+1. **Chips: the values present in the data.** No chip for a value nothing
+   carries. This reverses the dimmed-chips build from earlier the same evening,
+   which the owner correctly called noise.
+2. **Validation: the definition tables.** A URL naming a level the scale defines
+   but nothing uses gets the honest empty state. Silently widening it to all 133
+   answers a different question than the one asked. Only a value the framework
+   cannot express falls back to everything (N44's rule).
+3. **The editor's picker: the framework structure.** The owner's correction:
+   *"editing is different, it is not data driven, it is framework structure
+   driven."* Exactly right, and it is also what makes the framework able to grow
+   — a data-derived picker could only ever offer levels already in use, so a new
+   level could never be introduced.
+
+**Priority is the purest case.** It has no definition table, so the column IS its
+own vocabulary. Whatever is in it is what the filter offers, ordered by
+frequency because there is no published order to honour.
+
+**A bug the tests caught while adding it.** With no `priority` in the URL and no
+priority on a control, `c.priority === params.priority` is
+`undefined === undefined` — true — so the filter silently became `undefined`
+rather than `null`. Found by the shape assertion that had been extended for the
+new field, not by reasoning.
+
+417 e2e / 0 failed, 130 unit. The facet checks read the distinct values out of
+Postgres rather than off the page: a filter row that agrees with its own chips
+proves nothing.
+
+---
+
+### N51 — DEFERRED, NOT FOR THE PILOT: the framework memo makes edits flicker
+
+**Owner's call: log it, build it later. This is an architecture change.**
+
+Now that the filter chips are derived from the data being edited, a
+pre-existing cache trade becomes visible in a way it was not before.
+
+**The mechanism.** `lib/framework.ts` holds the framework in a module-scope
+variable with a 10-minute TTL. Under Fluid Compute several instances are alive
+at once, each with its own copy, and there is no shared invalidation channel.
+`saveControlAction` calls `invalidateFramework()`, which clears the memo **on the
+instance that handled the POST and only that one**.
+
+**What the admin sees.** Retarget a control to a level nothing used. The chip
+appears — that render is on the warm instance. Refresh; if the request lands on
+a sibling, the chip is gone again and the old level's count is one too high.
+Refresh again and it may return. It self-corrects within ten minutes.
+
+**The data is never wrong.** Postgres has the truth from the moment of the write.
+Only the display is stale, and only on the framework-admin screens.
+
+**Why it is worse here than where the trade was argued.** `lib/framework.ts`
+justifies the TTL against a stale `kib_note` — a text field nobody is likely to
+be watching on two instances in the same minute. A filter chip that appears and
+disappears between refreshes is indistinguishable from a bug, and it is the same
+shape of confusion that already cost three rounds on N48.
+
+**Options, with honest costs:**
+
+| Option | Cost | Effect |
+|---|---|---|
+| Leave it | none | Up to 10 min of flicker after an edit. Only the admin ever sees it; PMs never touch these routes. |
+| Shorten the TTL | more framework loads everywhere | Shortens the window, does not close it. Still flickers. |
+| **Skip the memo on `/admin/*`** | ~1 extra Supabase call per admin page | Closes it for the admin. Costs the nine PMs nothing — they never hit those routes. |
+| Shared invalidation (Redis / Postgres channel) | a network hop on the hot path | Closes it everywhere. Explicitly argued against in `docs/deploy.md`. |
+
+**Recommendation: skip the memo on the admin routes.** They are used by one
+person, occasionally, and are not on the path the 2026-08 performance arc was
+protecting. One extra call on a page nobody measures buys a framework editor
+that tells the truth immediately — which matters more now that the filters
+reflect the data being edited.
+
+**Not built.** Deferred by the owner as post-pilot architecture work. If it is
+picked up, it wants `/plan-eng-review` first: it touches the seam the whole
+performance arc was built around, and "add a call back" is exactly the kind of
+change that arc exists to make people argue for rather than assume.

@@ -544,15 +544,6 @@ textarea.input {
   background: var(--selected); border-color: var(--selected); color: #fff;
 }
 .filterchip[aria-current="true"] .tnum { opacity: 0.8; }
-/* A level nothing currently targets. Dimmed, not hidden: on the framework
-   EDITING screen an empty level is one edit away from being occupied, and a
-   chip that vanishes when its count hits zero makes the whole capability look
-   absent — which is exactly how "add filtering by target score" came to be
-   reported for a filter that already shipped. Still clickable; the empty state
-   answers honestly. */
-.filterchip.is-empty { opacity: 0.45; }
-.filterchip.is-empty:hover { opacity: 0.75; }
-.filterchip.is-empty[aria-current="true"] { opacity: 1; }
 
 .crow {
   padding: 4px 0 4px 10px;

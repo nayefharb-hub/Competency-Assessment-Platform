@@ -19,7 +19,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   parseControlFilter, matchesFilter, filteredControls, filteredNeighbours,
-  filterQuery, controlsHref, editorHref, isFiltered,
+  filterQuery, controlsHref, editorHref, isFiltered, valuesInUse,
 } from "../lib/control-filter.ts";
 
 /* Shaped like the real thing: competence_elements carry code/area/name, and
@@ -46,9 +46,23 @@ const CONTROLS = [
   ctl("4.3.2.2", "4.3.2", { target: null }),
 ];
 
+/* The scale deliberately DEFINES more levels than the fixture uses, and one
+   area deliberately holds no controls — that gap is the whole subject of these
+   tests. A stub where definition and data agreed could not tell the two apart. */
+const SCALE = [
+  { level: 0, label: "Unaware" }, { level: 1, label: "Aware" },
+  { level: 2, label: "Practised" }, { level: 3, label: "Competent" },
+  { level: 4, label: "Proficient" }, { level: 5, label: "Expert" },
+];
+const AREAS_DEFINED = [
+  { code: "P", name: "Perspective" }, { code: "E", name: "People" },
+  { code: "R", name: "Practice" },
+];
+
 const fw = {
   controls: CONTROLS,
-  data: { competence_elements: CES },
+  scaleLevels: SCALE,
+  data: { competence_elements: CES, areas: AREAS_DEFINED },
 };
 
 const codes = (list) => list.map((c) => c.code);
@@ -57,8 +71,8 @@ const parse = (params) => parseControlFilter(params, fw);
 /* ------------------------------------------------------------------ parsing */
 
 test("unknown filter values fall back to the whole framework, never to nothing", () => {
-  const f = parse({ area: "Nope", ce: "9.9.9", state: "maybe", target: "9" });
-  assert.deepEqual(f, { area: null, ce: null, state: "all", target: "all" });
+  const f = parse({ area: "Nope", ce: "9.9.9", state: "maybe", target: "9", priority: "Urgent" });
+  assert.deepEqual(f, { area: null, ce: null, state: "all", target: "all", priority: null });
   assert.equal(filteredControls(fw, f).length, CONTROLS.length);
   assert.equal(isFiltered(f), false);
 });
@@ -186,4 +200,77 @@ test("the editor link carries the filter and encodes the control code", () => {
 
 test("an unfiltered editor link carries no stray separator", () => {
   assert.equal(editorHref("4.3.1.1", parse({})), "/admin?c=4.3.1.1");
+});
+
+/* ------------------------------------------------- data-derived facets (N50) */
+
+test("the chips offer exactly the values the data contains, and no others", () => {
+  const f = valuesInUse(fw);
+  // fixture targets: 3, 2, 0, 3, null -> levels 0, 2, 3 are in use
+  assert.deepEqual(f.targets.map((t) => t.level), [0, 2, 3]);
+  assert.deepEqual(f.targets.map((t) => t.count), [1, 1, 2]);
+  assert.equal(f.untargeted, 1);
+  // 1 Aware, 4 Proficient and 5 Expert are DEFINED but unused: no chip
+  assert.ok(!f.targets.some((t) => [1, 4, 5].includes(t.level)));
+});
+
+test("an area with no controls gets no chip, and the order is the framework's", () => {
+  const f = valuesInUse(fw);
+  assert.deepEqual(f.areas.map((a) => a.name), ["Perspective", "People"]);
+  // Practice is DEFINED but holds no fixture control
+  assert.ok(!f.areas.some((a) => a.name === "Practice"));
+});
+
+test("a level the scale defines but nothing uses still PARSES — the URL is honest", () => {
+  /* This is the difference between the chips and the validation. There is no
+     chip for level 5, but a bookmark naming it must answer "no controls match"
+     rather than silently widening to the whole framework. */
+  const f = parse({ target: "5" });
+  assert.equal(f.target, 5);
+  assert.equal(isFiltered(f), true);
+  assert.deepEqual(codes(filteredControls(fw, f)), []);
+});
+
+test("a level the scale does NOT define falls back to everything", () => {
+  assert.equal(parse({ target: "6" }).target, "all");
+  assert.equal(parse({ target: "99" }).target, "all");
+});
+
+test("an area the framework defines but nothing fills still parses", () => {
+  const f = parse({ area: "Practice" });
+  assert.equal(f.area, "Practice");
+  assert.deepEqual(codes(filteredControls(fw, f)), []);
+});
+
+test("an area the framework does not define falls back to everything", () => {
+  assert.equal(parse({ area: "Governance" }).area, null);
+});
+
+test("retargeting a control moves its chip — the facets follow the data", () => {
+  /* The owner's question: edit a control to a level nothing used, does the
+     filter know? The facets are computed from the controls, so yes. */
+  const edited = { ...fw, controls: CONTROLS.map((c) => c.code === "4.3.1.1" ? { ...c, target_level: 5 } : c) };
+  const after = valuesInUse(edited);
+  assert.ok(after.targets.some((t) => t.level === 5), "the new level gains a chip");
+  assert.ok(!after.targets.some((t) => t.level === 3 && t.count === 2), "the old level's count drops");
+});
+
+test("an absent priority parameter is null, not undefined", () => {
+  /* The fixture controls carry no priority, so `c.priority === params.priority`
+     is undefined === undefined — TRUE — and the filter silently became
+     `undefined` rather than null. Caught by the shape assertion above. */
+  assert.equal(parse({}).priority, null);
+  assert.equal(parse({ priority: "" }).priority, null);
+});
+
+test("priority filters on the values the column actually holds", () => {
+  const withP = {
+    ...fw,
+    controls: CONTROLS.map((c, i) => ({ ...c, priority: i < 2 ? "High" : "Low" })),
+  };
+  const facets = valuesInUse(withP);
+  assert.deepEqual(facets.priorities.map((p) => p.name), ["Low", "High"]); // by count
+  const f = parseControlFilter({ priority: "High" }, withP);
+  assert.equal(f.priority, "High");
+  assert.equal(filteredControls(withP, f).length, 2);
 });

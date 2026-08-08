@@ -952,6 +952,25 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    and worth closing whenever this area is next touched: a run that dies
    silently on the count is the same shape of missing signal that let the
    original flake hide for three rounds.
+13. **DEFERRED post-pilot: the framework memo makes admin edits flicker (N51).**
+   Owner's call — logged, not built, and it is an architecture change rather
+   than a fix. `lib/framework.ts` caches the framework per instance with a
+   10-minute TTL and no shared invalidation, so `invalidateFramework()` clears
+   only the instance that handled the save. Retarget a control and the new
+   filter chip appears; refresh onto a sibling instance and it is gone until the
+   TTL expires. The DATA is never wrong — Postgres has the truth from the write
+   — only the display, and only on the framework-admin screens.
+
+   This became visible because N50 made the filter chips derive from the data
+   being edited; before that the same staleness only affected a `kib_note`
+   nobody was watching twice.
+
+   **Recommended fix: skip the memo on `/admin/*`** — one extra Supabase call on
+   pages used by one person occasionally, which the nine PMs never touch, in
+   exchange for an editor that tells the truth immediately. Full options table
+   and reasoning in `docs/pilot-feedback.md` → N51. Wants `/plan-eng-review`
+   before code: it touches the seam the whole performance arc was built around.
+
 12. **Separation of duties: one person can assess themselves end to end.**
    A role is a single value and the assessor-side checks never ask whose
    record it is, so one account with `admin` can assign to self, self-score,
