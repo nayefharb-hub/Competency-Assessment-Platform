@@ -171,12 +171,15 @@ export default async function AdminPage({
             the stored target. (It reproduced on the production build only; dev's
             Fast Refresh remounts and hid it, which is why it reached the owner.)
 
-            The key gives the form a new identity whenever the control changes,
-            so React unmounts the old inputs and mounts fresh ones initialised
-            from THIS control's values on every navigation. No client component:
-            key is a reconciliation hint, honoured during soft-nav on a
-            server-rendered tree. */}
-        <form action={saveControlAction} key={control.code}>
+            The key (on the fields wrapper below, NOT the whole form) gives those
+            inputs a new identity whenever the control changes, so React unmounts
+            the old ones and mounts fresh ones initialised from THIS control's
+            values on every navigation. It wraps only the fields, so the Save /
+            Skip actions row keeps its DOM across a navigation and a keyboard
+            admin who tabs to "Skip to next" does not lose focus to the body on
+            each hop. No client component: key is a reconciliation hint, honoured
+            during soft-nav on a server-rendered tree. */}
+        <form action={saveControlAction}>
           <input type="hidden" name="control" value={control.code} />
           {/* The filter survives the save, so an admin working through a
               filtered set is not dumped back into all 133 by pressing Save. */}
@@ -205,6 +208,10 @@ export default async function AdminPage({
               relies on for `.opt:has(input:checked)`. Adding a client bundle to
               swap one line of text would be the trade app/link.tsx exists to
               avoid. */}
+          {/* N54: key ONLY the uncontrolled fields, so a control change remounts
+              them (dropping any unsaved edit) while the Save/Skip row outside
+              this wrapper keeps its focus. */}
+          <div key={control.code}>
           <div className="cols" style={{ marginTop: 16 }}>
             <div className="field">
               <span className="flabel" id="target-label">Target level</span>
@@ -299,6 +306,7 @@ export default async function AdminPage({
               placeholder="Add KIB context for this control…"
             />
           </div>
+          </div>{/* /N54 fields wrapper — Save/Skip row below stays mounted */}
 
           <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
             <button className="btn btn-primary" type="submit">

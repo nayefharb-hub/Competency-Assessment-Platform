@@ -3079,11 +3079,15 @@ same dev≠prod trap the round-trip work already paid for. A page load (`goto`)
 also remounts, so any test that arrived by `goto` rather than walking Next/Previous
 would have been green against the broken build.
 
-**The fix (one line).** Key the form on the control: `<form … key={control.code}>`.
-A changed key gives the form a new identity, so React unmounts the old inputs and
-mounts fresh ones initialised from *this* control's values on every navigation.
-No client component is added — `key` is a reconciliation hint, honoured during
-soft-nav on a server-rendered tree, so the editor stays server-only.
+**The fix.** Wrap the uncontrolled fields in `<div key={control.code}>`. A changed
+key gives that subtree a new identity, so React unmounts the old inputs and mounts
+fresh ones initialised from *this* control's values on every navigation. The key
+is on the fields wrapper, **not** the whole form, so the Save / Skip actions row
+stays mounted across a navigation — a `/review` pass caught that keying the whole
+form dropped keyboard focus to `<body>` when the in-form "Skip to next" link was
+used (the fields remounted under it). No client component is added — `key` is a
+reconciliation hint, honoured during soft-nav on a server-rendered tree, so the
+editor stays server-only.
 
 **Regression test.** `scripts/e2e.mjs` §10a walks the editor as an admin does:
 click a target the control does not have, press Next, and assert the next control

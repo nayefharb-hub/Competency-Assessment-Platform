@@ -7,11 +7,13 @@ what the next step is. Everything referenced here is committed.
 
 **Also on this branch (2026-08-08): N54 fixed** — an unsaved edit in the framework
 editor (`/admin?c=…`) rode between controls, because the uncontrolled form was
-reused across soft navigation with no per-control remount key. One line
-(`<form key={control.code}>`), plus a walked regression test shown failing on the
-pre-fix **production** build first (it does not reproduce in `next dev`). Local
-suite is now **152 unit / 426 e2e (cold) / 0 failed**, budgets still 5 and 3. See
-`docs/pilot-feedback.md` N54.
+reused across soft navigation with no per-control remount key. Fix: wrap the
+uncontrolled fields in `<div key={control.code}>` (keyed fields, not the whole
+form, so the Save/Skip row keeps keyboard focus — a `/review` finding), plus a
+walked regression test shown failing on the pre-fix **production** build first (it
+does not reproduce in `next dev`). Gated: `/review` (one adversarial finding,
+fixed), `/qa` local suite **152 unit / 426 e2e (cold) / 0 failed**, budgets still
+5 and 3. See `docs/pilot-feedback.md` N54.
 
 **The change in flight: the competency target is now the mean of its active
 control targets** (owner's decision 2026-08-08, for the pilot). Spec first
