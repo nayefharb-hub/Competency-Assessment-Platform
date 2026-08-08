@@ -16,13 +16,31 @@ the admin table show competency targets to one decimal.
 `competence_element.target_level` is retained as the recoverable APM anchor and is
 read by nothing.
 
-**Gate state for `419c56e`:** 146 unit and 420 local e2e green, budgets still 5 and
-3; preview 414 passed / 0 failed / 3 SKIPPED (the two round-trip budgets and the
-JWKS check read the server log and cannot run remotely — **a skip is not a pass**;
-all three are green locally). Still owed before merge: `/review` on the diff and
-`/qa` against the preview. `/cso` does not apply. The **outside voice did not run**
-— Codex is absent from this container — so this change has had one model's review,
-not two.
+**Gate state for `fae57c3`:** 146 unit and 420 local e2e green, budgets still 5 and
+3. `/review` **ran** on the diff and produced two findings, both latent and both
+fixed as comments at the lines a future change would touch (`fae57c3`): the
+redaction in `getAssesseeFramework()` no longer covers the rollup now that the CE
+target is computed from a snapshot that is not redacted, and the `gap <= 0` Role
+Ready test must NOT inherit `HALF_LEVEL`'s epsilon. `/qa` **ran** against the
+preview at `fae57c3` — deployment SHA confirmed before trusting the run — **414
+passed / 0 failed / 3 SKIPPED**. The three skips read the server log and cannot run
+remotely (**a skip is not a pass**); all three are green locally. `/cso` does not
+apply.
+
+**What `/qa` does not cover, stated so nobody reads more into it.** The suite now
+asserts the CE target *on the rendered page* and that at least one is genuinely
+fractional, so the number is verified where a PM sees it. It cannot judge how
+`2.7` **looks** beside the actual — spacing, the `/` separator, `tnum` alignment
+at one decimal in three different layouts. That is the owner's own pass, on the
+branch alias.
+
+The **outside voice still has not run.** Codex is absent from this container and
+`api.openai.com` is refused by the egress proxy (`403 connect_rejected`, logged
+2026-08-08T13:50Z), so this change has had one model's review, not two. Enabling it
+needs two owner-side changes — allowlist `api.openai.com` in the environment's
+Network access settings, and supply `CODEX_API_KEY` — after which
+`npm i -g @openai/codex` works, since the npm registry is already direct-routed.
+The Claude-subagent fallback needs neither and is available on request.
 
 **One preview flake, root-caused to N51 and not fixed here.** Two of five
 consecutive preview runs of the same build failed `N50: the priority filter matches

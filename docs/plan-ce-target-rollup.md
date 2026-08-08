@@ -329,10 +329,43 @@ which is what let the nine failures be about arithmetic.
 **VERDICT:** ENG CLEARED — architecture and performance sound, all five findings
 answered with the owner's approval, 146 unit + 420 e2e green.
 
-Two gates remain before merge and neither is claimed here: `/review` on the diff, and
-`/qa` against the Vercel preview. `/cso` does not apply — no auth, session, storage or
-allowlist code is touched. The **outside voice did not run** (Codex absent from this
-container, subagent fallback not dispatched); that is a missing second opinion, not a
-passed one.
+**`/review` ran on the diff** and found two latent traps the computed target
+creates — neither reachable today, so no test can go red for them, and both
+therefore written as comments at the exact lines a future change would touch
+(`fae57c3`, comment-only, tsc clean and 146 unit green after):
+
+1. **Redaction no longer covers the rollup.** `getAssesseeFramework()` nulls
+   `ce_targets[].target`, but `rollupCe` now computes the target instead of
+   reading it — and for an approved assessment it computes from `target_snapshot`,
+   which lives on the assessment and is redacted by nothing. Nothing leaks today
+   (`/results` uses the full framework deliberately, gated on approval; the
+   anti-anchoring boundary is `/assess`, which never rolls up). The trap is that
+   switching `/results` to the assessee framework as a hardening step would look
+   like it redacted targets and would not.
+2. **The Role Ready test must not inherit the epsilon.** `HALF_LEVEL` carries a
+   tolerance because both sides are means; adding it to `gap <= 0` as well would
+   hand Role Ready to someone genuinely below target. It is not needed — both means
+   are integer sums over integer counts and IEEE division is correctly rounded, so
+   mathematically equal means are bit-identical doubles even when the denominators
+   differ (a CE can have more targeted controls than scored ones). Enumerated over
+   every equal-mean pair for counts 1–8 and sums 0–5n: **624 pairs, all exactly 0.**
+
+**`/qa` ran against the preview** at `fae57c3` — the deployment SHA was confirmed
+against the GitHub deployments list first, because Vercel had silently skipped a
+docs-only commit earlier and "preview Ready" no longer implies "preview is at
+HEAD". **414 passed / 0 failed / 3 SKIPPED.** The skips read the server log and
+cannot run remotely; all three are green locally, and a skip is not a pass.
+
+`/cso` does not apply — no auth, session, storage or allowlist code is touched.
+
+**The outside voice still has not run**, and that is a missing second opinion
+rather than a passed gate. Codex is absent and `api.openai.com` is refused by the
+egress proxy (`403 connect_rejected`, logged 13:50Z); the Claude-subagent fallback
+is available on request.
+
+**What no automated gate here covers:** how the fractional number *looks* — `2.7`
+beside the actual, at one decimal, in three different layouts. The suite proves the
+value is right where a PM sees it; it cannot judge the typography. That is the
+owner's pass.
 
 NO UNRESOLVED DECISIONS
