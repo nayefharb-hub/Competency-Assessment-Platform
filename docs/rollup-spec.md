@@ -12,7 +12,7 @@ the implementation contract: the app must reproduce these numbers exactly.
 | `self_level` per control | the assessment | kept as record, not used in the rollup |
 | `active` per control | framework seed | **inactive controls contribute nothing** |
 | control `target_level` | framework seed | 0–5, inherited from the APM benchmark profile |
-| CE `target` | `Results` sheet | APM published value — **never computed** |
+| CE `target` | **computed** | mean of its ACTIVE controls' `target_level` (see §3) |
 
 ## Rules
 
@@ -31,14 +31,53 @@ Alongside the mean, show the CE's **lowest-scoring active control** (code + leve
 The mean is a fair headline; the minimum stops one serious weakness disappearing
 into an average. Ties: pick the lowest control code.
 
-### 3. Targets are not rolled up
-CE targets are APM's published values, taken from the `Results` sheet — never
+### 3. CE target is the mean of its active control targets
+
+```
+target(CE) = mean(target_level over ACTIVE controls that have a target)
+```
+
+Rounded for display only (§7); never rounded before the gap is computed.
+
+**CHANGED 2026-08-08, owner's decision, for the pilot.** This section previously
+read *"Targets are not rolled up — CE targets are APM's published values, never
 averaged from control targets (an earlier attempt to derive them that way was
-circular and was dropped). Where a CE spans two APM competences with different
-values, the CE row shows the **dominant** value.
+circular and was dropped)."*
+
+**Why the circularity objection no longer applies — measured, not assumed.** It
+was true of the workbook, where control targets were filled down from the CE
+target, so averaging them back up returned the number you started with. It is not
+true of this data model. Control targets come from `benchmark_target` keyed by
+`apm_competence` (101 controls, `target_source = 'APM (published)'`) or from
+KIB's priority rule (31, `'Derived (priority rule)'`). **Neither reads the CE
+target.** The proof: **123 of 133** controls happen to equal their CE target — if
+they were derived from it, that number would be 133. The ten that differ are what
+independence looks like.
+
+**Why it changed.** The two numbers were seeded from separate sources and drifted:
+4 of 28 competencies gave **Minor Gap to a PM who hit every single control
+target**. A person can do exactly what was asked of them on every control in a
+competency and be told they fall short of it — an artefact of averaging a
+fractional actual against an unrelated integer, decided by nobody.
+
+**What is given up, stated plainly.** A scoping decision can now move the
+competency bar: lower one control because a KIB PM lacks the authority and the
+competency's target follows it down. The claim *"measured against APM's published
+bar"* is therefore no longer strictly true at competency level. That is accepted
+for the pilot, whose baseline is KIB's own by design (`docs/design-framework-
+profiles.md` §9). **Use `active`, not a low target, for a control that is not the
+role's job at all** — an inactive control leaves the rollup entirely rather than
+sitting in the mean dragging it down. That distinction is what keeps the mean
+honest.
+
+`competence_element.target_level` is **retained but no longer read by the rollup**.
+It stays as the APM published reference, so the anchor is recoverable if this
+decision is ever revisited.
 
 ### 4. Health status (3-tier)
-Let `gap = target(CE) - actual(CE)`.
+Let `gap = target(CE) - actual(CE)`. **Both sides are fractional** since §3 —
+the actual has always been a mean, and the target is now one too. Compare before
+rounding; rounding first would move a boundary case across a tier.
 
 | Status | Condition |
 |---|---|
@@ -80,6 +119,13 @@ When an assessment is approved, freeze the per-control target levels into
 `target_snapshot`. Historic gaps must not shift retrospectively if the benchmark
 profile is later changed.
 
+**The CE target needs no snapshot of its own, and this is a consequence worth
+noticing.** Since §3 it is computed from the control targets, and those are
+already frozen here — so an approved assessment's competency targets are
+automatically historical, by construction rather than by a second mechanism that
+could drift from the first. Compute it from the SNAPSHOT for approved
+assessments, never from the live framework.
+
 ### 7. Presentation rules
 - Numbers on results charts use the **0–5 scale — never percentages**. Converting a
   6-point label scale to a percentage implies equal intervals that don't exist.
@@ -88,6 +134,10 @@ profile is later changed.
   than 28 axes.
 - Target provenance (APM-published vs KIB-derived) is **not** shown in results; it
   lives on the framework data only.
+- **CE targets display to one decimal** (`2.6`), because since §3 they are means
+  and a whole number would imply a precision the figure does not have. The actual
+  has always been shown this way; the two now match. Display only — the gap is
+  computed on the unrounded value.
 - The tool **supports a decision, never gates one** — no pass/fail verdicts.
 
 ## Verified extraction facts (T0)
