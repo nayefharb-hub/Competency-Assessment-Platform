@@ -206,7 +206,79 @@ decisions depend on.
 
 ---
 
-## 7. What would change my advice
+## 7. ANSWERED — question 1, by the owner (2026-08-08)
+
+> we have different roles, however I would consider this year as benchmarking —
+> every role gets the same baseline, which is the minimum. Their scoring would
+> determine next year's baseline.
+
+**This settles the gating question, and it settles it in favour of building
+nothing.** One baseline for every role in cycle 2026 is *already the app's
+behaviour*: `assignAssessment` sets `DEFAULT_PROFILE` ("Intermediate") on every
+assessment and nothing ever asks (`lib/db/assessment.ts:121`). The profile
+feature has no user until cycle 2027 at the earliest.
+
+**Two things already built are what make the plan safe**, and they should not be
+traded away:
+
+- `target_snapshot` freezes each assessment's targets at approval
+  (`rollup-spec.md` §6). Re-baselining in 2027 therefore cannot rewrite 2026.
+  Without this, benchmarking would be self-erasing.
+- `assessment.cycle` with `unique (assessee_id, cycle)` — multi-year is a real
+  key, not a convention.
+
+### "The minimum" is an unmade decision worth a full level
+
+The current baseline is **Intermediate**, which is a role profile, not a
+minimum. Measured 2026-08-08:
+
+| Profile | Competences with a target | Mean target |
+|---|---|---|
+| Entry | 26 | **1.42** |
+| **Intermediate** (in use) | 29 | **2.48** |
+| Advanced | **0** | — |
+| Master | **0** | — |
+
+Choosing Entry instead would drop the bar a full level and move most people from
+Minor Gap into Role Ready. Choosing Intermediate changes nothing. Either is
+defensible; inheriting one by accident is not.
+
+**Advanced and Master hold no targets at all.** So the constraint on cycle 2027
+is not the profile feature — it is that the published values for a senior bar do
+not exist and would have to be *authored*. Same root as open item 7 in
+`docs/STATUS.md`.
+
+### The risk in deriving next year's baseline from this year's scores
+
+It is **descriptive, not normative**: it sets the standard from where the team
+is, rather than from what the role requires. A team collectively weak in one
+competency lowers that competency's bar next year, the gap closes on paper, and
+capability has not moved. On a record a bank may be audited against, that is the
+failure mode that matters.
+
+The mitigation is not to abandon the idea. It is to keep APM as the anchor and
+let the observed data adjust *within* it. *"Our PMs cluster at 2 against an APM
+target of 3"* is a finding. *"So the target is now 2"* is a much weaker claim
+wearing the same evidence.
+
+Two smaller cautions:
+
+- **n = 9, one assessor.** Enough to see clustering and outliers; not enough to
+  move a published standard's numbers, and it carries one rater's calibration.
+- **The health tiers still say "Capability Deficit"** against a bar the owner has
+  described as provisional — on a screen people read personally, in the cycle
+  where the bar is least earned. Worth an explicit decision on year-one language.
+
+### What this plan actually creates demand for
+
+**Trends, not profiles.** T10 in `docs/STATUS.md` — "not started, schema-ready".
+Benchmarking only pays off when 2027 can be placed beside 2026. That is the next
+feature this decision argues for; profiles are the one after it, and only if the
+2027 bar really does differ by role.
+
+---
+
+## 8. What would change my advice
 
 - **KIB confirms Junior and Senior PMs have different published targets this
   cycle** → C moves from "later" to "next", because the pilot itself needs it.
