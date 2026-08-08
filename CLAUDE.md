@@ -127,7 +127,9 @@ once already. None of them is a preference.
   Minor Gap to a PM who had hit every single control target. Full reasoning, the
   evidence that retired the old circularity objection, and the cost accepted are
   in `docs/rollup-spec.md` §3. `competence_element.target_level` is retained in
-  the database as the recoverable APM anchor and is read by nothing.
+  the database as the recoverable APM anchor and is read by **no rollup** — it is
+  still written by the seed and captured by `scripts/framework-baseline.mjs`,
+  which is what keeps the anchor recoverable.
   Consequence for scoping: use `active`, **not** a low target, for a control that
   is not the role's job at all — an inactive control leaves the rollup entirely
   rather than sitting in the mean dragging the bar down.

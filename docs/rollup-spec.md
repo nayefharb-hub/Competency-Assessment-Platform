@@ -116,8 +116,15 @@ health status of their own — status lives at CE level.
 
 ### 6. Snapshot on approval
 When an assessment is approved, freeze the per-control target levels into
-`target_snapshot`. Historic gaps must not shift retrospectively if the benchmark
-profile is later changed.
+`target_snapshot`. Historic gaps must not shift retrospectively if the targets
+are later changed — by an admin edit, a re-baseline, or a benchmark profile
+change.
+
+*The profile clause is aspirational today.* This rule read "if the benchmark
+profile is later changed", which overstated what the snapshot currently protects
+against: profile selection is a no-op (N53), so the only thing that can move a
+target right now is an admin edit or a re-baseline. Those are real — the 2026
+re-baseline touches all 133 — so the snapshot earns its place regardless.
 
 **The CE target needs no snapshot of its own, and this is a consequence worth
 noticing.** Since §3 it is computed from the control targets, and those are
@@ -126,13 +133,34 @@ automatically historical, by construction rather than by a second mechanism that
 could drift from the first. Compute it from the SNAPSHOT for approved
 assessments, never from the live framework.
 
-**One limit on "by construction", stated rather than implied.** The snapshot
-freezes each control's `target_level`; it does not freeze `active`. So
-deactivating a control after an assessment is approved moves that assessment's
-CE target — and has always moved its `actual` the same way. This is pre-existing
-and unchanged, not a consequence of §3, and it is out of scope for the pilot:
-the fix is to snapshot the active flag alongside the target, which is a schema
-change and deserves its own review.
+**Two limits on "by construction", and the first version of this paragraph got
+both of them wrong.** It claimed the exposure was symmetric with `actual` and
+therefore pre-existing. Neither is true, and the correction matters this week.
+
+The snapshot freezes each control's `target_level`. It does **not** freeze
+`active`, and it does not fix the *set* of controls.
+
+1. **Deactivating a control after approval moves the approved CE target, and this
+   IS a consequence of §3.** Before §3 the CE target was a stored integer that
+   `active` could not touch. The claim that `actual` always moved the same way is
+   false in the case that matters: the assessment walk is driven by
+   `activeControls`, so a control that is inactive was never presented and has no
+   score — it is absent from `actual` already. Deactivating therefore moves the
+   target alone, and the historic gap can only widen.
+2. **Adding a control after approval does the same in reverse.** `controlTarget`
+   falls back to the live `target_level` for any control absent from the
+   snapshot, so a newly added active control with a target joins an approved CE's
+   target while contributing nothing to its actual.
+
+Concretely, and not hypothetically: **4.3.2.6** is the one inactive control and
+currently has no target. Activating it and giving it a target during the 2026
+re-baseline would move every approved 4.3.2 target while no approved actual moves
+with it.
+
+Out of scope for the pilot, because no assessment is approved yet — but the
+window closes the moment one is. The fix is to snapshot the control **set** and
+the `active` flag alongside the target, which is a schema change and deserves its
+own review.
 
 ### 7. Presentation rules
 - Numbers on results charts use the **0–5 scale — never percentages**. Converting a

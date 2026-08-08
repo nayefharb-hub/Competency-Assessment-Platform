@@ -5,7 +5,7 @@ import { getFramework } from "@/lib/framework";
 import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
-import { fmtLevel, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
+import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -133,14 +133,21 @@ export default async function ResultsPage({
 
         <div className="tiles">
           {areas.map((ar) => {
-            const health: Health =
-              ar.actual === null || ar.target === null
-                ? "minor"
-                : ar.actual >= ar.target
-                  ? "ready"
-                  : ar.target - ar.actual <= 0.5
-                    ? "minor"
-                    : "deficit";
+            /*
+             * The SAME healthOf the CE rows use (rollup-spec §4: the thresholds
+             * are defined in exactly one place). This was an inlined copy of the
+             * three tiers with a bare `<= 0.5`, and it survived the 2026-08-08
+             * change that put an epsilon on the real one — leaving the copy MORE
+             * exposed than the original, because an area figure is a mean of
+             * means over 5, 10 and 13 competencies whose own denominators are
+             * 3-6. Five CEs at target 14/6 against actual 11/6 gives a gap of
+             * 0.5000000000000002 and painted the deficit colour on an area
+             * exactly half a level short.
+             *
+             * Areas have no health of their own (§5) — this only picks a bar
+             * colour, so a null rolls up to "minor" exactly as before.
+             */
+            const health: Health = healthOf(ar.actual, ar.target, false) ?? "minor";
             const width =
               ar.actual === null || ar.target === null || ar.target === 0
                 ? "0%"

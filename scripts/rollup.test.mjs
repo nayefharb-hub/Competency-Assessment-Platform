@@ -392,3 +392,119 @@ test("fmtLevel renders one decimal, and an em dash for nothing", () => {
   assert.equal(fmtLevel(2), "2.0");
   assert.equal(fmtLevel(null), "—");
 });
+
+/* ------------------------------------------------ 10. the surrounding behaviour
+ *
+ * ADDED AFTER A MUTATION AUDIT, 2026-08-08. The tests above cover the new
+ * arithmetic thoroughly and everything AROUND it not at all — even though the
+ * change altered the inputs to all of it. Eight single-line mutations of
+ * lib/rollup.ts survived the first sixteen tests, including three that produce
+ * visibly wrong output on the results screen. Each test below was confirmed to
+ * FAIL against its own mutation before being kept.
+ *
+ * The lesson is worth more than the tests: "the diff only touched the target"
+ * is not a reason to test only the target. It is a reason to test everything
+ * downstream of it.
+ */
+
+test("the weakest control is the LOWEST-scoring one, ties by control code", () => {
+  // Mutation caught: `s.level < weakest.level` -> `>`, which reports the
+  // strongest control as the weakest. Nothing asserted `weakest` before —
+  // scripts/e2e.mjs only checks that the word appears on the page.
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[3], [3], [3], [3]] },
+  ]);
+  const r = rollupCe(
+    fw,
+    assessmentOf({ "4.3.1.1": 4, "4.3.1.2": 1, "4.3.1.3": 5, "4.3.1.4": 1 }),
+    "4.3.1",
+  );
+  assert.equal(r.weakest.level, 1, "the lowest score, not the highest");
+  assert.equal(r.weakest.control_code, "4.3.1.2", "ties resolve to the lowest code");
+});
+
+test("escalated_by is ordered worst shortfall first, so the results row names the right control", () => {
+  // Mutation caught: reversing the comparator. app/results/page.tsx renders
+  // escalated_by[0] only, so the wrong order makes the page name the LEAST
+  // severe control — the exact thing the comment beside the sort forbids.
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[3], [5], [4], [3]] },
+  ]);
+  const r = rollupCe(
+    fw,
+    assessmentOf({ "4.3.1.1": 1, "4.3.1.2": 0, "4.3.1.3": 2, "4.3.1.4": 5 }),
+    "4.3.1",
+  );
+  assert.deepEqual(
+    r.escalated_by.map((e) => e.control_code),
+    ["4.3.1.2", "4.3.1.1", "4.3.1.3"],
+    "shortfalls 5, 2, 2 — worst first, then by code",
+  );
+});
+
+test("escalation_drove_health is true when escalation turned MINOR into deficit", () => {
+  // Mutation caught: `withoutEscalation !== "deficit"` -> `=== "ready"`, which
+  // silences the explanation on every row where the mean was a Minor Gap and
+  // escalation pushed it to deficit — a case spec §4 requires explaining.
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[3], [3], [3], [3]] },
+  ]);
+  const r = rollupCe(
+    fw,
+    assessmentOf({ "4.3.1.1": 1, "4.3.1.2": 3, "4.3.1.3": 3, "4.3.1.4": 3 }),
+    "4.3.1",
+  );
+  approx(r.target, 3, "target");
+  approx(r.actual, 2.5, "actual — a Minor Gap on its own");
+  assert.equal(r.health, "deficit");
+  assert.equal(r.escalation_drove_health, true, "minor -> deficit still needs explaining");
+});
+
+test("sortByGap puts the BIGGEST gap first", () => {
+  // Mutation caught: `b.gap - a.gap` -> `a.gap - b.gap`, which inverts the
+  // results list against its own caption. The only prior assertion checked that
+  // the unscored CE sorts last, which is true in either direction.
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[3], [3]] },
+    { ce: "4.3.2", area: "Perspective", published: 3, controls: [[3], [3]] },
+    { ce: "4.3.3", area: "Perspective", published: 3, controls: [[3], [3]] },
+  ]);
+  const results = rollupAll(fw, assessmentOf({
+    "4.3.1.1": 3, "4.3.1.2": 3,   // gap 0
+    "4.3.2.1": 0, "4.3.2.2": 0,   // gap 3
+    "4.3.3.1": 2, "4.3.3.2": 2,   // gap 1
+  }));
+  assert.deepEqual(
+    sortByGap(results).map((r) => r.ce_code),
+    ["4.3.2", "4.3.3", "4.3.1"],
+    "biggest gap first — 'where are the gaps' is the question the list answers",
+  );
+});
+
+test("a snapshot row that froze a NULL target stays null, and does not revert to the live one", () => {
+  /*
+   * Mutation caught: `frozen === undefined ? live : frozen` -> `frozen ?? live`,
+   * which silently reverts a frozen null to the live target and defeats §6.
+   *
+   * This is reachable in production TODAY, not hypothetically: approveAssessment
+   * snapshots all 133 controls, and 4.3.2.6 has a null target — so null snapshot
+   * rows already exist. Give that control a target during the re-baseline and the
+   * mutation would move an approved assessment's history.
+   */
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[4], [2]] },
+  ]);
+  const r = rollupCe(
+    fw,
+    assessmentOf({ "4.3.1.1": 2, "4.3.1.2": 2 }, { "4.3.1.1": null, "4.3.1.2": 2 }),
+    "4.3.1",
+  );
+  approx(r.target, 2, "only the control frozen WITH a target counts — not the live 4");
+});
+
+test("the half-level threshold is half a level, not a knob", () => {
+  // Mutation caught: HALF_LEVEL 0.5 -> 0.6 moved the minor/deficit line by 20%
+  // of a level and nothing noticed; the nearest assertion sat 0.1 away.
+  assert.equal(healthOf(2.44, 2.95, false), "deficit", "0.51 short is a deficit");
+  assert.equal(healthOf(2.45, 2.95, false), "minor", "0.50 short is a Minor Gap");
+});

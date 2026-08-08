@@ -37,7 +37,7 @@ from public.framework f, (values
 where f.name = 'IPMA ICB4' and f.version = 'v4.0.1';
 
 -- competence elements ------------------------------------------------------
--- target_level is the APM PUBLISHED value, seeded and then never read: since
+-- target_level is the APM PUBLISHED value, seeded and then read by no rollup: since
 -- 2026-08-08 the rollup computes a CE's target as the mean of its active control
 -- targets (rollup-spec §3). The column is kept as the recoverable anchor so the
 -- published bar survives if that decision is revisited.

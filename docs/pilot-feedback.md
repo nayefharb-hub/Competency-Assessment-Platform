@@ -2930,3 +2930,66 @@ whoever picks N51 up:
   *before* the fix and pass after.
 - Skipping the framework memo on `/admin/*` (the recommendation above) would also
   close this, because every count assertion in the suite reads an admin screen.
+
+---
+
+### N53 — benchmark profiles have never worked: `targetsForProfile` is a dead join
+
+**Found by the outside voice (Claude subagent), 2026-08-08**, while independently
+reviewing the CE-target rollup change. Pre-existing — no diff in that change
+caused it — but it was found *because* of that change, since the change is what
+made a false claim about it plausible enough to write down.
+
+**The mechanism, measured against the live database, not inferred.**
+`lib/framework.ts` builds each profile's per-control targets by joining on the
+APM competence name:
+
+```ts
+const published = c.apm_competence ? byCompetence.get(c.apm_competence) : undefined;
+byControl.set(c.code, published !== undefined ? published : c.target_level);
+```
+
+The two sides of that join are formatted differently and never match:
+
+| Side | Example | Distinct values |
+|---|---|---|
+| `control.apm_competence` | `'5 Business case'`, `'2 Governance arrangements'` | 25 |
+| `benchmark_target.apm_competence` | `'Business case'`, `'Governance arrangements'` | 29 |
+| **Overlap** | — | **0** |
+
+So `published` is always `undefined`, and `targetsForProfile(anyProfileName)`
+returns the stored `control.target_level` for all 133 controls — identically, on
+all four profiles. `approveAssessment` therefore freezes the stored targets, not
+the selected profile's.
+
+**Failure scenario.** The Head of PMO assesses a senior PM against Advanced,
+approves, and `/results` judges them against the Intermediate-seeded numbers. No
+error, no warning, and nothing on screen differs from the Intermediate run — the
+selection is silently a no-op.
+
+**Why it has never bitten.** `DEFAULT_PROFILE` is Intermediate and the stored
+targets *are* the Intermediate seed, so the default path is correct by accident.
+Only selecting a different profile exposes it.
+
+**Three claims elsewhere are false because of this, and are corrected in the
+same commit as this entry:**
+- `docs/STATUS.md` open item 7 — briefly claimed the rollup change had "mostly
+  closed" this. Retracted; it now points here.
+- `lib/db/assessment.ts` — *"Freezes the per-control targets applied by this
+  assessment's benchmark profile"*. It freezes the stored ones.
+- `docs/rollup-spec.md` §6 — justifies the snapshot by *"a later change to the
+  benchmark profile"*, which currently cannot change anything.
+
+**Not fixed here, and not pilot-blocking.** The pilot runs on Intermediate. The
+fix is a data or schema question — normalise `apm_competence` on one side, or add
+a join key — and it is the kind of change that should be measured before and
+after rather than assumed, so it wants `/investigate` and its own diff. **What a
+fix must prove:** an assessment on Entry and one on Advanced produce *different*
+control targets for the same control, asserted from the database, plus a
+regression test that fails on today's build.
+
+**One consequence worth knowing before the re-baseline.** Because the profile
+override never fires, an admin's hand-edited control target survives approval
+untouched. Fix the join and it will not — `approveAssessment` would begin
+overwriting admin edits with the profile's published value at approval time. That
+interaction needs deciding as part of the fix, not discovered after it.

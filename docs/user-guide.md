@@ -210,11 +210,14 @@ After you submit:
 - **Your level** — the mean of the assessor's scores across the active controls
   in that element.
 - **The target** — the average of the targets set for the active controls in that
-  element. Each *control* target is a published value, taken from the APM
+  element, shown to one decimal (`2.7`). Most control targets come from the APM
   benchmark for the profile you are assessed against (Intermediate by default);
-  the element's target is the mean of them, shown to one decimal (`2.7`). So if
-  you meet the target on every control in an element, you are at the element's
-  target too — the two can never disagree.
+  some are set by KIB, either from the control's priority or by the Head of PMO
+  editing it directly. Meet the target on every control that has one and you are
+  at the element's target too. Two things can still put you below it: a control
+  that carries **no** target counts toward your score but not toward the target,
+  and one control sitting two or more levels below its own target makes the
+  element a Capability Deficit whatever the average says.
 - **The weakest control** — the single lowest-scored control in that element,
   named. An element can sit at target overall and still contain one control that
   needs work; this is where you see it.
@@ -345,10 +348,12 @@ keep the targets frozen at approval.
   KIB's own clarifications are added in a separate field alongside it, never on
   top of it.
 - **It never shows a PM their target while they self-score.**
-- **It never invents a target.** Every *control* target is a published value from
-  the APM benchmark profile, and a *competency* target is the average of those —
-  arithmetic on published numbers, never a figure someone typed in at the
-  competency level.
+- **It never sets a competency target by hand.** A *competency* target is always
+  the average of its active control targets — arithmetic, never a number typed in
+  at the competency level. The *control* targets underneath it are a mix: most are
+  APM published values, 31 of the 132 active ones are derived from KIB's priority
+  rule, and the Head of PMO can edit any of them (the tool records which, as the
+  target's source).
 - **It never issues a pass, a fail, or a ranking.** It reports capability
   against a profile and shows where the gaps are. What to do about them is a
   conversation, not an output.

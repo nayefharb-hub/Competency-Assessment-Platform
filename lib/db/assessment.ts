@@ -881,9 +881,19 @@ export async function acceptAllRemaining(assessmentId: string): Promise<number> 
 }
 
 /**
- * Approve and lock. Freezes the per-control targets applied by this
- * assessment's benchmark profile into target_snapshot (rollup-spec §6) so a
- * later profile change cannot retrospectively shift a historic gap.
+ * Approve and lock. Freezes the per-control targets into target_snapshot
+ * (rollup-spec §6) so a later change to the framework cannot retrospectively
+ * shift a historic gap.
+ *
+ * This used to say it freezes "the targets applied by this assessment's
+ * benchmark profile". It does not, today: `targetsForProfile` is a dead join
+ * (N53) — `control.apm_competence` is numbered and `benchmark_target.apm_competence`
+ * is not, so they never match and every profile resolves to the stored
+ * `control.target_level`. What is frozen is therefore the STORED target, which
+ * happens to equal the Intermediate seed. Fix N53 and this comment becomes true
+ * as written — and note that the same fix makes approval start overwriting an
+ * admin's hand-edited target with the profile's published value, which is a
+ * decision to take deliberately rather than inherit.
  */
 export async function approveAssessment(
   assessor: AppUser,

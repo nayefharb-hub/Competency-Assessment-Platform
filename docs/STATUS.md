@@ -1047,16 +1047,17 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    **Needs `/plan-design-review` on a written proposal before any code** —
    see pilot-feedback N25. Not blocking the pilot (nine people, one assessor),
    but it is the first question an auditor asks of a bank capability record.
-7. **CE targets now re-point by benchmark profile for APPROVED assessments —
-   mostly closed by the 2026-08-08 rollup change.** This item used to read *"CE
-   targets do not re-point by benchmark profile … anything other than Intermediate
-   needs published CE targets we do not have."* Since the CE target is the mean of
-   its control targets, and the approval snapshot is built from
-   `targetsForProfile(profile)`, an approved assessment's competency targets follow
-   its profile automatically — no published CE values are needed for any profile.
-   **What is still open, and it is narrower:** *before* approval, `controlTarget()`
-   falls back to the stored `control.target_level` rather than
-   `targetsForProfile()`, so an in-progress assessment on a non-default profile is
-   judged against stored targets. Pre-existing, unchanged by that diff, and out of
-   scope for the pilot — the default is Intermediate and there is one profile in
-   use.
+7. **Benchmark profiles do not work at all — `targetsForProfile` is a dead join.
+   See N53.** RETRACTED: for a few hours on 2026-08-08 this item claimed the
+   rollup change had "mostly closed" it, on the reasoning that a CE target derived
+   from control targets inherits the profile through the approval snapshot. The
+   reasoning was sound and the premise was false — the outside voice checked the
+   join that reasoning rests on and it never matches. Measured against the live
+   database: `control.apm_competence` is numbered (`'5 Business case'`),
+   `benchmark_target.apm_competence` is not (`'Business case'`), 25 distinct values
+   against 29, **overlap zero**. So `targetsForProfile(anyProfile)` returns the
+   stored `target_level` for all 133 controls on all four profiles, and approval
+   freezes the stored targets rather than the profile's.
+   **Not pilot-blocking:** the stored targets *are* the Intermediate seed, so the
+   default profile is right by accident. Selecting any other profile is silently a
+   no-op. Full detail in `docs/pilot-feedback.md` N53.
