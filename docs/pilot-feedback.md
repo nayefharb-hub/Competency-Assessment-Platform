@@ -2967,6 +2967,35 @@ approves, and `/results` judges them against the Intermediate-seeded numbers. No
 error, no warning, and nothing on screen differs from the Intermediate run — the
 selection is silently a no-op.
 
+**What a fix would actually buy, measured 2026-08-08 by matching the two sides
+with the number prefix stripped.** Over the 132 active controls, 101 map to an APM
+competence and 31 do not (those keep their stored target either way):
+
+| Profile | Published values for those 101 | Effect if the join were fixed | Control-weighted mean target |
+|---|---|---|---|
+| **Entry** | 100 present, 1 N/R | **100 controls move DOWN, none up** | 2.83 → **1.89** |
+| **Intermediate** | 101 present | **0 controls change** | 2.83 → 2.83 |
+| **Advanced** | **0 present — all N/R** | nothing to apply | — |
+| **Master** | **0 present — all N/R** | nothing to apply | — |
+
+Two things follow, and the second is the more important:
+
+1. **Intermediate changing nothing is the proof** that the stored targets *are*
+   the Intermediate published values. That is why the default path is correct by
+   accident and why nobody has noticed.
+2. **Advanced and Master are empty columns.** `benchmark_target` holds 29 rows per
+   profile and **zero** of them carry a value for Advanced or Master — not "no
+   match", no data at all. So even with the join repaired, the framework supports
+   exactly **two** usable profiles, Entry and Intermediate. Any plan that assumes
+   a senior bar can be selected (N52's "Senior Level PM KIB 2026") needs those
+   numbers sourced first; the fix to this defect will not produce them.
+
+**Beware a mean quoted without its basis.** The earlier working figures for these
+profiles — Intermediate 2.48, Entry 1.42 — are the unweighted mean over the 29
+benchmark *rows*. The numbers above are the mean over the 132 *controls*, which is
+what the rollup actually averages, and are the ones that describe the bar a PM
+faces. Both are correct; they answer different questions.
+
 **Why it has never bitten.** `DEFAULT_PROFILE` is Intermediate and the stored
 targets *are* the Intermediate seed, so the default path is correct by accident.
 Only selecting a different profile exposes it.
