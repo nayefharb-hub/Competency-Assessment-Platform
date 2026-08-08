@@ -87,6 +87,14 @@ function scoreMap(assessment: Assessment): Map<string, Level | null> {
  * This is a comparison tolerance, NOT rounding. The gap itself is never
  * rounded — spec §4 requires comparing before rounding, and §7 rounds for
  * display only.
+ *
+ * DO NOT add the same epsilon to the `gap <= 0` test below. Role Ready is exact
+ * and must stay exact: both means are integer sums over integer counts, and
+ * IEEE division is correctly rounded, so two mathematically equal means are
+ * bit-identical doubles even when their denominators differ (a CE can have more
+ * targeted controls than scored ones). Enumerated over every equal-mean pair for
+ * counts 1-8 and sums 0-5n: 624 pairs, all giving exactly 0. A tolerance there
+ * would hand Role Ready to someone genuinely below target.
  */
 const HALF_LEVEL = 0.5 + 1e-9;
 
@@ -108,6 +116,21 @@ export function healthOf(
  * come from target_snapshot, so a later change to the benchmark profile cannot
  * retrospectively move a historic gap (rollup-spec §6). Before approval they
  * are the framework's live values.
+ *
+ * REDACTION WARNING, and it is not theoretical for whoever changes this next.
+ * `getAssesseeFramework()` nulls every `control.target_level` so a PM cannot see
+ * targets while self-scoring — but **the snapshot is not redacted**; it comes
+ * from the assessment, not the framework. So on a redacted framework this
+ * function still returns real targets for any approved assessment, and since the
+ * CE target is now COMPUTED from it, `ce_targets[].target` being nulled no longer
+ * protects anything at rollup time.
+ *
+ * Nothing leaks today: `/results` deliberately uses the FULL framework for
+ * everyone and is gated on `state === "approved"` — showing a PM their target is
+ * the point of that screen. The anti-anchoring boundary is `/assess`, which never
+ * rolls up. But if `/results` is ever switched to `getAssesseeFramework()` as a
+ * hardening step, that alone will NOT redact the targets, and the redaction on
+ * `ce_targets` will look like it should have.
  */
 function controlTarget(
   c: Control,

@@ -460,6 +460,15 @@ function buildApi(
  *
  * This is the security boundary the eng plan calls critical: it lives in the
  * data layer so no page, action or serialized prop can leak past it.
+ *
+ * ONE THING IT DOES NOT COVER, since the CE target became computed (2026-08-08):
+ * the ROLLUP no longer reads `ce_targets[].target`, so nulling it here does not
+ * stop `rollupCe` deriving a CE target — and for an approved assessment it
+ * derives one from `target_snapshot`, which lives on the assessment and is not
+ * redacted by anything in this module. Redacting the framework is therefore not
+ * sufficient to hide targets from a rollup. Nothing leaks today because the only
+ * screen that rolls up is `/results`, which uses the full framework deliberately
+ * and only after approval. See the note on `controlTarget` in lib/rollup.ts.
  */
 export async function getAssesseeFramework(): Promise<FrameworkApi> {
   const full = await getFramework();
