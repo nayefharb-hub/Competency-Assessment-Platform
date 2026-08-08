@@ -152,15 +152,33 @@ The snapshot freezes each control's `target_level`. It does **not** freeze
    snapshot, so a newly added active control with a target joins an approved CE's
    target while contributing nothing to its actual.
 
-Concretely, and not hypothetically: **4.3.2.6** is the one inactive control and
-currently has no target. Activating it and giving it a target during the 2026
-re-baseline would move every approved 4.3.2 target while no approved actual moves
-with it.
+**Both of those describe a control the snapshot does not already cover. Traced
+against the live database on 2026-08-08, and the earlier version of this
+paragraph was wrong in both of its claims** — it said "no assessment is approved
+yet" and that "the window closes the moment one is". Two assessments are
+approved (2026-08-05 and 2026-08-07), and no window closes, because approval
+freezes **all 133 controls, not the 132 active ones**. The inactive control is in
+the snapshot with `target_level = null`, `assembleAssessment` does not drop null
+entries when building the map, and `controlTarget` returns a frozen `null`
+rather than falling back to the live value — `frozen === undefined` is the only
+fallback condition. `ceTargetOf` then skips null targets.
 
-Out of scope for the pilot, because no assessment is approved yet — but the
-window closes the moment one is. The fix is to snapshot the control **set** and
-the `active` flag alongside the target, which is a schema change and deserves its
-own review.
+So the exposure is narrower than stated, and it is worth being exact about which
+edits are safe after an approval:
+
+| Edit to a control, post-approval | Approved CE target |
+|---|---|
+| **Activating** one whose frozen target was **null** (this is 4.3.2.6) | **does not move** — frozen null wins, and is skipped |
+| Activating one whose frozen target was **non-null** | moves — it rejoins the mean at its frozen value |
+| **Deactivating** an active one | moves — it leaves the mean while its score is already absent |
+| **Adding a new** control | moves — absent from the snapshot, so it falls back to the live target |
+
+**Consequence for the 2026 re-baseline: activating 4.3.2.6 and giving it a target
+is safe against the two existing approvals.** It is the null freeze that makes it
+safe, not the timing, so there is no deadline to beat. What is still unprotected
+is the bottom two rows — adding controls, or deactivating ones that are live
+today. The durable fix remains snapshotting the control **set** and the `active`
+flag alongside the target; that is a schema change and deserves its own review.
 
 ### 7. Presentation rules
 - Numbers on results charts use the **0–5 scale — never percentages**. Converting a
