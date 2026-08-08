@@ -2915,9 +2915,37 @@ writes and serve it for up to ten minutes, because `invalidateFramework()` only
 clears the instance that handled the POST. One control in an intermediate state
 is one row fewer in the `priority=High` view. That is 111 against 112.
 
-Every observation fits: **preview-only** (locally there is one instance and the
-memo is cleared in-process — 420/420 twice), **intermittent** (depends which
-instance serves the request), and **off by exactly one** (one control is edited).
+Every observation fits: **intermittent** (depends which instance serves the
+request) and **off by exactly one** (one control is edited).
+
+#### It is NOT preview-only. Corrected 2026-08-08 by a controlled local run.
+
+The paragraph above said **preview-only**, on the evidence that two local runs
+went 420/420. That was two runs against a *freshly started* server, and the
+inference from them was wrong. Reproducing it locally takes one condition: run
+the suite against a server that has **already served a previous run**.
+
+| Local server state | Result | Runs |
+|---|---|---|
+| Cold — started immediately before the run | **420 passed, 0 failed** | 2 |
+| Warm — already served one full suite | **419 passed, 1 failed** (`111 vs 112 at High`) | 2 |
+
+Four runs, same build, same database, and the only variable is whether the
+process had a framework memo left over from the previous run. The database was
+re-checked at the point of failure and was correct both times: High/active
+**112**, Medium 17, Low 3, plus the one inactive `4.3.2.6`/Low.
+
+This **strengthens** the N51 diagnosis rather than changing it — a memo holding a
+snapshot from mid-edit is exactly what survives between runs in one process, and
+`invalidateFramework()` clearing only the instance that handled the POST is the
+same root cause. What changes is the cost of fixing it: N51 no longer needs five
+preview runs to observe. It reproduces on demand in one local run, which means
+the "make an assertion fail before the fix" requirement below is now cheap to
+satisfy.
+
+Practical consequence for anyone running the suite locally: **a green run on a
+warm server is not the same evidence as a green run on a cold one.** Restart
+`next start` before a run that has to be trusted.
 
 **Not fixed here, and deliberately so.** The iron law is no fix without a root
 cause, and the root cause is the deferred architecture item, not this diff — which

@@ -1972,8 +1972,20 @@ console.log("\n[7] Approval snapshots targets and locks the record");
     .select("control_id, target_level").eq("assessment_id", assessmentId).limit(5000);
   const live = new Map(activeControls.map((c) => [c.id, c.target_level]));
   const same = frozen.filter((f) => live.has(f.control_id) && f.target_level === live.get(f.control_id)).length;
-  check("snapshot equals the live Intermediate targets at approval time",
-    same >= activeControls.length - 5, `${same}/${activeControls.length} identical`);
+  /*
+   * EXACT, not `>= length - 5`. The old slack existed because the snapshot was
+   * routed through `targetsForProfile`, which could legitimately disagree with
+   * the stored target for any control APM published a value for. That path is
+   * gone (N53), so the snapshot is now `control.target_level` by construction
+   * and every active control must match. Measured on both existing approvals:
+   * 132/132, twice — the tolerance was never being used.
+   *
+   * It is not a free tightening, it is the point: at `>= 127` a regression that
+   * corrupted five controls' frozen targets passed silently. 131/132 PASSES the
+   * old predicate and FAILS this one, which is the whole difference.
+   */
+  check("snapshot equals the live targets at approval time, exactly",
+    same === activeControls.length, `${same}/${activeControls.length} identical`);
 
   check("approval lands on results", boss.page.url().includes("/results"), boss.page.url());
   const results = await boss.page.content();
