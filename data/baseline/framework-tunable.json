@@ -1,0 +1,1315 @@
+{
+  "controls": [
+    {
+      "code": "4.3.1.1",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Partial fit. Setting or aligning project goals to strategy assumes authority a KIB PM does not hold - the sponsor sets project goals. The two monitoring measures (checking objectives and benefits stay in sync with strategy, and checking the project is delivering benefits) are within PM control during execution. Retained at Medium on the monitoring half.",
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.1.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.1.3",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "QA note 1786180568375",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.1.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.1.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.2.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.2.2",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Knowledge-only measures. ICB4 conditions the KCI on the project being part of a programme, which is rare at KIB. Retained because the knowledge supports upward interfacing, but it is awareness-level, not a delivery capability.",
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.2.3",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Two of three measures are explanatory; the third (communicating within the portfolio to manage the project successfully) is an active behaviour that is real under KIB's matrix structure with a portfolio manager in post.",
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.3.2.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Assesses how well PMs use the PMO. Most diagnostic for the two ITD dotted-line PMs.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.2.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target (provisional). Core escalation and governance control.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.2.6",
+      "target_level": null,
+      "priority": "Low",
+      "active": false,
+      "reason": "HR owns contracts, temporary employment, salaries, incentives and training at KIB. A PM does not engage HR directly for resourcing - that runs through the PMO and the line. No measure describes work a KIB PM performs.",
+      "kib_note": "Reason type: belongs to another department (permanent)",
+      "target_source": "n/a — inactive"
+    },
+    {
+      "code": "4.3.2.7",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Knowing Finance's processes, distinguishing compulsory from optional and reporting financial status are PM work. Knowing funding models (public, private, PPP, subsidies) is not a KIB PM's decision.",
+      "kib_note": "Senior baseline / junior target (provisional). Islamic-banking language review needed at Phase 2.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.2",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Health, safety and environmental content applies at KIB in different form from physical delivery - digital ergonomics and DSE, psychosocial safety during transformation, e-waste from system migrations, and CBK cyber and operational resilience requirements. No measure is out of scope once correctly interpreted.",
+      "kib_note": "Guidance block written. Sharia compliance deliberately excluded here - sits with 4.3.3.1 and 4.3.3.3.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "No seniority flag - ethical conduct is absolute from day one.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.4",
+      "target_level": 3,
+      "priority": "Low",
+      "active": true,
+      "reason": "Reinstated. Originally excluded as not applicable at KIB today. Environmental obligations under Kuwait Environmental Protection Law No. 42 of 2014 (as amended by Law No. 99 of 2015) apply to project e-waste from system migrations, and Boursa Kuwait ESG guidance bears on vendor selection. Retained at Low pending confirmation of KIB's ESG position.",
+      "kib_note": "Reason type: not applicable at KIB today - EXPIRED and reversed in-session.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.5",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Identifying and applying relevant professional standards is PM work. Developing custom-made standards and managing the risk of applying a standard are closer to PMO methodology ownership, which is the Head of PMO's role.",
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.3.6",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "PMs contribute to improving organisational PM competence from delivery experience - identifying deficient areas and disseminating know-how. Ownership of benchmarking and organisational maturity assessment remains with the Head of PMO, so retained at Medium rather than High.",
+      "kib_note": "Senior baseline / junior target (provisional)",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.4.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.4.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.4.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.5.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.5.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: one measure covers CSR - relates to 4.3.3.4.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.3.5.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.1.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.1.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: 'maintains eye contact' measure is culturally loaded - address in guidance.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.1.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.1.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.1.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.10.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.10.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "'Says no with a rationale' - key matrix control with 7 PMs competing for shared specialists.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.10.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.10.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.10.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "ICB4 calls this the litmus test for delivery capability.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.2.1",
+      "target_level": 3,
+      "priority": "Low",
+      "active": true,
+      "reason": "Held at Low. Its first three measures are near-identical to 4.4.1.1 (knows and reflects own values; uses own values to shape decisions; communicates own principles). Duplication neutralised by priority rather than by exclusion.",
+      "kib_note": "Duplication case - Phase 2 review with 4.4.1.1.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.2.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Not ESG sustainability - about endurance of solutions. Description carries it; no guidance block needed.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.2.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.2.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.2.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.3.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.3.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.3.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.3.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Virtual-team framing applies at KIB via ITD dotted-line PMs and offshore vendor teams, not geography.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.3.5",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Retained as a real capability - perspective-taking and tension management support delivery under pressure. Held at Medium because the measures are largely unobservable and humour norms differ across a multinational team.",
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.4.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.4.2",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Joining and contributing to networks is relevant. The upper rungs - creating one's own networks, organising networking events - describe a role a PM does not occupy at KIB.",
+      "kib_note": "Revisit: informal networks may be under-weighted here. Review with 4.5.12.5.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.4.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.4.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Contains the diversity and inclusion content the brief flagged as an ICB4 gap - may close the need for APM C17.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.4.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.5.1",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.5.2",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Soft duplication with 4.3.1.5 (KPIs) - logged, not actioned.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.5.3",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.5.4",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Applied counterpart to 4.3.4.2. 'Perceived as the leader' is externally verifiable.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.5.5",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.6.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: team-selection measure assumes authority a KIB PM lacks - address in guidance. Building half carries the priority.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.6.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.6.3",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Promoting learning, knowledge sharing and lessons-learned sessions is PM work. Providing seminars, workshops and self-development time assumes budget and scheduling authority over team members that sits with the line and HR.",
+      "kib_note": "Lessons-learned cluster: 4.4.6.3, 4.4.7.4, 4.5.1.2, 4.5.10.6.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.6.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.6.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Psychological-safety control - low score signals a team that hides problems.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.7.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.7.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.7.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: 'disciplinary or legal measures' measure is out of PM authority - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.7.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Lessons-learned cluster.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.4.8.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.8.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.8.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target. Most assessable in the CE - produces inspectable artefacts.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.8.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.8.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Senior baseline / junior target",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.9.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.9.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.9.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.9.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "BATNA concept - links to Practice 9 Procurement.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.4.9.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Guidance block written - title reads commercially, measures are generic value-seeking.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.1.1",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Formal/informal success criteria split is the valuable half.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.1.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Lessons-learned cluster - primary instance. No APM equivalent (knowledge management).",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.1.3",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Guidance block written - KIB has no formal complexity-assessment method. ICCPM standards are the source if one is adopted.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.1.4",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: word around tailoring within KIB methodology if PM latitude is bounded.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.1.5",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "'Project charter OR project management plan' - artefact offered, not mandated.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Distinct from 4.5.3.4: that maintains scope configuration continuously, this runs the formal change process.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.10.6",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Lessons-learned cluster - close-out artefact instance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.11.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: KIB has a risk framework; PMs apply rather than develop it - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.11.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.11.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: Monte Carlo and decision-tree measures are specialist techniques - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.11.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.11.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.12.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.12.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: alliances-and-partnerships measure is out of scope - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.12.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Deploying a sponsor as an ambassador - sharpest differentiator in the CE for KIB.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.12.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.12.5",
+      "target_level": 3,
+      "priority": "Low",
+      "active": true,
+      "reason": "Held at Low. Alliance-agreement content (negotiating and documenting alliances, exit strategies, closing contracts) describes procurement and legal work and duplicates 4.5.9.4. The informal-network half is real but narrow as written.",
+      "kib_note": "Phase 2: draft criteria around the informal-network half - building and using networks as delivery infrastructure, sustaining them beyond project close. Review with 4.4.4.2.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.13.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "'Takes action when the change exceeds the organisation's capacity' - escalation with teeth.",
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.13.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.13.3",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Documenting a change plan, developing a stepwise approach and adapting it are PM work. Identifying societal, organisational and personal change strategies reaches beyond a bank project - change strategy is shaped with the business owner and, for anything substantial, with Strategy and HR.",
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.13.4",
+      "target_level": 2,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Designing and implementing interventions, leading workshops and addressing resistance are PM work. 'Mass media interventions' has no application at KIB, and the sustainment measures assume the PM is still present after project close, which ICB4 itself says is usually not the case.",
+      "kib_note": null,
+      "target_source": "Derived (priority rule)"
+    },
+    {
+      "code": "4.5.2.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.2.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Requirements traceability stated as capability, not as a mandated artefact - the reason ICB4 beat PMCD.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.2.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Measures correctly scope the PM to facilitating; the sponsor decides.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.3.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.3.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Contains the 'when a full WBS is inappropriate under agile' judgement - suits a hybrid PMO.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.3.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.3.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Earned value appears here - confirm whether KIB uses EVM.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.4.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.4.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.4.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.4.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Most objectively assessable control in Practice - critical path and resource levelling.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.4.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Earned value appears here - confirm whether KIB uses EVM.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.5.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.5.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Contains the matrix keystone measure: record the difference between functional and project authorities.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.5.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Decision documentation - audit trail matters under CBK supervision.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.5.4",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Retained at Medium. The monitoring and adjusting content is genuine PM work - reshaping workstreams, roles and decision rights as a project evolves - but overlaps 4.5.5.2, which carries the design of structure and authorities at High.",
+      "kib_note": "Guidance block written. Revisit for further clarification.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.6.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.6.2",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Reviewing performance, communicating quality objectives and analysing audit findings are PM work. 'Performs a quality audit' asks the PM to audit their own project - the independence problem that removed Assurance from the APM track.",
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.6.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Verb throughout is 'recommend', not 'impose' - correctly scoped.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.6.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Formal acceptance from the business - common failure point.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.6.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.7.1",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.7.2",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Budget-setting at KIB is bounded - the envelope is approved through business case governance rather than set by the project manager. Applicable behaviours are building the budget plan, scenario work and contingency planning within that envelope; 'sets the final budget' overstates PM authority.",
+      "kib_note": "Senior baseline / junior target",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.7.3",
+      "target_level": 3,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Two of four measures apply - handling organisational approval processes and negotiating with sponsors to secure budget. Establishing funding strategies and identifying sources of funds describe external project financing, which does not arise for internally funded KIB initiatives.",
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.7.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Earned value referenced - confirm whether KIB uses EVM. Islamic-banking language review at Phase 2.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.7.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Escalation control for money - routes through governance, correctly scoped.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.8.1",
+      "target_level": 1,
+      "priority": "Medium",
+      "active": true,
+      "reason": "Two of four measures are project-level resource forecasting and baselining, which feed 4.5.8.2. The other two - analysing the organisation's resource capacity and identifying trends, and coordinating with portfolio management processes - are portfolio-level work, matching the basis on which APM C25 Resource capacity planning was excluded from the PM track.",
+      "kib_note": "Target is Aware - two levels below its CE. APM independently corroborates the scoping judgement.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.8.2",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.8.3",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: 'make or buy' and 'sourcing strategy' measures describe governance decisions - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.8.4",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "'Negotiates resource conflicts' - the matrix control in this CE.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.8.5",
+      "target_level": 3,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Routes skill shortages through the line manager - correct scoping for KIB.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.9.1",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": null,
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.9.2",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: partnership-models measure (joint ventures) is out of scope - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.9.3",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Phase 2: price-negotiation measure sits with procurement and legal - address in guidance.",
+      "target_source": "APM (published)"
+    },
+    {
+      "code": "4.5.9.4",
+      "target_level": 2,
+      "priority": "High",
+      "active": true,
+      "reason": null,
+      "kib_note": "Islamic-banking language review at Phase 2 (penalties, claims).",
+      "target_source": "APM (published)"
+    }
+  ],
+  "competence_elements": [
+    {
+      "code": "4.3.1",
+      "target_level": 3
+    },
+    {
+      "code": "4.3.2",
+      "target_level": 3
+    },
+    {
+      "code": "4.3.3",
+      "target_level": 3
+    },
+    {
+      "code": "4.3.4",
+      "target_level": 3
+    },
+    {
+      "code": "4.3.5",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.1",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.2",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.3",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.4",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.5",
+      "target_level": 2
+    },
+    {
+      "code": "4.4.6",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.7",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.8",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.9",
+      "target_level": 3
+    },
+    {
+      "code": "4.4.10",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.1",
+      "target_level": 2
+    },
+    {
+      "code": "4.5.2",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.3",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.4",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.5",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.6",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.7",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.8",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.9",
+      "target_level": 2
+    },
+    {
+      "code": "4.5.10",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.11",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.12",
+      "target_level": 3
+    },
+    {
+      "code": "4.5.13",
+      "target_level": 2
+    }
+  ]
+}
