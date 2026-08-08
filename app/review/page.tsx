@@ -50,7 +50,7 @@ export default async function ReviewPage({
         <h2>Review &amp; revise — {assessment.assessee_name}</h2>
         <span className="rule" />
         <span className="eyebrow">
-          cycle {assessment.cycle} · {assessment.profile} profile
+          cycle {assessment.cycle}
         </span>
       </div>
 

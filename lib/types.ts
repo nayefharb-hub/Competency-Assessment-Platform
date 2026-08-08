@@ -69,15 +69,6 @@ export interface Measure {
   text: string | null;
 }
 
-export interface Benchmark {
-  no: number;
-  apm_competence: string;
-  entry: number | "N/R" | null;
-  intermediate: number | "N/R" | null;
-  advanced: number | "N/R" | null;
-  master: number | "N/R" | null;
-}
-
 /**
  * Per-CE target. COMPUTED — the mean of the element's active control targets
  * (rollup-spec §3), so it is fractional and is displayed to one decimal.
@@ -102,7 +93,6 @@ export interface Framework {
   competence_elements: CompetenceElement[];
   controls: Control[];
   measures: Measure[];
-  benchmarks: Benchmark[];
   ce_targets: CeTarget[];
 }
 
@@ -145,8 +135,10 @@ export interface Assessment {
   assessee_name: string;
   assessee_role: string;
   cycle: string;
-  /** benchmark profile applied, e.g. "Intermediate" */
-  profile: string;
+  /**
+   * The profile row this assessment was stamped with. Kept because the column
+   * is NOT NULL; no screen reads it and no rollup depends on it (N53).
+   */
   profile_id?: string;
   state: AssessmentState;
   scores: Score[];

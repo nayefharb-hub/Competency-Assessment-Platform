@@ -286,15 +286,15 @@ async function assembleAssessment(
   const fw = await getFramework();
   const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
 
-  const [scoreRows, person, profile, snapshotRows] = await Promise.all([
+  // Three calls, not four: the benchmark_profile lookup went with the profile
+  // label it existed to feed (N53). Nothing here reads a profile any more.
+  const [scoreRows, person, snapshotRows] = await Promise.all([
     sb.from("score")
       .select("control_id, self_level, assessor_level, assessor_touched, evidence")
       .eq("assessment_id", row.id).limit(5000)
       .then((r) => unwrap("score fetch", r) as ScoreRow[]),
     sb.from("app_user").select("full_name, job_title").eq("id", row.assessee_id).maybeSingle()
       .then((r) => (r.data ?? { full_name: "Unknown", job_title: null }) as { full_name: string; job_title: string | null }),
-    sb.from("benchmark_profile").select("name").eq("id", row.profile_id).maybeSingle()
-      .then((r) => (r.data ?? { name: DEFAULT_PROFILE }) as { name: string }),
     sb.from("target_snapshot").select("control_id, target_level").eq("assessment_id", row.id).limit(5000)
       .then((r) => (r.data ?? []) as { control_id: string; target_level: number | null }[]),
   ]);
@@ -321,7 +321,6 @@ async function assembleAssessment(
     assessee_name: person.full_name,
     assessee_role: person.job_title ?? "Project Manager",
     cycle: row.cycle,
-    profile: profile.name,
     profile_id: row.profile_id,
     state: row.state,
     scores,
@@ -505,13 +504,11 @@ export async function listAssessments(
   const fw = await getFramework();
   const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
 
-  const [people, profiles, scoreRows] = await Promise.all([
+  // Two calls, not three — the benchmark_profile lookup went with the label.
+  const [people, scoreRows] = await Promise.all([
     sb.from("app_user").select("id, full_name, job_title, role")
       .in("id", [...new Set(rows.map((r) => r.assessee_id))])
       .then((r) => (r.data ?? []) as { id: string; full_name: string; job_title: string | null; role: string }[]),
-    sb.from("benchmark_profile").select("id, name")
-      .in("id", [...new Set(rows.map((r) => r.profile_id))])
-      .then((r) => (r.data ?? []) as { id: string; name: string }[]),
     sb.from("score")
       .select("assessment_id, control_id, self_level, assessor_level, assessor_touched, evidence")
       .in("assessment_id", rows.map((r) => r.id)).limit(20000)
@@ -519,7 +516,6 @@ export async function listAssessments(
   ]);
 
   const personById = new Map(people.map((p) => [p.id, p]));
-  const profileById = new Map(profiles.map((p) => [p.id, p.name]));
   const scoresByAssessment = new Map<string, (ScoreRow & { assessment_id: string })[]>();
   for (const s of scoreRows) {
     const list = scoresByAssessment.get(s.assessment_id);
@@ -535,7 +531,6 @@ export async function listAssessments(
       assessee_name: person?.full_name ?? "Unknown",
       assessee_role: person?.job_title ?? "Project Manager",
       cycle: row.cycle,
-      profile: profileById.get(row.profile_id) ?? DEFAULT_PROFILE,
       profile_id: row.profile_id,
       state: row.state,
       scores: (scoresByAssessment.get(row.id) ?? []).map((s) => ({
@@ -885,15 +880,17 @@ export async function acceptAllRemaining(assessmentId: string): Promise<number> 
  * (rollup-spec §6) so a later change to the framework cannot retrospectively
  * shift a historic gap.
  *
- * This used to say it freezes "the targets applied by this assessment's
- * benchmark profile". It does not, today: `targetsForProfile` is a dead join
- * (N53) — `control.apm_competence` is numbered and `benchmark_target.apm_competence`
- * is not, so they never match and every profile resolves to the stored
- * `control.target_level`. What is frozen is therefore the STORED target, which
- * happens to equal the Intermediate seed. Fix N53 and this comment becomes true
- * as written — and note that the same fix makes approval start overwriting an
- * admin's hand-edited target with the profile's published value, which is a
- * decision to take deliberately rather than inherit.
+ * What is frozen is the STORED `control.target_level`. It used to be routed
+ * through `fw.targetsForProfile(profileName)`, which read like the profile
+ * chose the values but never did (N53): the join it depended on matched nothing,
+ * so every profile fell through to the stored target anyway. Removing it is a
+ * proven no-op — 4 profiles x 133 controls compared against the live database
+ * before the change, zero differences — so the two already-approved assessments
+ * would freeze byte-identical values today.
+ *
+ * If the feature is ever rebuilt, this is the line that decides whether approval
+ * OVERWRITES an admin's hand-edited target with a published one. It currently
+ * does not, and that is the behaviour the 2026 re-baseline depends on.
  */
 export async function approveAssessment(
   assessor: AppUser,
@@ -902,14 +899,6 @@ export async function approveAssessment(
   const row = await assertState(assessmentId, ["self_submitted"]);
   const sb = db();
   const fw = await getFramework();
-
-  const profile = await sb
-    .from("benchmark_profile")
-    .select("name")
-    .eq("id", row.profile_id)
-    .maybeSingle();
-  const profileName = (profile.data as { name: string } | null)?.name ?? DEFAULT_PROFILE;
-  const targets = fw.targetsForProfile(profileName);
 
   // Same rule as submit: the button is disabled until every active control has
   // an authoritative score, and the data layer says so too.
@@ -932,7 +921,7 @@ export async function approveAssessment(
     .map((c) => ({
       assessment_id: assessmentId,
       control_id: c.id as string,
-      target_level: targets.get(c.code) ?? c.target_level,
+      target_level: c.target_level,
     }));
 
   const frozen = await sb

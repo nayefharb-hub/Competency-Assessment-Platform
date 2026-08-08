@@ -98,7 +98,6 @@ function frameworkOf(spec) {
     competence_elements,
     controls,
     measures: [],
-    benchmarks: [],
     ce_targets,
   };
 }
@@ -111,7 +110,6 @@ function assessmentOf(scores, snapshot_targets = undefined) {
     assessee_name: "Test PM",
     assessee_role: "Project Manager",
     cycle: "2026",
-    profile: "Intermediate",
     profile_id: "p-id",
     state: "approved",
     scores: Object.entries(scores).map(([control_code, assessor_level]) => ({

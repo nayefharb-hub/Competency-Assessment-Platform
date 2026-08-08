@@ -120,7 +120,7 @@ export default async function ResultsPage({
               {assessment.assessee_name} — {assessment.assessee_role}
             </h3>
             <div className="sub">
-              Assessment cycle {assessment.cycle} · Benchmark: {assessment.profile} · Approved
+              Assessment cycle {assessment.cycle} · Approved
               {assessment.approved_at ? ` ${assessment.approved_at.slice(0, 10)}` : ""} ·{" "}
               {revised} control{revised === 1 ? "" : "s"} revised by the assessor
             </div>
