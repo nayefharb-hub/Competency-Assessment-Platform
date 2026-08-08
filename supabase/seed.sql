@@ -36,7 +36,13 @@ from public.framework f, (values
 ) as v(code, name, sort)
 where f.name = 'IPMA ICB4' and f.version = 'v4.0.1';
 
--- competence elements (target = APM published value, never computed) -------
+-- competence elements ------------------------------------------------------
+-- target_level is the APM PUBLISHED value, seeded and then never read: since
+-- 2026-08-08 the rollup computes a CE's target as the mean of its active control
+-- targets (rollup-spec §3). The column is kept as the recoverable anchor so the
+-- published bar survives if that decision is revisited.
+-- The same claim in migrations/0001_init.sql:58 is now false, and is deliberately
+-- NOT edited — a migration should record what actually ran.
 insert into public.competence_element (framework_id, area_id, code, name, target_level, sort_order)
 select f.id, a.id, v.code, v.name, v.target, v.sort
 from public.framework f

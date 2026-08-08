@@ -1001,8 +1001,16 @@ ad-hoc debugging, `/review` before landing, `/qa` against the running app,
    **Needs `/plan-design-review` on a written proposal before any code** —
    see pilot-feedback N25. Not blocking the pilot (nine people, one assessor),
    but it is the first question an auditor asks of a bank capability record.
-7. **CE targets do not re-point by benchmark profile.** Per-control targets do
-   (`targetsForProfile`), but CE targets are APM's published values for the
-   Intermediate profile, taken from the workbook's Results sheet. Anything other
-   than Intermediate needs published CE targets we do not have. Default is
-   Intermediate, so this does not bite yet.
+7. **CE targets now re-point by benchmark profile for APPROVED assessments —
+   mostly closed by the 2026-08-08 rollup change.** This item used to read *"CE
+   targets do not re-point by benchmark profile … anything other than Intermediate
+   needs published CE targets we do not have."* Since the CE target is the mean of
+   its control targets, and the approval snapshot is built from
+   `targetsForProfile(profile)`, an approved assessment's competency targets follow
+   its profile automatically — no published CE values are needed for any profile.
+   **What is still open, and it is narrower:** *before* approval, `controlTarget()`
+   falls back to the stored `control.target_level` rather than
+   `targetsForProfile()`, so an in-progress assessment on a non-default profile is
+   judged against stored targets. Pre-existing, unchanged by that diff, and out of
+   scope for the pilot — the default is Intermediate and there is one profile in
+   use.

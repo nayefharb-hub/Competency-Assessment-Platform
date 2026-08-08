@@ -48,10 +48,11 @@ const { data: controls, error } = await db
   .order("code");
 if (error) throw new Error(`Reading controls failed: ${error.message}`);
 
-/* Competency targets travel with the baseline even though the admin screen
-   cannot edit them (rollup.ts: "the APM published value, NEVER computed"). If
-   they are ever made editable, the record of what they were must already
-   exist — capturing them costs nothing and closes that gap in advance. */
+/* Competency targets travel with the baseline even though nothing reads them any
+   more: since 2026-08-08 the rollup computes a CE's target as the mean of its
+   active control targets (rollup-spec §3), and this column is only the recoverable
+   APM anchor. That is exactly why capturing it matters — it is now the ONLY live
+   record of the published bar, and capturing it costs nothing. */
 const { data: ces, error: ceErr } = await db
   .from("competence_element")
   .select("code, target_level")

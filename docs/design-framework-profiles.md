@@ -372,7 +372,15 @@ first time.
 Needs a competency-target editor — `saveControlAction` writes the `control`
 table only, and nothing in the app can set `competence_element.target_level`.
 Contained, but it changes a number the rollup depends on, so it wants
-`/plan-eng-review` and a `rollup-spec.md` amendment first: that file currently
-states *"target(CE) = the APM published value (NEVER computed or averaged)"*,
-which this recommendation directly contradicts. **Change the spec, then the
-code** — the file says so itself.
+`/plan-eng-review` and a `rollup-spec.md` amendment first: at the time this was
+written that file stated *"target(CE) = the APM published value (NEVER computed
+or averaged)"*, which this recommendation directly contradicted. **Change the
+spec, then the code** — the file says so itself.
+
+**Overtaken by events, 2026-08-08 (same day).** The owner reversed the rule
+instead: `target(CE)` is now the mean of the CE's active control targets
+(`rollup-spec.md` §3, spec first at `6a4be6c`, engine after
+`/plan-eng-review`). So the competency-target editor this section asks for is no
+longer needed — editing the control targets IS editing the competency target,
+and `competence_element.target_level` is retained only as the recoverable APM
+anchor. That removes a screen from this design rather than adding one.

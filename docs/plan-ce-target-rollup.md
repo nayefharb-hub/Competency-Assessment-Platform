@@ -204,8 +204,32 @@ All resolved in this document:
 10. Tests → new `scripts/rollup.test.mjs`, seven cases, the regression shown failing first (§6).
 
 All ten of the plan's own decisions are resolved. `/plan-eng-review` then opened five
-more — see the review report at the end of this file, which is the authoritative
-unresolved-decisions status.
+more, and the owner took the recommendation on all five on 2026-08-08 (*"for
+decisions, go ahead with your recommendations for all"*):
+
+| # | Decision | Landed as |
+|---|---|---|
+| D1 | **A** — rewrite the `CLAUDE.md` domain rule in this diff | control targets and competency targets split into two bullets; the reversal marked *do not restore* |
+| D2 | **A** — correct all eight editable stale claims now | `CLAUDE.md`, `docs/user-guide.md` (×2), `docs/eng-plan-*.md`, `docs/design-competency-*.md`, `docs/STATUS.md`, `supabase/seed.sql`, `scripts/framework-baseline.mjs`, plus `docs/design-framework-profiles.md` — nine sites, the ninth found on the re-grep |
+| D3 | **A** — leave the applied migration | `0001_init.sql:58` untouched; `seed.sql` states why and points at it |
+| D4 | **A** — repoint the e2e checks and add the §6 assertion | `scripts/e2e.mjs` no longer reads `competence_element.target_level`; three new checks on the running app |
+| D5 | **A** — epsilon on the half-level threshold | `HALF_LEVEL = 0.5 + 1e-9` in `lib/rollup.ts`, with the enumeration in the comment and a size-6 boundary unit test |
+
+Two of the plan's own numbers were corrected while building, both upward:
+
+- **§6 said seven test cases; sixteen shipped.** The engine had no unit tests at all,
+  so the file also had to cover `healthOf`'s three tiers, the escalation invariants,
+  the snapshot fallback for a control the snapshot omits, and `fmtLevel`.
+- **D2 said eight editable files; nine.** `docs/design-framework-profiles.md:376`
+  described the old rule in the present tense and asked for a competency-target
+  editor this change makes unnecessary. Found by re-grepping after the edits rather
+  than trusting the first list.
+
+Two of the sixteen tests were wrong on their first run and were fixed rather than
+accommodated: one asserted that `ceTargetOf` handed only inactive controls returns
+their mean (it returns `null` — the point is that the filter is inside), and one used
+a fixture whose published value equalled the computed mean, so it passed against the
+old rule for a coincidental reason.
 
 ---
 
@@ -274,23 +298,41 @@ post-approval deactivation (pre-existing, documented caveat).
 subagent fallback was not dispatched in this session. Recorded rather than reported
 as a pass that was not earned.
 
+## What shipped, and how it was verified
+
+| Evidence | Result |
+|---|---|
+| `scripts/rollup.test.mjs` on `6a4be6c`, engine unchanged | **9 of 16 RED**, headline: `CE target is the mean of its control targets: expected ~2.6666666666666665, got 3` |
+| Same file after the engine change | 16 / 16 green |
+| `npm run test:unit` | **146 passed / 0 failed** (was 130) |
+| `npx tsc --noEmit` | clean — the `Level → number` widening surfaced no missed call site |
+| `npm run e2e` local, clean production build, fresh server log | **420 passed / 0 failed** (was 417) |
+| Round-trip budgets | 5 warm commit + navigation, 3 on completion — both still asserted, both green |
+| The defect itself, recomputed from the **live database** | the 4 competencies named in §2 now read Role Ready for a PM who hit every control target: 4.3.1 (3 → 2.6), 4.3.2 (3 → 2.7), 4.3.3 (3 → 2.8), 4.5.8 (3 → 2.6). 6 of 28 targets are genuinely fractional, so the one-decimal display is load-bearing rather than cosmetic. |
+
+The red baseline is the part that counts. Ground rule 0 exists because a test written
+first that has never failed proves only that it agrees with the code in front of it —
+and the first run here failed on a missing export, which is a broken file and not a red
+test. The pure helper was added on its own first (a change that alters no behaviour),
+which is what let the nine failures be about arithmetic.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES_OPEN (PLAN) | 5 issues, 3 critical gaps |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 5 issues, all folded; 3 critical gaps, 2 closed by test + 1 documented |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-**VERDICT:** NOT CLEARED — eng review required. Architecture and performance are sound
-and the approach is accepted as-is; five findings are open, all with recommendations,
-none requiring a redesign.
+**VERDICT:** ENG CLEARED — architecture and performance sound, all five findings
+answered with the owner's approval, 146 unit + 420 e2e green.
 
-**UNRESOLVED DECISIONS:**
-- D1 — `CLAUDE.md:122` rewrite in this diff (rec: A, rewrite the domain rule) vs leave it
-- D2 — correct all eight editable stale doc claims now (rec: A) vs a follow-up vs plan-only
-- D3 — applied migration comment: leave and correct the seed (rec: A) vs edit the migration
-- D4 — repoint `scripts/e2e.mjs:2065`/`:2091` plus add the snapshot assertion (rec: A) vs add only
-- D5 — float-safe 0.5 boundary: epsilon (rec: A) vs round-then-compare vs leave and re-measure
+Two gates remain before merge and neither is claimed here: `/review` on the diff, and
+`/qa` against the Vercel preview. `/cso` does not apply — no auth, session, storage or
+allowlist code is touched. The **outside voice did not run** (Codex absent from this
+container, subagent fallback not dispatched); that is a missing second opinion, not a
+passed one.
+
+NO UNRESOLVED DECISIONS

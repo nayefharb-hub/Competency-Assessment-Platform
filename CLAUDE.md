@@ -118,8 +118,19 @@ once already. None of them is a preference.
   underneath. Build the scale as a swappable module (a PDCF variant may be added later).
 - Scores: `self_level` (PM) and `assessor_level` (authoritative, shows in results).
   The assessor reviews and revises — accept as-is or override specific controls.
-- Targets come from the selected APM benchmark profile (default Intermediate).
-  Targets are **not** rolled up or averaged; they are published values.
+- **CONTROL** targets come from the selected APM benchmark profile (default
+  Intermediate) — published values, never computed.
+- **COMPETENCY** targets ARE rolled up: `target(CE) = mean of its ACTIVE control
+  targets` (owner, 2026-08-08, for the pilot). **This line said the opposite until
+  that date and the reversal is deliberate — do not restore it.** The two numbers
+  were seeded from separate sources and drifted, so 4 of 28 competencies handed a
+  Minor Gap to a PM who had hit every single control target. Full reasoning, the
+  evidence that retired the old circularity objection, and the cost accepted are
+  in `docs/rollup-spec.md` §3. `competence_element.target_level` is retained in
+  the database as the recoverable APM anchor and is read by nothing.
+  Consequence for scoping: use `active`, **not** a low target, for a control that
+  is not the role's job at all — an inactive control leaves the rollup entirely
+  rather than sitting in the mean dragging the bar down.
 - Rollup per competence element: **mean of assessor scores across active controls**,
   with the **weakest control** shown alongside.
 - Health: Role Ready (at/above target) · Minor Gap (within half a level below) ·

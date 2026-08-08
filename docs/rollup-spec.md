@@ -126,6 +126,14 @@ automatically historical, by construction rather than by a second mechanism that
 could drift from the first. Compute it from the SNAPSHOT for approved
 assessments, never from the live framework.
 
+**One limit on "by construction", stated rather than implied.** The snapshot
+freezes each control's `target_level`; it does not freeze `active`. So
+deactivating a control after an assessment is approved moves that assessment's
+CE target — and has always moved its `actual` the same way. This is pre-existing
+and unchanged, not a consequence of §3, and it is out of scope for the pilot:
+the fix is to snapshot the active flag alongside the target, which is a schema
+change and deserves its own review.
+
 ### 7. Presentation rules
 - Numbers on results charts use the **0–5 scale — never percentages**. Converting a
   6-point label scale to a percentage implies equal intervals that don't exist.

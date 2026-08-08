@@ -5,6 +5,7 @@ import {
   controlsHref, editorHref, filteredControls, isFiltered, parseControlFilter, valuesInUse,
   type ControlFilterParams,
 } from "@/lib/control-filter";
+import { fmtLevel } from "@/lib/rollup";
 
 export const dynamic = "force-dynamic";
 
@@ -192,7 +193,10 @@ export default async function AdminControlsIndex({
                   })()}
                   {(() => {
                     const t = fw.data.ce_targets.find((x) => x.ce_code === g.ce.code)?.target;
-                    return t == null ? "" : ` · competency target ${t}`;
+                    // One decimal: this is the mean of the control targets below
+                    // it (rollup-spec §3), and a whole number would imply a
+                    // precision the figure does not have.
+                    return t == null ? "" : ` · competency target ${fmtLevel(t)}`;
                   })()}
                 </span>
               </div>

@@ -209,9 +209,12 @@ After you submit:
 
 - **Your level** — the mean of the assessor's scores across the active controls
   in that element.
-- **The target** — the published APM benchmark for the profile you are assessed
-  against (Intermediate by default). Targets are published values; they are
-  never averaged or derived.
+- **The target** — the average of the targets set for the active controls in that
+  element. Each *control* target is a published value, taken from the APM
+  benchmark for the profile you are assessed against (Intermediate by default);
+  the element's target is the mean of them, shown to one decimal (`2.7`). So if
+  you meet the target on every control in an element, you are at the element's
+  target too — the two can never disagree.
 - **The weakest control** — the single lowest-scored control in that element,
   named. An element can sit at target overall and still contain one control that
   needs work; this is where you see it.
@@ -342,7 +345,10 @@ keep the targets frozen at approval.
   KIB's own clarifications are added in a separate field alongside it, never on
   top of it.
 - **It never shows a PM their target while they self-score.**
-- **It never rolls up or averages a target.** Targets are published values.
+- **It never invents a target.** Every *control* target is a published value from
+  the APM benchmark profile, and a *competency* target is the average of those —
+  arithmetic on published numbers, never a figure someone typed in at the
+  competency level.
 - **It never issues a pass, a fail, or a ranking.** It reports capability
   against a profile and shows where the gaps are. What to do about them is a
   conversation, not an output.

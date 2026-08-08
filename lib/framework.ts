@@ -20,6 +20,7 @@
  */
 import "server-only";
 import { phase } from "./perf";
+import { ceTargetOf } from "./rollup";
 import { db, unwrap } from "./supabase/server";
 import type {
   Area, AreaName, Benchmark, CeTarget, CompetenceElement, Control, Framework,
@@ -293,9 +294,16 @@ async function loadFramework(): Promise<FrameworkApi> {
     };
   });
 
+  // Grouped ONCE. The CE target needs every control of an element (ceTargetOf
+  // applies the active rule itself), and filtering fw.controls per element would
+  // walk all 133 rows 28 times for a number that is computed on every load.
   const activeByCe = new Map<string, number>();
+  const controlsByCe = new Map<string, Control[]>();
   for (const c of controls) {
     if (c.active) activeByCe.set(c.ce_code, (activeByCe.get(c.ce_code) ?? 0) + 1);
+    const list = controlsByCe.get(c.ce_code);
+    if (list) list.push(c);
+    else controlsByCe.set(c.ce_code, [c]);
   }
 
   const competenceElements: CompetenceElement[] = ceRows.map((ce) => ({
@@ -308,13 +316,23 @@ async function loadFramework(): Promise<FrameworkApi> {
 
   const areas: Area[] = areaRows.map((a) => ({ code: a.code, name: a.name as AreaName }));
 
-  // CE targets are APM PUBLISHED values, stored per element. Never computed.
+  /*
+   * CE targets are COMPUTED — the mean of the element's active control targets
+   * (rollup-spec §3). This used to read `competence_element.target_level`, the
+   * APM published value; that column is retained as the recoverable anchor and is
+   * no longer read by anything.
+   *
+   * Same `ceTargetOf` the rollup engine uses, on purpose. These are the LIVE
+   * values, which is what the framework screens should show; the results engine
+   * calls it again with the approval snapshot, which is a question only it can
+   * answer. One formula, two sets of inputs.
+   */
   const ceTargets: CeTarget[] = ceRows.map((ce) => ({
     area: areaById.get(ce.area_id) ?? "Practice",
     ce_code: ce.code,
     ce_name: ce.name,
     active_controls: activeByCe.get(ce.code) ?? 0,
-    target: asLevel(ce.target_level),
+    target: ceTargetOf(controlsByCe.get(ce.code) ?? [], (c) => c.target_level),
   }));
 
   // benchmark grid, one row per APM competence across the four profiles

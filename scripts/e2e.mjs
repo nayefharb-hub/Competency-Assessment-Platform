@@ -2048,6 +2048,55 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     matched === byCe.size, `${matched}/${byCe.size}`);
 
   /*
+   * The TARGET column, recomputed from the database the same way (rollup-spec §3).
+   * Nothing asserted this before the rule changed — the section checked the actual
+   * mean only — so the number that decides every verdict on this page had no
+   * coverage on the running app at all.
+   *
+   * This assessment is APPROVED by now, so the targets come from target_snapshot,
+   * not from `control`. That is what makes this a §6 check as well as a §3 one.
+   *
+   * What it deliberately does NOT do: bump a live control target and assert the
+   * page does not move. That would pass for an accidental reason — the framework
+   * memo (10 min, per instance, invalidated only by an admin save) would hide a
+   * direct database write regardless of whether the snapshot was honoured. The
+   * snapshot-beats-live distinction is asserted in scripts/rollup.test.mjs, where
+   * it can be tested honestly.
+   */
+  {
+    const { data: snapRows } = await db.from("target_snapshot")
+      .select("target_level, control:control_id(code, active, competence_element:ce_id(code))")
+      .eq("assessment_id", assessmentId).limit(5000);
+    const targetByCe = new Map();
+    for (const s of snapRows ?? []) {
+      const c = s.control;
+      if (!c?.active || s.target_level === null) continue;
+      const list = targetByCe.get(c.competence_element.code) ?? [];
+      list.push(s.target_level);
+      targetByCe.set(c.competence_element.code, list);
+    }
+    check("snapshot covers all 28 competence elements", targetByCe.size === 28, `${targetByCe.size}`);
+
+    let tMatched = 0;
+    const misses = [];
+    for (const [code, levels] of targetByCe) {
+      const target = (levels.reduce((s, n) => s + n, 0) / levels.length).toFixed(1);
+      const row = shown.find((t) => t.includes(`${code} ·`) || t.includes(`${code}\n`));
+      if (row && row.includes(`/ ${target}`)) tMatched++;
+      else misses.push(`${code} wanted / ${target}`);
+    }
+    check("every CE target on the page equals mean(SNAPSHOT target over active controls)",
+      tMatched === targetByCe.size, `${tMatched}/${targetByCe.size} ${JSON.stringify(misses.slice(0, 3))}`);
+
+    // A fraction must actually reach the screen, or the whole change is invisible:
+    // 6 of 28 competencies have a mean their old published integer never equalled.
+    const fractional = [...targetByCe.values()]
+      .filter((ls) => (ls.reduce((s, n) => s + n, 0) / ls.length) % 1 !== 0).length;
+    check("at least one CE target is genuinely fractional, so one decimal is load-bearing",
+      fractional > 0, `${fractional} of ${targetByCe.size}`);
+  }
+
+  /*
    * The escalation case, constructed on purpose (STATUS.md open item 3).
    *
    * A CE whose mean sits ABOVE its target can still read "Capability Deficit"
@@ -2060,9 +2109,20 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   const { data: ceRows } = await db.from("competence_element")
     .select("id, code, target_level, control(id, code, active, target_level)")
     .limit(200);
+  /*
+   * ceTarget is the MEAN of the active control targets, which is what the page
+   * shows (rollup-spec §3). This used to read `ce.target_level`, the APM
+   * published integer — and after the rule changed on 2026-08-08 that check went
+   * on PASSING while comparing against a number no longer on screen, because the
+   * constructed mean (~4.4) clears any target either way. A green check that has
+   * quietly stopped asserting its own claim is worse than a missing one, so the
+   * column is not read here at all.
+   */
+  const meanOf = (xs) => xs.reduce((s, n) => s + n, 0) / xs.length;
   const fat = (ceRows ?? [])
     .map((ce) => ({ ...ce, actives: (ce.control ?? []).filter((c) => c.active && c.target_level !== null) }))
-    .filter((ce) => ce.target_level !== null && ce.actives.length >= 5)
+    .filter((ce) => ce.actives.length >= 5)
+    .map((ce) => ({ ...ce, ceTarget: meanOf(ce.actives.map((c) => c.target_level)) }))
     .sort((a, b) => b.actives.length - a.actives.length)[0];
 
   if (!fat) {
@@ -2088,7 +2148,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     const mean = (5 * (fat.actives.length - 1) + low) / fat.actives.length;
     check("constructed mean clears the CE target, so the badge looks contradictory",
-      mean >= fat.target_level, `mean ${mean.toFixed(2)} vs target ${fat.target_level}`);
+      mean >= fat.ceTarget, `mean ${mean.toFixed(2)} vs target ${fat.ceTarget.toFixed(2)}`);
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of

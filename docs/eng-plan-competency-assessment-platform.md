@@ -103,8 +103,13 @@ view of the assessor's scoring, and the results page renders only once approved.
 Authoritative spec = the Excel `Results`, `Scale`, `Framework` sheets.
 - **Actual (per CE)** = mean of `assessor_level` across the CE's **active** controls.
 - **Weakest control** shown alongside the mean (so one serious gap isn't averaged away).
-- **Targets are not rolled up** — CE target = APM published value; where a CE spans
-  two APM competences with different values, show the dominant value.
+- **Control targets are not rolled down; CE targets ARE rolled up.** CE target =
+  mean of the CE's active control targets (**changed 2026-08-08**, owner's
+  decision for the pilot — this line previously read *"Targets are not rolled up
+  — CE target = APM published value; where a CE spans two APM competences with
+  different values, show the dominant value."*). The dominant-value rule is gone
+  with it: a CE spanning two APM competences now averages what its controls
+  actually carry instead of picking a winner. Reasoning in `docs/rollup-spec.md` §3.
 - **3-tier health:** Role Ready = actual ≥ CE target · Minor Gap = within half a
   level below · Capability Deficit = more than half a level below target OR any
   single control ≥ 2 levels below its own target.

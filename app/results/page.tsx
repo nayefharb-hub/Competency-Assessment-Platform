@@ -60,7 +60,7 @@ function Bar({ r }: { r: CeResult }) {
       </div>
       <div className="val">
         <b className="tnum">{fmtLevel(r.actual)}</b>{" "}
-        <span className="muted tnum">/ {r.target ?? "—"}</span>{" "}
+        <span className="muted tnum">/ {fmtLevel(r.target)}</span>{" "}
         <HealthPill health={r.health} />
       </div>
     </div>
