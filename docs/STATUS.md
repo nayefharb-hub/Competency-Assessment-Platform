@@ -16,16 +16,28 @@ the admin table show competency targets to one decimal.
 `competence_element.target_level` is retained as the recoverable APM anchor and is
 read by nothing.
 
-**Gate state for `fae57c3`:** 146 unit and 420 local e2e green, budgets still 5 and
-3. `/review` **ran** on the diff and produced two findings, both latent and both
-fixed as comments at the lines a future change would touch (`fae57c3`): the
-redaction in `getAssesseeFramework()` no longer covers the rollup now that the CE
-target is computed from a snapshot that is not redacted, and the `gap <= 0` Role
-Ready test must NOT inherit `HALF_LEVEL`'s epsilon. `/qa` **ran** against the
-preview at `fae57c3` — deployment SHA confirmed before trusting the run — **414
-passed / 0 failed / 3 SKIPPED**. The three skips read the server log and cannot run
-remotely (**a skip is not a pass**); all three are green locally. `/cso` does not
-apply.
+**Gate state for `45b7cc7`:** all three gates have run. **152 unit** and **420
+local e2e** green with budgets at 5 and 3; **preview 414 passed / 0 failed / 3
+SKIPPED**, deployment SHA confirmed as `45b7cc7` before the run was trusted. The
+three skips read the server log and cannot run remotely (**a skip is not a
+pass**); all three are green locally. `/cso` does not apply.
+
+- **`/review`** found two latent traps and both are recorded as comments at the
+  lines a future change would touch: redaction no longer covers the rollup (the
+  snapshot is not redacted), and the `gap <= 0` Role Ready test must NOT inherit
+  `HALF_LEVEL`'s epsilon.
+- **The outside voice** (Claude subagent) found more than either gate, because it
+  attacked the *tests* and read the code the diff did **not** touch. **8 of 12
+  mutations of `lib/rollup.ts` survived the 16 new tests** — three of them
+  producing visibly wrong output. Six tests added, each confirmed to fail against
+  its own mutation; re-audit killed 7 of 8, the survivor being an equivalent
+  mutant. It also found a **second copy of the health thresholds** in
+  `app/results/page.tsx` that the epsilon fix had left behind, making the copy
+  more exposed than the original — now routed through `healthOf`. And five false
+  doc claims, three written by this arc's own commits.
+- **N53 filed, not fixed:** benchmark profiles have never worked
+  (`targetsForProfile` joins on mismatched `apm_competence` formats, overlap zero
+  against the live database). Pre-existing, not pilot-blocking, own diff.
 
 **What `/qa` does not cover, stated so nobody reads more into it.** The suite now
 asserts the CE target *on the rendered page* and that at least one is genuinely
