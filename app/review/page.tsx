@@ -2,6 +2,7 @@ import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
 import { completionStats, listAssessments, loadAssessment } from "@/lib/db/assessment";
+import { fmtLevel } from "@/lib/rollup";
 import { acceptAllAction, approveAction, saveRevisionsAction } from "@/app/actions";
 import type { Assessment, CompletionStats } from "@/lib/types";
 
@@ -49,7 +50,7 @@ export default async function ReviewPage({
         <h2>Review &amp; revise — {assessment.assessee_name}</h2>
         <span className="rule" />
         <span className="eyebrow">
-          cycle {assessment.cycle} · {assessment.profile} profile
+          cycle {assessment.cycle}
         </span>
       </div>
 
@@ -108,7 +109,7 @@ export default async function ReviewPage({
             <div key={g.ce.code} style={{ marginTop: 18 }}>
               <div className="eyebrow" style={{ marginBottom: 6 }}>
                 {g.ce.code} {g.ce.name} · target{" "}
-                {fw.data.ce_targets.find((t) => t.ce_code === g.ce.code)?.target ?? "—"}
+                {fmtLevel(fw.data.ce_targets.find((t) => t.ce_code === g.ce.code)?.target ?? null)}
               </div>
               {g.controls.map((c) => {
                 const s = scores.get(c.code);
@@ -119,7 +120,7 @@ export default async function ReviewPage({
                   <div className="rrow" key={c.code}>
                     <div className="rcode tnum">{c.code}</div>
                     <div>
-                      <div style={{ fontSize: 14.5, fontWeight: 600 }}>{c.indicator}</div>
+                      <div style={{ fontSize: "var(--fs-prose)", fontWeight: 600 }}>{c.indicator}</div>
                       <div className="note" style={{ marginTop: 3 }}>
                         PM self-scored{" "}
                         <b className="tnum">
@@ -157,7 +158,7 @@ export default async function ReviewPage({
                         ) : assessor !== null ? (
                           <span className="prefilled">Pre-filled from self-score</span>
                         ) : (
-                          <span className="muted" style={{ fontSize: 11.5 }}>Not set</span>
+                          <span className="muted" style={{ fontSize: "var(--fs-label)" }}>Not set</span>
                         )}
                         {changed && (
                           <span className="note">

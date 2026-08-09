@@ -20,15 +20,29 @@
  */
 import "server-only";
 import { phase } from "./perf";
+import { ceTargetOf } from "./rollup";
 import { db, unwrap } from "./supabase/server";
 import type {
-  Area, AreaName, Benchmark, CeTarget, CompetenceElement, Control, Framework,
+  Area, AreaName, CeTarget, CompetenceElement, Control, Framework,
   Level, Measure, Priority, Scale, ScaleLevel,
 } from "./types";
 
 const FRAMEWORK_NAME = "IPMA ICB4";
 const FRAMEWORK_VERSION = "v4.0.1";
-/** APM benchmark profile applied when an assessment does not name one. */
+/**
+ * The profile stamped on every new assessment. `assessment.profile_id` is NOT
+ * NULL, so a row is still needed; nothing reads the profile's published targets.
+ *
+ * Selecting a profile was never wired up at either end (N53): there is no UI to
+ * choose one, and `targetsForProfile` joined `control.apm_competence`
+ * ('5 Business case') against `benchmark_target.apm_competence`
+ * ('Business case') — overlap zero, so every profile resolved to the stored
+ * `control.target_level`. That dead path is removed rather than left to read
+ * like a working feature. The published rows stay in the database: they are the
+ * expensive part to re-source, and keeping 116 rows nothing queries costs
+ * nothing. Re-adding the feature means writing the join correctly AND deciding
+ * whether approval should overwrite hand-edited targets — see docs/pilot-feedback.md N53.
+ */
 export const DEFAULT_PROFILE = "Intermediate";
 
 export interface BenchmarkProfile {
@@ -62,13 +76,6 @@ export interface FrameworkApi {
   /** 1-based position of a control within the ordered active controls */
   controlPosition(code: string): number;
   neighbours(code: string): { prev?: Control; next?: Control };
-  /**
-   * Per-control target level for a benchmark profile. Selecting a profile
-   * re-points every control that maps to an APM competence; controls whose
-   * target was derived from priority rather than published by APM keep their
-   * stored value.
-   */
-  targetsForProfile(profileName: string): Map<string, Level | null>;
 }
 
 /* ------------------------------------------------------------------ rows */
@@ -89,7 +96,6 @@ interface ScaleLevelRow {
   level: number; label: string; knowledge: string | null;
   application: string | null; kib_gloss: string | null;
 }
-interface TargetRow { profile_id: string; apm_competence: string; level: number | null }
 
 /**
  * The single nested response, as PostgREST returns it: the same rows as before,
@@ -101,7 +107,7 @@ interface NestedFramework {
   competence_area: AreaRow[] | null;
   competence_element: CeRow[] | null;
   control: (ControlRow & { measure: MeasureRow[] | null })[] | null;
-  benchmark_profile: (BenchmarkProfile & { benchmark_target: TargetRow[] | null })[] | null;
+  benchmark_profile: BenchmarkProfile[] | null;
 }
 
 const asLevel = (n: number | null | undefined): Level | null =>
@@ -198,8 +204,10 @@ async function fetchFrameworkRows() {
           "control(id, ce_id, code, indicator, description, active, priority, reason," +
             " kib_note, apm_competence, target_level, target_source, sort_order," +
             " measure(control_id, seq, text))",
-          "benchmark_profile(id, name, sort_order," +
-            " benchmark_target(profile_id, apm_competence, level))",
+          // Profiles are still read: assessment.profile_id is NOT NULL, so
+          // assignCycle needs an id to write. Their published per-competence
+          // targets are NOT read by anything — see the note on DEFAULT_PROFILE.
+          "benchmark_profile(id, name, sort_order)",
         ].join(","),
       )
       .eq("name", FRAMEWORK_NAME)
@@ -233,14 +241,13 @@ async function fetchFrameworkRows() {
       (nested.control ?? []).flatMap((c) => c.measure ?? []),
       (m) => m.seq,
     ),
-    targetRows: (nested.benchmark_profile ?? []).flatMap((p) => p.benchmark_target ?? []),
   };
 }
 
 async function loadFramework(): Promise<FrameworkApi> {
   const {
     fw, scaleRow, levelRows, areaRows, ceRows, controlRows, profileRows,
-    measureRows, targetRows,
+    measureRows,
   } = await fetchFrameworkRows();
 
   /* ---- assemble the domain shape the screens already expect ---- */
@@ -293,9 +300,16 @@ async function loadFramework(): Promise<FrameworkApi> {
     };
   });
 
+  // Grouped ONCE. The CE target needs every control of an element (ceTargetOf
+  // applies the active rule itself), and filtering fw.controls per element would
+  // walk all 133 rows 28 times for a number that is computed on every load.
   const activeByCe = new Map<string, number>();
+  const controlsByCe = new Map<string, Control[]>();
   for (const c of controls) {
     if (c.active) activeByCe.set(c.ce_code, (activeByCe.get(c.ce_code) ?? 0) + 1);
+    const list = controlsByCe.get(c.ce_code);
+    if (list) list.push(c);
+    else controlsByCe.set(c.ce_code, [c]);
   }
 
   const competenceElements: CompetenceElement[] = ceRows.map((ce) => ({
@@ -308,34 +322,24 @@ async function loadFramework(): Promise<FrameworkApi> {
 
   const areas: Area[] = areaRows.map((a) => ({ code: a.code, name: a.name as AreaName }));
 
-  // CE targets are APM PUBLISHED values, stored per element. Never computed.
+  /*
+   * CE targets are COMPUTED — the mean of the element's active control targets
+   * (rollup-spec §3). This used to read `competence_element.target_level`, the
+   * APM published value; that column is retained as the recoverable anchor and is
+   * no longer read by anything.
+   *
+   * Same `ceTargetOf` the rollup engine uses, on purpose. These are the LIVE
+   * values, which is what the framework screens should show; the results engine
+   * calls it again with the approval snapshot, which is a question only it can
+   * answer. One formula, two sets of inputs.
+   */
   const ceTargets: CeTarget[] = ceRows.map((ce) => ({
     area: areaById.get(ce.area_id) ?? "Practice",
     ce_code: ce.code,
     ce_name: ce.name,
     active_controls: activeByCe.get(ce.code) ?? 0,
-    target: asLevel(ce.target_level),
+    target: ceTargetOf(controlsByCe.get(ce.code) ?? [], (c) => c.target_level),
   }));
-
-  // benchmark grid, one row per APM competence across the four profiles
-  const profileNameById = new Map(profileRows.map((p) => [p.id, p.name]));
-  const grid = new Map<string, Record<string, number | null>>();
-  for (const t of targetRows) {
-    const row = grid.get(t.apm_competence) ?? {};
-    row[profileNameById.get(t.profile_id) ?? "?"] = t.level;
-    grid.set(t.apm_competence, row);
-  }
-  const benchmarks: Benchmark[] = [...grid.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([apm, row], i) => ({
-      no: i + 1,
-      apm_competence: apm,
-      // null in the database means APM marks this competence not relevant here
-      entry: row.Entry ?? null,
-      intermediate: row.Intermediate ?? null,
-      advanced: row.Advanced ?? null,
-      master: row.Master ?? null,
-    }));
 
   const data: Framework = {
     source_file: `supabase://${FRAMEWORK_NAME} ${FRAMEWORK_VERSION}`,
@@ -345,31 +349,12 @@ async function loadFramework(): Promise<FrameworkApi> {
     competence_elements: competenceElements,
     controls,
     measures,
-    benchmarks,
     ce_targets: ceTargets,
   };
-
-  // targets by profile, so approval can snapshot the values actually applied
-  const targetsByProfile = new Map<string, Map<string, Level | null>>();
-  for (const p of profileRows) {
-    const byCompetence = new Map<string, Level | null>();
-    for (const t of targetRows) {
-      if (t.profile_id === p.id) byCompetence.set(t.apm_competence, asLevel(t.level));
-    }
-    const byControl = new Map<string, Level | null>();
-    for (const c of controls) {
-      const published = c.apm_competence ? byCompetence.get(c.apm_competence) : undefined;
-      // published wins; a control whose target was derived from priority
-      // (target_source 'Derived (priority rule)') keeps its stored value
-      byControl.set(c.code, published !== undefined ? published : c.target_level);
-    }
-    targetsByProfile.set(p.name, byControl);
-  }
 
   return buildApi(data, {
     profiles: profileRows,
     glosses,
-    targetsByProfile,
     controlIds: new Map(controls.map((c) => [c.code, c.id as string])),
   });
 }
@@ -381,7 +366,6 @@ function buildApi(
   extra: {
     profiles: BenchmarkProfile[];
     glosses: Map<number, string>;
-    targetsByProfile: Map<string, Map<string, Level | null>>;
     controlIds: Map<string, string>;
   },
 ): FrameworkApi {
@@ -426,10 +410,6 @@ function buildApi(
       if (i === undefined) return {};
       return { prev: activeControls[i - 2], next: activeControls[i] };
     },
-    targetsForProfile: (name) =>
-      extra.targetsByProfile.get(name) ??
-      extra.targetsByProfile.get(DEFAULT_PROFILE) ??
-      new Map(data.controls.map((c) => [c.code, c.target_level])),
   };
 }
 
@@ -442,6 +422,15 @@ function buildApi(
  *
  * This is the security boundary the eng plan calls critical: it lives in the
  * data layer so no page, action or serialized prop can leak past it.
+ *
+ * ONE THING IT DOES NOT COVER, since the CE target became computed (2026-08-08):
+ * the ROLLUP no longer reads `ce_targets[].target`, so nulling it here does not
+ * stop `rollupCe` deriving a CE target — and for an approved assessment it
+ * derives one from `target_snapshot`, which lives on the assessment and is not
+ * redacted by anything in this module. Redacting the framework is therefore not
+ * sufficient to hide targets from a rollup. Nothing leaks today because the only
+ * screen that rolls up is `/results`, which uses the full framework deliberately
+ * and only after approval. See the note on `controlTarget` in lib/rollup.ts.
  */
 export async function getAssesseeFramework(): Promise<FrameworkApi> {
   const full = await getFramework();
@@ -457,12 +446,10 @@ export async function getAssesseeFramework(): Promise<FrameworkApi> {
       target_source: null,
     })),
     ce_targets: full.data.ce_targets.map((t) => ({ ...t, target: null })),
-    benchmarks: [],
   };
   return buildApi(redacted, {
     profiles: full.profiles,
     glosses: new Map(full.scaleLevels.map((l) => [l.level, full.glossOf(l.level)])),
-    targetsByProfile: new Map(),
     controlIds: new Map(
       full.data.controls.map((c) => [c.code, full.controlIdByCode(c.code) as string]),
     ),

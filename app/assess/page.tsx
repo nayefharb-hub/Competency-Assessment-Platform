@@ -7,7 +7,7 @@ import { getAssesseeFramework } from "@/lib/framework";
 import {
   currentCycle, findArchivedAssessment, findAssessmentWithScores,
 } from "@/lib/db/assessment";
-import { nextAfter, scoredCodes, shapeOf } from "@/lib/shape";
+import { ceContextAt, owedAfter, scoredCodes, shapeOf } from "@/lib/shape";
 import NotAssigned from "./not-assigned";
 import ScorePanel from "./score-panel";
 
@@ -71,9 +71,7 @@ export default async function AssessPage({
      client redirect. First unanswered is the fallback when there is no cookie
      (new device, cleared browser), which is also the sensible answer for
      someone starting out. */
-  const scored = new Set(
-    scores.filter((s) => s.self_level !== null).map((s) => s.control_code),
-  );
+  const scored = scoredCodes(scores);
   const firstUnanswered = fw.activeControls.find((ac) => !scored.has(ac.code));
   const remembered = (await cookies()).get("cap.last")?.value;
   const resume = (remembered && fw.controlByCode(remembered)?.active ? remembered : null)
@@ -90,17 +88,65 @@ export default async function AssessPage({
   const pos = fw.controlPosition(code);
   const { prev, next } = fw.neighbours(code);
 
-  /* Where "Next" goes at the end of a competence element (D25). A CE is the
-     sitting, so its last control does not walk into the next CE's first —
-     finishing is a moment, and continuing is a choice. The last CE of an area
-     steps up one further. shapeOf() derives this in memory from data already
-     fetched; no extra round trip on the path two PRs were spent making fast. */
-  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, new Set(scored),
+  /* What sits at the end of a competence element (D25, revised by N32). A CE is
+     still the sitting and finishing it is still a moment — but the moment now
+     happens IN PLACE, and Continue carries the run into the next competency
+     rather than ejecting the PM to a list 28 times per assessment. Everything
+     derived below reports COUNTS and never decides completeness; the client
+     adds the answers the server has not seen. shapeOf() derives all of it in
+     memory from data already fetched — no extra round trip on the path two PRs
+     were spent making fast. */
+  const areas = shapeOf(fw.activeControls, fw.ceOf, fw.data.measures, scored,
     fw.data.areas.map((a) => a.name));
-  const boundary = nextAfter(areas, control);
+  /* ALWAYS, not only at a competency's last control (N38/N40). The button has
+     to name what the click COMPLETES, and completion is a fact about answers
+     rather than about position — so the panel needs this competency's controls
+     wherever the PM is standing in it. `ceContextAt` derives it from `areas`,
+     which is already in memory; no round trip moves. */
+  const milestone = ceContextAt(areas, control);
+  /* Where "I have finished something, take me on" should go. Not the next
+     control — that is `next` below, and it stays right while walking forward —
+     but the next control still UNANSWERED, wrapping past the end to holes left
+     behind. Several, because the server's list is one answer behind and the
+     client is the only thing that knows what it is holding. */
+  const owed = owedAfter(areas, scored, control);
+
+  /* The PM's answers for the competency they are in. No new query:
+     findAssessmentWithScores already returned every score for the assessment in
+     one embedded select, so this is a lookup over data in hand.
+
+     Now built at EVERY control rather than only at a competency's last one. The
+     old guard existed because the map was read only by the milestone card, and
+     four of five loads allocated it for nothing; since N38/N40 the button reads
+     it too, at every control, to know what this click completes. The allocation
+     is bounded by the competency — 3 to 6 entries, never 132 — so the reason
+     for the guard went away with the reason for the map. */
+  const ceLevels: Record<string, number | null> = {};
+  if (milestone) {
+    const byCode = new Map(scores.map((s) => [s.control_code, s.self_level ?? null]));
+    for (const c of milestone.controls) ceLevels[c.code] = byCode.get(c.code) ?? null;
+  }
+
+  /* E4 — where the PM is inside THIS competency, so the nearest natural
+     stopping point is always visible. Same in-memory shape, no extra cost. */
+  const here = areas.find((a) => a.name === control.area)?.ces
+    .find((c) => c.code === control.ce_code);
+  const ceProgress = here
+    ? {
+        /* POSITION, not answered-count. "3 of 5 in this competency" has to mean
+           "you are on the third of five", which is what tells a PM how far the
+           nearest stopping point is. An answered-count would jump around when
+           they skip, and read as progress they have not made.
+
+           The name and code are NOT carried here — the heading below renders
+           them from `fw.ceOf`, and two sources for one fact is the defect this
+           whole change set exists to remove. */
+        position: here.controls.findIndex((c) => c.code === control.code) + 1,
+        total: here.controls.length,
+      }
+    : null;
 
   const score = scores.find((s) => s.control_code === code);
-  const answered = scores.filter((s) => s.self_level !== null).length;
   const locked = row.state !== "draft";
 
   return (
@@ -109,10 +155,18 @@ export default async function AssessPage({
         <Link className="btn btn-secondary btn-sm" href={`/assess/area/${encodeURIComponent(control.area)}`}>
           ← {control.area}
         </Link>
+        {/* "N scored so far" used to sit here. It was dropped when the
+            milestone stopped navigating: this line is rendered by the server,
+            the milestone now appears without a navigation, and the save action
+            deliberately calls no revalidatePath — so the count sat one behind
+            reality, on screen, directly above a card announcing the competency
+            was complete. The competency-scoped "3 of 5" added below does the
+            orientation job better and locally, and the assessment-wide count
+            still leads the hub and the controls list, which are the screens
+            whose job is reporting progress. */}
         <span className="note">
           Control <b className="tnum">{pos}</b> of{" "}
-          <b className="tnum">{fw.activeControls.length}</b> ·{" "}
-          <b className="tnum">{answered}</b> scored so far · you can jump back to any control
+          <b className="tnum">{fw.activeControls.length}</b> · you can jump back to any control
         </span>
       </div>
 
@@ -132,21 +186,36 @@ export default async function AssessPage({
       <div className="assess-grid">
         {/* ---- what the control asks: ICB4 source text, capped at --measure ---- */}
         <div className="card pad">
+          {/* N31 — the competency was the least visible thing on this screen,
+              which is backwards: it is the unit the rollup aggregates into and
+              the unit a PM has to calibrate against ("am I proficient at
+              THIS?"). It now leads, at heading weight, with the area and the
+              control code demoted to the line above and below it. */}
           <div className="crumb">
             <span className="area">{control.area}</span>
-            <span className="sep">›</span>
-            <span>
-              {ce?.code} {ce?.name}
-            </span>
             <span className="sep">›</span>
             <span>
               Control <b>{control.code}</b>
             </span>
           </div>
 
-          <h2 style={{ fontSize: 17, fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
+          <p className="ce-name">
+            <span className="tnum">{ce?.code}</span> {ce?.name}
+            {ceProgress && (
+              /* E4 — how far the nearest natural stopping point is. A PM who
+                 can see the end of the current stretch does not need to be
+                 ejected to a list to feel one. */
+              <span className="ce-progress">
+                <b className="tnum">{ceProgress.position}</b>
+                {" of "}
+                <b className="tnum">{ceProgress.total}</b> in this competency
+              </span>
+            )}
+          </p>
+
+          <h2 style={{ fontSize: "var(--fs-h3)", fontWeight: 650, marginBottom: 2 }}>{control.indicator}</h2>
           {control.description && (
-            <p className="lede" style={{ margin: "8px 0 0", fontSize: 15 }}>
+            <p className="lede" style={{ margin: "8px 0 0", fontSize: "var(--fs-prose)" }}>
               {control.description}
             </p>
           )}
@@ -175,6 +244,7 @@ export default async function AssessPage({
         <div className="scorepanel">
           <ScorePanel
             control={code}
+            assessmentId={row.id}
             nextControl={next?.code ?? null}
             prevControl={prev?.code ?? null}
             levels={fw.scaleLevels.map((s) => ({
@@ -185,7 +255,9 @@ export default async function AssessPage({
             savedLevel={score?.self_level ?? null}
             savedEvidence={score?.evidence ?? ""}
             locked={locked}
-            boundary={boundary}
+            milestone={milestone}
+            ceLevels={ceLevels}
+            owed={owed}
           />
         </div>
       </div>

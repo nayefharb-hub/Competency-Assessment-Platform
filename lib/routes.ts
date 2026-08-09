@@ -12,6 +12,24 @@
 export const ASSESS_HUB = "/assess/areas";
 
 /**
+ * The only screen that carries Submit — `app/assess/controls/page.tsx`.
+ *
+ * A constant for the same reason as ASSESS_HUB, and the drift it prevents has
+ * already happened once. The milestone card decides "Review and submit →" from
+ * a COUNT (`assessmentRemaining === 0`) but took its destination from
+ * `milestone.listHref`, which is positional — the area page mid-area, the hub
+ * at an area boundary. Those agreed only while the card could rise nowhere but
+ * the last control of the framework. N40 made the card rise wherever a
+ * competency is completed, and the two came apart: a PM whose final unanswered
+ * control sat mid-framework was told they had scored every competency and
+ * offered a Review and submit that landed on a page with no Submit on it.
+ *
+ * `?saved=1` raises the save confirmation there: the last answer of an
+ * assessment must not land silently, right before Submit.
+ */
+export const ASSESS_SUBMIT = "/assess/controls?saved=1";
+
+/**
  * Normalise a `?next=` destination to an in-app path, or `/`.
  *
  * The old guard was `/^\/(?![/\\])/` written out at two call sites, and it let

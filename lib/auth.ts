@@ -232,6 +232,42 @@ export function canAdmin(user: AppUser): boolean {
   return user.role === "admin";
 }
 
+/**
+ * Forget this session's cached viewer (N45).
+ *
+ * THE BUG THIS EXISTS FOR. `viewerMemo` is keyed by access token and lives 2s.
+ * A server action that CHANGES the viewer — today only the password change,
+ * which clears `must_change_password` — populates that memo on its way in, via
+ * its own `requireUser()`, with the pre-change value. It then writes the new
+ * value to Postgres and redirects. The redirect's render is a second pass of
+ * the same request, well inside 2s, so it answers from the memo and sees the
+ * OLD flag. The gate at `requireUser` then bounces the PM back to the screen
+ * they just completed, with no explanation, on the first thing they ever do in
+ * this app.
+ *
+ * `signOut()` below has always done this, for exactly this reason. The password
+ * change never got the same treatment; that asymmetry was N45.
+ *
+ * CALL IT AFTER THE WRITE, NOT BEFORE. Evicting first would leave the window
+ * between eviction and write open for any concurrent pass to re-populate the
+ * memo with the stale value — which is the same race in a smaller box.
+ *
+ * WHAT IT DOES NOT FIX, stated plainly because the fix reads stronger than it
+ * is: under Fluid Compute a SIBLING instance that resolved the same token
+ * seconds earlier still answers from its own map until the 2s expires. This
+ * narrows the window to that bound; it does not close it. Closing it would mean
+ * shared invalidation, which is a network hop on the hot path and is precisely
+ * the trade `docs/deploy.md` argues against for a 2s staleness bound.
+ */
+export async function forgetViewer(): Promise<void> {
+  const auth = await authClient();
+  const { data } = await auth.auth.getSession();
+  // Read AFTER any credential change, so this is whatever token the redirect's
+  // render will actually present. If Supabase rotated the token, the old entry
+  // is keyed by a token that render will never show, so it cannot mislead it.
+  if (data.session?.access_token) viewerMemo.delete(data.session.access_token);
+}
+
 export async function signOut(): Promise<void> {
   const auth = await authClient();
   // Purge BEFORE revoking (review D3): without this, a captured token would

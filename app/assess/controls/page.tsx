@@ -91,9 +91,9 @@ export default async function ControlsIndex({
         <div className="progress-head">
           <div>
             <div className="cap">PROGRESS</div>
-            <div className="big tnum" style={{ fontSize: 26, fontWeight: 680 }}>
+            <div className="big tnum" style={{ fontSize: "var(--fs-display)", fontWeight: 680 }}>
               {done}
-              <small className="muted" style={{ fontSize: 14, fontWeight: 500 }}> / {total} controls scored</small>
+              <small className="muted" style={{ fontSize: "var(--fs-prose)", fontWeight: 500 }}> / {total} controls scored</small>
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -167,7 +167,7 @@ export default async function ControlsIndex({
               .filter((g) => g.controls.some((c) => matches(c.code)))
               .map((g) => (
                 <div key={g.ce.code} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-ui)", fontWeight: 600, marginBottom: 6 }}>
                     {g.ce.code} {g.ce.name}{" "}
                     <span className="muted" style={{ fontWeight: 400 }}>
                       · {g.controls.filter((c) => scored.has(c.code)).length}/{g.controls.length} scored

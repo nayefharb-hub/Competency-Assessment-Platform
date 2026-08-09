@@ -112,7 +112,7 @@ export default async function AnalysisPage({
           (CLAUDE.md); a pace figure with no such sentence next to it is read
           as a score, and then someone acts on it. */}
       <div className="card pad" style={{ marginBottom: 16 }}>
-        <p style={{ margin: 0, fontSize: 13.5 }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-ui)" }}>
           {staff
             ? <>This is <b>where to look</b>, not a verdict. A fast assessment can be an expert
                 who knows the framework. Read the pace <b>together with</b> the spread of levels
@@ -263,7 +263,7 @@ function NothingToAnalyse({ unknown = false }: { unknown?: boolean }) {
   return (
     <div className="section">
       <div className="card pad">
-        <h2 style={{ fontSize: 17, fontWeight: 650, margin: "0 0 6px" }}>Nothing to analyse</h2>
+        <h2 style={{ fontSize: "var(--fs-h3)", fontWeight: 650, margin: "0 0 6px" }}>Nothing to analyse</h2>
         <p className="note" style={{ margin: 0 }}>
           {unknown
             ? <>That assessment could not be found — it may have been archived.{" "}

@@ -69,22 +69,20 @@ export interface Measure {
   text: string | null;
 }
 
-export interface Benchmark {
-  no: number;
-  apm_competence: string;
-  entry: number | "N/R" | null;
-  intermediate: number | "N/R" | null;
-  advanced: number | "N/R" | null;
-  master: number | "N/R" | null;
-}
-
-/** Per-CE target, taken from the workbook's Results sheet. Never computed. */
+/**
+ * Per-CE target. COMPUTED — the mean of the element's active control targets
+ * (rollup-spec §3), so it is fractional and is displayed to one decimal.
+ *
+ * It used to be the APM published value read from the workbook's Results sheet.
+ * That column (`competence_element.target_level`) still exists as the recoverable
+ * anchor but nothing reads it any more.
+ */
 export interface CeTarget {
   area: AreaName;
   ce_code: string;
   ce_name: string;
   active_controls: number | null;
-  target: Level | null;
+  target: number | null;
 }
 
 export interface Framework {
@@ -95,7 +93,6 @@ export interface Framework {
   competence_elements: CompetenceElement[];
   controls: Control[];
   measures: Measure[];
-  benchmarks: Benchmark[];
   ce_targets: CeTarget[];
 }
 
@@ -138,8 +135,10 @@ export interface Assessment {
   assessee_name: string;
   assessee_role: string;
   cycle: string;
-  /** benchmark profile applied, e.g. "Intermediate" */
-  profile: string;
+  /**
+   * The profile row this assessment was stamped with. Kept because the column
+   * is NOT NULL; no screen reads it and no rollup depends on it (N53).
+   */
   profile_id?: string;
   state: AssessmentState;
   scores: Score[];
@@ -198,7 +197,11 @@ export interface CeResult {
   ce_code: string;
   ce_name: string;
   area: AreaName;
-  target: Level | null;
+  /**
+   * mean of ACTIVE control targets — fractional since 2026-08-08, and taken from
+   * `target_snapshot` once the assessment is approved (rollup-spec §3, §6)
+   */
+  target: number | null;
   /** mean of assessor scores across ACTIVE controls; null when nothing is scored */
   actual: number | null;
   gap: number | null;

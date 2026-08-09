@@ -3,6 +3,7 @@
 import { redirect, unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole, requireUser } from "@/lib/auth";
+import { filterQuery, parseControlFilter } from "@/lib/control-filter";
 import { sanitiseDwell } from "@/lib/dwell";
 import { getFramework, invalidateFramework } from "@/lib/framework";
 import { phase, phaseSync } from "@/lib/perf";
@@ -174,6 +175,31 @@ export async function saveControlAction(formData: FormData): Promise<void> {
   const control = fw.controlByCode(code);
   if (!control?.id) fail("/admin", `Unknown control ${code}`);
 
+  /*
+   * The filtered view the admin is walking, carried through the save so Save
+   * does not eject them back into all 133 controls.
+   *
+   * RE-PARSED AND RE-SERIALISED, never passed through. The posted value is a
+   * query string from a hidden field, which means it is client input reaching a
+   * redirect target — the same shape as `safeNext()`, and that one has already
+   * been broken twice by trusting the input over the output. Round-tripping it
+   * through `parseControlFilter` means only the four known keys survive, each
+   * validated against the framework, and anything else is dropped rather than
+   * appended to a URL.
+   */
+  const posted = new URLSearchParams(String(formData.get("filter") ?? ""));
+  const filter = parseControlFilter(
+    {
+      area: posted.get("area") ?? undefined,
+      ce: posted.get("ce") ?? undefined,
+      state: posted.get("state") ?? undefined,
+      target: posted.get("target") ?? undefined,
+    },
+    fw,
+  );
+  const qs = filterQuery(filter);
+  const here = `/admin?c=${encodeURIComponent(code)}${qs ? `&${qs}` : ""}`;
+
   const active = String(formData.get("active") ?? "yes") === "yes";
   const priority = String(formData.get("priority") ?? "High");
   const reason = String(formData.get("reason") ?? "").trim() || null;
@@ -181,10 +207,10 @@ export async function saveControlAction(formData: FormData): Promise<void> {
   const target = levelOf(formData.get("target"));
 
   if ((!active || priority !== "High") && !reason) {
-    fail(`/admin?c=${code}`, "A reason is required whenever a control is not Active/High.");
+    fail(here, "A reason is required whenever a control is not Active/High.");
   }
   if (!["High", "Medium", "Low"].includes(priority)) {
-    fail(`/admin?c=${code}`, "Priority must be High, Medium or Low.");
+    fail(here, "Priority must be High, Medium or Low.");
   }
 
   const write = await db()
@@ -201,9 +227,9 @@ export async function saveControlAction(formData: FormData): Promise<void> {
         target === control.target_level ? control.target_source : "KIB (admin edit)",
     })
     .eq("id", control.id);
-  if (write.error) fail(`/admin?c=${code}`, `Saving failed: ${write.error.message}`);
+  if (write.error) fail(here, `Saving failed: ${write.error.message}`);
 
   invalidateFramework();
   revalidatePath("/", "layout");
-  redirect(`/admin?c=${code}&saved=1`);
+  redirect(`${here}&saved=1`);
 }

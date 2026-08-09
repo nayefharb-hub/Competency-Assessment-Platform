@@ -55,7 +55,7 @@ export default async function AreaPage({
         </span>
       </div>
 
-      <h2 style={{ fontSize: 22, fontWeight: 680, margin: "0 0 4px" }}>{area.name}</h2>
+      <h2 style={{ fontSize: "1.375rem", fontWeight: 680, margin: "0 0 4px" }}>{area.name}</h2>
       <p className="lede" style={{ margin: "0 0 16px" }}>
         {area.ces.length} competencies. Each is a few controls — about five minutes — so you can
         finish one and stop.

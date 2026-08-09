@@ -1950,3 +1950,1149 @@ is that the product cannot say what "the assessment" is.
 **Settled in `/office-hours` as D29–D32** (`docs/design-assessment-navigation.md`),
 including a deliberate reversal of the owner's earlier D12. Next step is
 `/plan-eng-review`; nothing is built yet.
+
+---
+
+### N30 — the last control of a competency changes its button between visits
+
+Owner, 2026-08-06, from the deployed app, with two screenshots of the **same**
+control (4.4.1.5, the last in *4.4.1 Self-reflection and self-management*):
+
+| Visit | Progress line | Helper text | Primary button |
+|---|---|---|---|
+| First | 20 scored so far | "Not saved yet — **Next control** saves it." | **Back to the list →** |
+| Second, reached via area → competency → control | 23 scored so far | (none) | **Finish this competency →** |
+
+Same control, same competency, two different promises about what the button
+does. The owner reached it the second time through the area screen, but the
+route in is not what changed the label.
+
+**Cause — an off-by-one against the PM's own answer.** `nextAfter()`
+(`lib/shape.ts:169`) decides the label from
+`ceComplete = ce.scored === ce.controls.length`, and `ce.scored` comes from
+`scoredCodes()`, which counts only scores **already persisted**. The answer the
+PM is looking at on screen is not committed until they press the button
+(`app/assess/score-panel.tsx:127` — the outbox commits on click, by design,
+D11/PR #20).
+
+So on the last control of a competency, at the exact moment every other control
+in it is already scored and this one is selected but unsaved:
+
+- `ce.scored` is 4 of 5 → `complete` is **false** → `score-panel.tsx:239`
+  renders **"Back to the list →"**.
+- The PM has answered all five and is told the competency is not finished.
+
+Return later, when that fifth answer has persisted, and `ce.scored` is 5 of 5,
+so the same screen now reads **"Finish this competency →"**. Nothing about the
+navigation path matters; what changed is whether the visible answer had reached
+the database yet.
+
+The two screenshots corroborate this exactly: the first carries the "Not saved
+yet" line (uncommitted) and shows 20 scored; the second has no such line
+(already committed) and shows 23.
+
+**A second, related defect in the same screenshot.** The helper text at
+`score-panel.tsx:217` chooses its wording from `nextControl`, while the button
+two lines below chooses from `boundary`. At a competency boundary both are
+truthy, so the hint says *"**Next control** saves it"* while the button says
+*"Back to the list"* — the hint names a control that is not on offer. Same root:
+two notions of "what happens next", computed from different inputs, rendered
+side by side.
+
+**Not a data bug.** The score is saved correctly either way; `nextAfter`'s
+`complete` flag is deliberately conservative, and the comment above it records
+why (`lib/shape.ts:165` — a PM who skipped four of five and scored the last one
+must not be told "Finish this competency" and pointed at a Submit the server
+would refuse). That reasoning is right. The flaw is that the same conservatism
+fires against a PM who has skipped nothing, because their own answer is not yet
+counted at the moment the label is chosen.
+
+**Worth noting for whoever fixes it:** the honest fix is to count the current
+unsaved selection when the PM has one, so the label describes what the click is
+about to make true rather than what was true before it. That is a client-side
+adjustment to the label only — it must NOT relax the server's submit
+precondition, which is the thing protecting against the skipped-controls case.
+
+**Severity:** confusing rather than harmful, on the screen a PM sees 132 times.
+Logged at the owner's request; deliberately **not fixed** while they are still
+working through the assessment.
+
+---
+
+### N31 — you cannot tell which competency you are being assessed on
+
+Owner, 2026-08-06, from the deployed app: *"the competency header is very subtle
+'4.3.4 Power and interest', need to make it more visible to the user which
+competency he is being assessed at the moment."*
+
+The scoring screen names the competency in the breadcrumb above the control
+title — `PEOPLE › 4.4.1 Self-reflection and self-management › Control 4.4.1.5`
+— rendered as a `.note`-weight crumb. It is the *only* place the competency
+appears, it sits above the largest text on the page, and it is set smaller and
+lighter than everything around it. The control title wins the eye completely.
+
+**Why this matters more than it looks.** A competence element is the unit of the
+sitting (D25) and the unit of the rollup — the assessor sees a mean per CE, and
+Role Ready / Minor Gap / Capability Deficit is decided per CE. So the thing the
+PM is least able to see on screen is the thing their answers are aggregated
+into. A PM who cannot feel which competency they are in cannot calibrate: "am I
+proficient at *this*?" needs a visible *this*.
+
+It also interacts with N30 and with feedback 3 — all three are the same missing
+signal, that the PM has no persistent sense of place.
+
+**Severity:** cosmetic in isolation, structural in aggregate. Wants a
+`/design-review` pass with DESIGN.md's type scale in hand rather than a blind
+size bump — the crumb is inside the N14 layout guarantee (answer and primary
+action on screen without scrolling, at three viewports, on the longest control
+in ICB4), so growing it moves the Save button down on every control.
+
+---
+
+### N32 — the assessment cannot be done in one continuous run
+
+Owner, 2026-08-06: *"currently the user has no way for continuous assessment
+without his journey being interrupted to go and select an area or another
+competency, we need to check design options for implementing such feature."*
+
+**Measured, because "interrupted" deserves a number.** The framework is 132
+active controls across **28 competence elements**, median **5** controls per CE
+(min 3, max 6). `nextAfter()` (`lib/shape.ts:154`) stops the PM at the last
+control of every CE:
+
+| Boundary | Count | Where the PM is sent |
+|---|---|---|
+| Last control of a CE, more CEs in the area | 25 | `/assess/area/<name>` |
+| Last CE of an area, another area follows | 2 | the hub (`/assess/areas`) |
+| Last control of the assessment | 1 | `/assess/controls?saved=1` |
+
+So a complete pass costs **28 forced navigations**, one roughly every five
+answers, each requiring the PM to find and click their next competency.
+
+**This is not a bug — it is D25 working as designed.** The comment at
+`app/assess/page.tsx:93` states it plainly: "A CE is the sitting, so its last
+control does not walk into the next CE's first — finishing is a moment, and
+continuing is a choice." D30 then accepted an additional click on every return.
+Both were deliberate.
+
+What the owner is reporting is that the *cumulative* cost of that choice, paid
+28 times, outweighs what it buys. That is a scope/strategy question rather than
+a defect, which is why they asked for `/plan-ceo-review` rather than a fix.
+
+**The tension to resolve, stated honestly.** D25 bought something real: a
+132-question form with no structure is exhausting, and a felt milestone every
+five answers is what makes it finishable. The cost is that the milestone is
+implemented as a *route change* — the PM is ejected from the flow and made to
+navigate. Those are separable. A milestone can be a moment without being an
+exit.
+
+**Severity:** the single biggest drag on the experience the nine PMs are about
+to have, and the one most likely to affect completion rate — which is the metric
+this tool exists to move.
+
+### N33 — the milestone does not rise on the path a PM actually walks
+
+Owner, 2026-08-06, testing the N32 preview: *"the milestone moment only happens
+when i finish all competencies of an area … it is not consistent, sometime when
+I finish a competency it shows, most of the time it doesnt … sometime the
+control shows next control some time it shows complete competency."*
+
+**Both halves are one defect.** The button label and the milestone are derived
+from the same expression (`ceComplete` in `app/assess/score-panel.tsx`), which
+was the point of the N30 fix — one notion of "what happens next", so the hint
+and the button cannot disagree. When it is false the label reads "Next control"
+and no card appears. So "sometimes the label is wrong" and "sometimes the
+milestone is missing" are the same fact reported twice.
+
+**Reproduced on the first attempt, by walking rather than seeding.** Every
+milestone check in `scripts/e2e.mjs` [16] opens the last control with the
+earlier answers inserted straight into Postgres. Walking 4.3.1.1 → 4.3.1.5 by
+clicking, the way a PM does, fails every time:
+
+```
+  4.3.1.5: "Next control →"
+  milestone on screen after the fifth answer: NO
+  final url: /assess?c=4.3.2.1
+```
+
+**The mechanism, from the component's own state** (instrumented build, walked
+path, arriving at 4.3.1.5):
+
+```
+render  ceLevels {.1:3 .2:3 .3:3 .4:null}  queued {.4:3}  ceComplete true
+effect  ceLevels {.1:3 .2:3 .3:3 .4:null}  queued {}      ceComplete false
+```
+
+Three facts compose into a hole:
+
+1. The commit POST and the navigation GET leave together (D9), and the GET is
+   the shorter request — measured, the RSC response for the next control lands
+   *before the POST has even been issued*. So the server render of the next
+   control never contains the answer just given. Not a coin flip; every time.
+2. The outbox drops an entry the moment the server acknowledges it. `pendingFor`
+   answers "is this still unsent", which stops being true at exactly the wrong
+   moment.
+3. The effect keyed on the control **replaced** the map that did still hold the
+   answer with a fresh read of the outbox. The one place that knew overwrote
+   itself.
+
+So at the last control of a competency the previous control's answer was in
+neither source, `ceComplete` was false, and the run walked past the moment. It
+worked on a page LOAD — the server render then postdates every write — which is
+why the owner saw it at area ends, where a PM commonly comes back via the hub,
+and why a slow save (entry still queued when the effect runs) made it appear
+"sometimes".
+
+**Fix.** `lib/outbox.ts` now keeps `answered`, a map of every answer this
+browser has confirmed, scoped to the assessment and exported as
+`answeredLevel()`. **Acknowledgement never removes an entry** — that is the
+whole difference from the queue; a user change and a server refusal do, and both
+mean the answer is no longer this screen's to count. The panel keeps two maps
+rather than one: `queued` (still in flight, drives the offline hint) and `known`
+(confirmed on this device, decides completeness). No new round trip: the budget
+assertions still pass unchanged.
+
+**The review pass on this fix found two more defects in it.** Worth recording
+here because both were introduced by the repair, not by the original build.
+First, the fix REPLACED the queue in the completeness chain instead of adding to
+it — and `answered` is module memory that a page load destroys while the queue
+is mirrored to localStorage and survives, so a PM who answered four controls
+during a write-path outage and then refreshed lost the milestone again. Second,
+the server value still won the chain, so a control revised seconds earlier was
+displayed at its old level on the card that calls itself the last easy moment to
+change an answer. The chain is now `known → queued → ceLevels`, newest first,
+and both cases have walked tests (N33b, N33c in `scripts/e2e.mjs`).
+
+**The lesson worth keeping.** The e2e suite had six checks on this screen and
+not one of them could see the defect. Five arrived by `page.goto` with prior
+answers inserted straight into Postgres — a page load postdates every write, so
+the client never had to remember anything. The sixth, FM3, was written for this
+exact failure mode and aborted the save POST to simulate the queue: a queue that
+never drains never forgets, so it tested the failure path and never the
+successful one. **Success is what deletes the evidence.** Seeding state and
+opening the end of a competency tests the render; it cannot test the flow that
+produces the state.
+
+---
+
+## The owner's full walk-through, 2026-08-07 (N34–N44)
+
+The owner took the assessment end to end on the preview — control 132 of 132 —
+and reported eleven items in one pass. Logged together because they came from
+one sitting; each is worked separately. Severity is the owner's framing:
+"enhancement" where they said so, defect where the screen contradicts itself.
+
+### N34 — the right pane changes height when the milestone replaces the panel
+
+The card is a different height from the scoring panel it swaps for, so the
+whole right column jumps. A PM clicking in one place repeatedly — which is the
+rhythm the keyboard support and the in-place milestone exist to protect — has
+the target move under them every fifth control.
+
+**Owner: enhancement, needs a UX decision.** Options run from reserving a
+minimum height on the column to animating the swap to accepting the jump as a
+deliberate punctuation. Not obvious which is right; it wants deciding rather
+than patching.
+
+### N35 — the evidence field is one line
+
+*Evidence or example (optional, not scored)* is an `<input>`. A PM writing a
+real example needs two or three lines and cannot see what they typed.
+**Enhancement**: a textarea that grows, without letting it dominate a panel
+whose job is the six levels.
+
+### N36 — "it will send when you are back online" on every Next, while online
+
+Reported as: *"every time I click next control I get this message… I am
+definitely not offline."*
+
+**Mechanism, and it is a real defect.** `app/assess/score-panel.tsx` renders the
+commit hint while `dirty && level !== null`, choosing between two strings on
+`queued[control] === level`. Clicking Next calls `commit()`, sets `queued`, then
+navigates — so for the whole navigation window the PM is still looking at the
+control they just answered, with `queued[control] === level` true. The offline
+copy therefore fires on the **normal online path**, once per control, 132 times.
+The message is not wrong about the data (the answer IS on the device and will
+send) but it is wrong about the situation, and it trains a PM to distrust a
+banner that should only appear when something is actually wrong.
+
+### N37 — you cannot feel which competency you are in
+
+The competency line exists (N31 raised it to heading weight) but reads as
+metadata attached to the control rather than as the section you are inside.
+**Owner's suggestion:** promote it to a section header sitting with the area
+navigation above, so the hierarchy is area → competency → control on the screen
+as well as in the data.
+
+### N38 — "Review before submitting" appears with controls still unscored
+
+The owner skipped some controls, reached the end, and the button read *"Review
+before submitting"* — which reads as "you have finished". The label is chosen by
+POSITION: at control 132 there is no next control, so the else-branch of
+`commitLabel` picks the review wording regardless of what is unanswered. Same
+family as N30 and N33: a label derived from where you are standing rather than
+from what is true.
+
+### N39 — getting back to the skipped controls is cumbersome
+
+Finding and reaching each unscored control takes several navigations through
+hub → area → competency → control. For a PM finishing up, "show me what I still
+owe and let me work through it" is a single intent and should be a single path.
+
+### N40 — the last skipped control still says "Next control"
+
+Scoring a control that was skipped earlier, mid-competency, still offers *"Next
+control"* even when it completes the competency or the assessment.
+
+**The owner's read, and it is the right one:** `nextControl` and "what does this
+click complete" are two different questions answered by one expression. They
+need decoupling. **UX decision required** — this is N38's twin and the two
+should be settled together rather than patched separately.
+
+### N41 — a PM cannot see their own results until the assessor approves
+
+**Owner: they should be able to**, with the state named honestly — *completed*,
+not *approved*. Seeing your own submitted self-assessment is not the same as
+seeing an approved capability record, and the screen can say which it is.
+
+### N42 — the assessor's Review & revise screen is cumbersome
+
+Reviewing and approving 132 controls for nine people is the Head of PMO's whole
+job in this tool, and the screen makes it laborious. Needs its own design pass.
+
+### N43 — the results screen needs its own session
+
+Owner's call: not a list of tweaks, a proper pass. Deferred deliberately.
+
+### N44 — the framework screen should open on a filterable table
+
+**Today:** the Framework nav lands on `/admin`, which is the editor for a single
+control — so an admin arrives inside one control with no sense of the whole.
+`/admin/controls` has the list, but it is a nested set of link lists (area →
+competency → control) that cannot be sorted, filtered or scanned.
+
+**What the owner wants:** clicking Framework shows **all controls first**, in a
+**table**, grouped by area and competency, with **target level, priority and
+active/inactive** as columns, and **filters across area, competency and active
+state**. The single-control editor stays — it is what you open from a row.
+
+Taken first, because it is the most specified and the least entangled with the
+assessment flow.
+
+---
+
+## What shipped from that walk-through, 2026-08-07
+
+### N44 — the framework table
+
+`/admin/controls` is now a table: Control · Indicator · Target · Priority ·
+State, grouped by competency inside area, with filters on area, competency and
+active state carried in the query string rather than in client state (the N5
+precedent — a filtered view is addressable, bookmarkable and survives a
+reload). The Framework nav points at it; the single-control editor is what a
+row opens, and the way back returns to the filtered view rather than the top of
+133 rows. Unknown filter values fall back to the whole framework: a stale
+bookmark must not present an empty framework as if it were the truth.
+
+The header counts always report the WHOLE framework, never the filtered subset.
+A count that changes with the filter reads as "this is what exists".
+
+### N38 · N39 · N40 — the button names what the click completes
+
+All three were one defect. `commitLabel` answered "what does this click
+complete?" with three positional inputs: `milestone` was non-null only on a
+competency's LAST control, `done === "assessment"` meant the last control of
+the framework, and `nextControl` meant "is there another control after this
+one". So:
+
+- at control 132 with holes still open, the label fell through to *"Review
+  before submitting"* — the PM had run out of controls to WALK PAST, which is
+  not the same as having answered them (N38);
+- a hole filled mid-competency read *"Next control"* even when that answer
+  finished the competency (N40);
+- and there was no path from "I have finished something" to the holes left
+  behind, because Continue only ever knew about the next competency (N39).
+
+**The rule now, the owner's call:** the button names what the click COMPLETES
+if it completes something, and otherwise names where it GOES. Completion is a
+fact about ANSWERS, so it is asked of answers (`lib/shape.ts:ceContextAt` gives
+the panel its competency at EVERY control, not only at a boundary); position is
+still what decides where you go next, and the two no longer share an
+expression. `owedAfter` supplies the controls still unanswered, forward then
+wrapping, so Continue always has somewhere honest to go — which is N39.
+
+**And the card rises wherever a competency is completed**, not only at its
+positional end. The owner's reason was consistency: the same words have to
+produce the same outcome every time.
+
+**"Completes something" is narrower than "is now complete", and the e2e caught
+the first cut of this out.** Gating on *the competency is whole after this
+click* meant a PM re-opening a competency they had already finished — which is
+exactly what the milestone card's own recap rows invite — was told *"Finish
+this competency"* on every control in it, and the card rose instead of moving
+on, so walking a finished competency through the primary button became
+impossible. The completion is news in two cases and no others: this click
+caused it (a hole filled, anywhere), or the PM arrived at the competency's end
+with it whole (which is where a revision gets shown back to them, N33c). A
+revision in the middle of a finished competency is neither, so it moves on.
+
+**Second thing the suite caught:** giving the card somewhere to continue TO
+silently deleted the sentence that says how many controls are still owed. It
+was gated on "there is nowhere to continue", which had been the same test as
+"there is no competency ahead" until N38 made them different. It is now gated
+on `nextControl` directly — null exactly when a PM could believe they had
+finished, and set mid-run, so it does not become "127 controls elsewhere" on
+every one of the 28 milestones.
+
+Round trips are unmoved: the in-memory shape derivations add no query, and both
+budgets are asserted from the server's own log — a warm commit + navigation is
+5, a boundary commit is 3.
+
+### The review round on N38/N39/N40 — five findings, two of them shipping defects
+
+Four specialists ran against the diff. Three of them found the same two things
+independently, which is the signal worth recording.
+
+**1. `nextOwed` was competency-scoped, and Continue sent PMs backwards.** The
+client's `known`/`queued` maps were built over `milestone.controls` — right
+while they answered only "is this competency whole", which is competency-scoped
+by definition. N38/N39 then used the same maps to filter a FRAMEWORK-WIDE owed
+list, and every code outside the current competency came back `undefined`, so
+the filter passed it through. Concretely: two holes left, 4.3.1.2 and 4.5.9.3.
+Fill the first, Continue to the second, fill that — and Continue sends the PM
+back to 4.3.1.2, answered twenty seconds earlier. If the outbox had been
+acknowledged and dropped by then, it shows up BLANK. Fixed by asking the outbox
+about every code the filter will test.
+
+**2. "Review and submit →" led to a page with no Submit on it.** The copy is
+chosen from a COUNT (`assessmentRemaining === 0`); the destination came from
+`listHref`, which is POSITIONAL. Those agreed only while the card could rise
+nowhere but the last control of the framework. A PM whose final hole sat
+mid-framework was congratulated and dead-ended on the area listing. `lib/routes.ts`
+gained `ASSESS_SUBMIT`; if the button says submit, it goes where Submit is.
+
+**3. The "N controls elsewhere" sentence fired on every mid-run milestone.**
+The first repair gated it on `!nextControl`, which `ceContextAt` sets to null
+for every mid-competency context — so finishing your first competency in week
+one announced "126 controls elsewhere still need a score". Now gated on
+`done === "assessment"`, the one positional illusion in the product.
+
+**4. "Complete the assessment" on a click that completed nothing.** Re-open the
+framework's last control on a fully answered assessment and the button promised
+to complete something finished a week earlier. Split `causedIt` (this click
+made it whole) from `completesCe` (the card should rise), and the revision case
+now says "Review this competency" / "Review before submitting".
+
+**5. A test that passed on the broken build.** The block named "N38 proper" left
+the LAST competency whole, so the old code took its `ceComplete` branch and said
+"Finish this competency" — which satisfied an assertion written as a
+disjunction. The defect lived in the branch that fixture could not reach. Now a
+second hole sits inside that competency and the assertion is an equality.
+
+**And the walked test was vacuous twice before it worked**, which is the part
+worth keeping. First cut: correct walk, but on a fast local database the first
+answer landed before the PM reached the second hole, so no render lagged and
+the filter was never asked. Second cut: the POST delayed four seconds
+(delayed, never aborted — an aborted queue never drains and never forgets, so
+it tests the failure path and not the successful-but-still-settling one), and
+it still passed, because the other 26 competencies were unanswered so the owed
+list filled up going forward and never wrapped back to the near hole. Third
+cut: exactly two holes in the whole framework, so the wrap puts the near one at
+the front. That fails on the pre-fix build and passes on the fixed one, and the
+premise — "the write really was still in flight" — is asserted, so a run where
+the race falls the other way reports INCONCLUSIVE rather than green.
+
+### The commit decision became a module you can enumerate
+
+Six defects have lived in one nested ternary — N30, N33, N38, N40, and the two
+review found inside the N38/N40 fix. Every one was a single row reading wrong,
+and every one was found by a person noticing rather than a test failing, because
+the table sat inside a client component wired to an outbox, a router and a race.
+
+`lib/commit-label.ts` now owns it: six inputs in, `{ label, raisesCard }` out.
+Five booleans and a zero/non-zero count is 64 rows — small enough to ENUMERATE,
+which is why there is no pairwise sampling. Pairwise exists for spaces too large
+to walk; exhaustive is strictly stronger when you can afford it, and here it
+costs milliseconds with no browser and no database.
+
+**The tests are properties, not a 64-row expected table.** A hand-written
+expected table is the implementation retyped, and it agrees with the bug as
+readily as with the fix — which is how six milestone tests stayed green against
+a build where the feature did not work. So the checks state things true of every
+row: a label may only claim a completion when this click caused one; the
+assessment is only claimed complete when nothing is left; the card rises exactly
+when the completion is this click's news; a click that navigates names where it
+is going; and **no label is unreachable** — the check that finds wording nobody
+can ever see, which review had to spot by hand last round.
+
+Verified by mutation rather than by assertion count, per ground rule 0:
+
+| Reintroduced defect | Killed by |
+|---|---|
+| Label claims completion whenever the competency is whole (the pre-review bug) | 4 checks |
+| Card gated on `ceComplete` alone (traps a PM re-reading a finished competency) | 2 checks |
+| Fall through to "Review before submitting" with holes open (N38 itself) | 3 checks |
+
+Behaviour is unchanged — 388 e2e / 0 failed, both round-trip budgets held. The
+browser tests now only have to prove the wiring, not every combination.
+
+The idea came from a community skill (Pypict, combinatorial test generation).
+The tool was the wrong fit and the instinct was right, which is worth recording
+as its own lesson: the value was in noticing that this decision IS a table.
+
+### N45 — changing your password can bounce you straight back to the gate
+
+**Found by running the e2e suite against the Vercel preview**, which is the
+thing that changed the verdict. Locally "the app is reachable once the flag
+clears" fails intermittently and had been filed as a test flake — the
+documented 2s `viewerMemo` staleness bound behaving as designed. Against the
+preview it failed on both runs.
+
+**Mechanism.** `viewerMemo` (`lib/auth.ts:111`) caches the resolved viewer for
+2s, keyed by access token. `app/change-password/actions.ts` clears
+`must_change_password` in Postgres and redirects, but never evicts the memo, so
+the redirect's own render can answer from a cached viewer that still carries the
+flag — and the gate at `lib/auth.ts:213` sends the PM back to the screen they
+just finished.
+
+**Why the old conclusion was wrong.** "Behaving as designed" was true and beside
+the point. The path is the FIRST thing all nine PMs will do: sign in with the
+password the Head of PMO gave you, choose your own, and land back on "set your
+own password" with no explanation. It clears within 2s and a reload gets them
+in, so it is not a blocker — but it is a bad first thirty seconds on the one
+screen with no prior context, and a PM's reasonable read is "it didn't save".
+
+**Fix** — the same eviction `signOut()` already does one function over
+(`lib/auth.ts:239`), which exists for exactly this reason and was never applied
+to the password change. Under Fluid Compute a sibling instance keeps its own
+copy for up to 2s regardless, so eviction narrows the window rather than closing
+it; whether that is sufficient is a question for `/cso`.
+
+**FIXED 2026-08-07, owner's call, with `/cso --diff --scope auth`.**
+
+The mechanism was confirmed by reading the path rather than inferred:
+`changePasswordAction` calls `requireUser({ skipPasswordGate: true })` on the
+way in, which POPULATES `viewerMemo` with `must_change_password: true`. It then
+clears the flag in Postgres and redirects. The redirect renders as a second pass
+of the same request, well inside the 2s TTL, so it answers from that entry and
+the gate bounces the PM back.
+
+`lib/auth.ts` gains `forgetViewer()`, and `app/change-password/actions.ts` calls
+it AFTER the write. After, deliberately: evicting first would leave the window
+between eviction and write open for a concurrent pass to re-populate the memo
+with the stale value, which is the same race in a smaller box.
+
+**What `/cso` checked, and what it found.**
+
+| Question | Answer |
+|---|---|
+| Can eviction grant access? | No. It can only force a fresh resolution — deleting a cached positive is fail-safe in this direction. |
+| Reachable from a client? | No. `lib/auth.ts` is `import "server-only"`, `forgetViewer` is called only from the server action, and no `"use client"` file imports `lib/auth`. |
+| Does the token leak? | No. `access_token` appears three times in the codebase, all as a map key. Never logged, never in a URL. |
+| On a failed write? | `fail()` redirects before the eviction, so a failed clear leaves the memo holding the value that is still true. |
+| Does it weaken revocation? | No — it only removes a cached positive, so it shortens the documented 2s window, never lengthens it. |
+
+**What it does NOT fix, stated because the fix reads stronger than it is.** Under
+Fluid Compute a sibling instance that resolved the same token seconds earlier
+still answers from its own map until the 2s expires. This narrows the window to
+that bound; it does not close it. Closing it means shared invalidation — a
+network hop on the hot path, which is the trade `docs/deploy.md` argues against
+for a 2s bound.
+
+**Verified to the standard this entry itself set: five consecutive runs, not
+one.** The password-gate section was green in all five (410 passed / 0 failed in
+runs 1, 2, 3, 5; run 4's single failure was the round-trip budget, unrelated —
+see below). Before the fix the same suite produced 1, 1, 4 and 3 failures across
+four runs.
+
+**2026-08-07, and this makes it worse than filed: it is not ONE check.** Four
+consecutive local runs of the same green build, no code change between them:
+
+| Run | Failures |
+|---|---|
+| 1 | the app is reachable once the flag clears |
+| 2 | *(that, plus a threshold bug of my own)* |
+| 3 | assessor/admin signs in · an assessor/admin still lands on the console · server refuses an incomplete approval · the app is reachable once the flag clears |
+| 4 | the password the admin typed is the one that works · the reset password works and lands on the gate · the app is reachable once the flag clears |
+
+Every one of them sits on `/login` or `/change-password`, and every one has the
+same signature: **the browser was still on the page it should have navigated
+away from.** One check is documented; the other five are the same mechanism
+landing on whichever neighbouring assertion happens to run while the memo is
+stale. The same three failed on the Vercel preview.
+
+So the count in the summary line understates it. This is not "one flake plus
+noise" — it is one mechanism producing between one and four red checks per run,
+and which ones go red is timing. Anyone reading a single run will conclude the
+suite is flaky in the auth area generally, which is precisely the training this
+repository has already paid for once (N21).
+
+**It also means the fix has a test.** Run the suite five times against the fix;
+the password-gate section has to be green in all five, not just in the run you
+choose to report.
+
+---
+
+### N46 — the framework admin screen cannot be worked through
+
+Six items, reported by the owner on 2026-08-07 while editing the framework on a
+27" display. They are one complaint with six faces: **the admin screen was built
+as a place to change one field, and the job is to review 133 controls.**
+
+| # | Report | Shipped |
+|---|---|---|
+| 1 | The reason box is one line; the full reason cannot be read | `<textarea>`, 3 rows |
+| 2 | No next/previous, so every control means going back to the list | Previous/Next, walking the filtered view |
+| 3 | No way to check controls by target | Target filter on `/admin/controls` |
+| 4 | Text does not use the pane's width | **Held** — mockup first, owner's call |
+| 5 | No explanation of what Aware vs Practised vs Competent mean | Segmented picker + definition (Design A) |
+| 6 | The KIB clarification box needs the same room as the reason | `<textarea>`, 3 rows |
+
+**Items 2 and 3 are one feature, and that is the useful part.** Filtering alone
+would have meant "find the 41 controls targeted Competent, then open each from
+the list and come back 41 times". Previous/Next alone would have meant walking
+all 133. Together they are the actual job: narrow to a target, then walk it.
+
+**The seam that makes it safe.** The table decides which rows exist and the
+editor's Next walks that same set, which is two screens answering one question —
+the exact shape of D29 (three screens each with their own copy of "continue the
+assessment") and of `commitLabel` (two copies of "what happens next", rendering
+a hint that named a button not on screen). So the predicate, the ORDER and the
+query string live in `lib/control-filter.ts` and nowhere else. If Next walked a
+different list than the table rendered, an admin would press Next on the last
+filtered row and land on a control the view does not contain, with nothing red
+anywhere, because each screen would be self-consistent.
+
+**The order is the table's, not the array's.** `fw.controls` order and
+competency-grouped order agree today. The unit fixture interleaves competencies
+so they disagree, because "happens to agree" is what this module exists to stop
+relying on.
+
+**Two invariants were proved by breaking them**, per the ground rule that a test
+which has never been red is a decoration:
+
+- a truthiness test on the target dropped `target=0` from the query string —
+  "everything targeted Unaware" became indistinguishable from "everything",
+  with the chip still rendering as selected. Same trap as `answeredBefore`.
+- returning the filtered array instead of the grouped order made Next walk a
+  different sequence than the table showed.
+
+Reverting each to the correct form turned 5 failing checks green.
+
+**The posted filter is re-parsed, never passed through.** It is a hidden field
+reaching a redirect target, which is `safeNext()`'s shape — and that one has been
+broken twice by trusting the input rather than the output. Only the four known
+keys survive, each validated against the framework.
+
+**Item 5 shipped twice, and the first one was wrong.** The first cut put the six
+levels in a vertical card list and the owner rejected it: ~430px of definitions
+between the target and the fields the screen exists for, pushing Priority,
+Active and Reason below the fold.
+
+The mistake was borrowing the PM's control. That list is right for the PM —
+they read all six carefully, once per control, to place themselves. An admin is
+SETTING a value they already know and occasionally checking how Competent
+differs from Practised. Same six levels, opposite job.
+
+Four designs were prototyped and the owner chose **A: a segmented picker**. The
+six levels became the input, so the dropdown is gone and setting a target costs
+one click instead of two; the whole scale stays visible as LABELS (the domain
+rule is that a level is picked by label, never by number); only the chosen
+level's definition is spelled out, with the rest behind "Compare all six" as one
+line each. Measured 151px against the rejected 430px.
+
+**No client component.** The definition follows the checked radio through
+`:has()`, which this stylesheet already relies on for `.opt:has(input:checked)`.
+Adding a client bundle to swap one line of text is the trade `app/link.tsx`
+exists to refuse.
+
+**The height is now asserted at 200px in the e2e**, and that number has a
+reason: it is under half the rejected design, and six bordered cards clear 400px
+before any text wraps, so a return to the rejected shape fails the check. The
+first cut of that assertion said 140px — a guess made before measuring, against
+a real 151px. Tuning it down to fit would have made the check agree with the
+code instead of with the intent.
+
+**Still open from this report: item 4**, and it turned out to rest on a wrong
+number — see N47.
+
+---
+
+### N47 — the type scale is set for a laptop and read on a 27"
+
+Raised as "text is not taking the full space of the pane" (N46 item 4) and
+answered wrongly the first time, which is the part worth keeping.
+
+**The wrong answer.** The prose was said to be capped at 68 characters by
+`--measure`, making the gap beside it a deliberate trade. Measured on the running
+build with `getComputedStyle`, `.ro p` renders **79 characters** and
+`.measures li` renders 72 — both *above* the 60-70 `DESIGN.md` asks for. The line
+was already too long. What made it look short was the empty pane beside it, which
+is a container problem. The owner's instinct and the design rule were never in
+conflict; the stated implementation was simply wrong, and `docs/STATUS.md` had
+recorded 72-73 all along.
+
+**What the screens actually render** (2560x1440, 1440x900 and 390x844 all give
+the same numbers — the scale is fixed `px` and does not respond to viewport):
+
+| Element | Size | Chars/line |
+|---|---|---|
+| `.ro p` — the ICB4 prose | 13.5px | 79 |
+| `.measures li` | 14px | 72 |
+| `.input` — every form field | 14px | — |
+| `.opt span.gloss`, `.note`, `.field label` | 12.5px | — |
+| `.grid td` — the framework table | 13.5px | — |
+
+`DESIGN.md` states body 15, and almost nothing anyone reads is set at it.
+
+**Why the same size works on a laptop and fails on a 27".** Legibility is
+angular: physical size over viewing distance. 13.5px subtends 19.7 arcminutes on
+a 14" laptop at ~50cm and **15.5 arcminutes** on a 27" at ~70cm, against a
+20-22' comfort target. The laptop case set the size and the 27" inherited it.
+
+**A phone defect found while measuring.** iOS Safari zooms the page when a field
+under 16px takes focus. Every input is 14px, so a PM tapping the evidence field
+on an iPhone gets the page jumping and has to pinch back — on each of 132
+controls. Raising inputs to 16px is the whole fix.
+
+**Proposed**: root 16px stepping to 17px above 1600px, the scale converted to
+`rem` so one token moves it coherently, inputs at 16px minimum, and `--measure`
+from 52ch to 44ch (measured to land ~66 characters). Admin and PM get the same
+scale — same eyes, same desk — and differ only in container.
+
+**BUILT 2026-08-07, owner approved.** Root at `100%` stepping to `106.25%`
+above 1600px, the whole scale in `rem`, inputs at 16px minimum, `--measure`
+52ch → 44ch. `DESIGN.md` carries the amendment and three decision-log rows.
+
+Measured after, on the running build:
+
+| | Before | After (laptop) | After (27") |
+|---|---|---|---|
+| ICB4 prose | 13.5px, **79 chars** | 16px | 17px, **67 chars** |
+| Inputs | 14px (iOS zooms) | **16px** | 17px |
+| Table cells | 13.5px | 15px | 16px |
+| Secondary | 12.5px | 14px | 15px |
+
+**Percentage, not a px root.** `html { font-size: 16px }` would override the
+reader's own browser font-size setting, which is the one accessibility control
+a person with poor eyesight actually uses. `100%` scales their choice instead of
+replacing it.
+
+**It broke the N14 guarantee, and the e2e caught it rather than the owner.**
+Bigger type made the six option rows taller and put Save **32px below the fold**
+at 1440×900, on 4.3.1.1 and 4.5.1.1 — precisely the defect N14 exists to
+prevent. Measured rather than eyeballed, then fixed with a `max-height: 950px`
+query: it is a HEIGHT constraint, so tightening every screen to pay for a
+laptop's short viewport would have been the wrong trade. Rows went 64px → 55px,
+still above the 44px touch minimum, and Save now sits 34px ABOVE the fold.
+
+**One thing the mechanical sweep got wrong.** Converting by old px value put
+`.ro p` — the ICB4 description, the longest thing anyone reads on either screen
+— on the "scanned" step rather than the prose one, because it happened to be
+13.5px before. It was briefly the smallest text on a screen whose whole job is
+reading it. Role, not number, is what the mapping should have followed.
+
+Final: **410 passed, 0 failed**, including all six N14 layout guarantees at
+three viewports and the reading-measure check.
+
+---
+
+### N48 — the framework filter hid the levels nobody was targeting
+
+Reported as "add filtering by target score, ex: aware, practised, unaware" — for
+a filter that had already shipped in N46. Both halves of that are findings.
+
+**Half one: the owner was on a pinned deployment URL.** The screenshots came from
+`competency-assessment-platform-htxo4sij4-…vercel.app`, which is a *deployment*
+URL — Vercel mints a new one per push and each serves its own commit forever. The
+branch alias (`…-git-claude-c-cf41ac-…`) is the one that follows the head. Three
+rounds of "where is the filter" were spent before the host in the screenshot was
+read. **Check the host before debugging the feature.**
+
+**Half two, and this one is a real defect.** Even on the right build, the Target
+row offered only levels some control currently targets. The framework targets
+Aware (1), Practised (20) and Competent (111) — so **Unaware, Proficient and
+Expert were absent**, which is exactly the set the owner went looking for.
+
+The original reasoning was "six chips where three are always empty is noise, and
+an admin clicking one to find nothing learns to distrust the row." That is a fair
+rule for a *reading* screen and wrong for this one:
+
+- it is the EDITING screen. A level with no controls today has some the moment an
+  admin retargets one, and a filter that appears and disappears as a side effect
+  of your own edits is not a filter you can trust;
+- zero is information. "Nothing targets Expert" is a fact about the framework
+  worth seeing while tuning it, not an absence to hide;
+- a hidden control cannot be discovered. A dimmed one explains itself — and the
+  empty state below already answers honestly.
+
+All six levels now render, dimmed at zero and still clickable.
+
+**The lesson is not "show everything".** It is that hiding a capability because
+it is currently empty makes the capability look absent, and the person who then
+reports it missing is right about the experience even when the code is present.
+
+---
+
+### N49 — the round-trip budget counted a bootstrap as per-request work
+
+Found by running the suite five times to verify N45 rather than once. Four runs
+read 3 round trips for a boundary commit; one read **4**, the extra being
+`/auth/v1/.well-known/jwks.json`.
+
+`getClaims()` verifies the session signature locally against a JWKS cached at
+module scope, so fetching it is a once-per-INSTANCE bootstrap, not per-request
+work. The budget counted every `[supabase ` line, so whichever run happened to
+warm a cold instance went red — a load-bearing assertion failing at random,
+which trains precisely the skimming that "round trips are counted, not
+estimated" exists to prevent.
+
+**The exclusion is paired with its own assertion, or it would be a free pass.**
+Simply dropping jwks from the count would hide a genuine regression — someone
+making it a per-request fetch would leave the budgets reading 3 and 5 while every
+save quietly paid an extra auth round trip. So `supabaseCalls()` excludes it and
+a new check asserts JWKS is fetched **at most once for the whole run**. Together
+they say what the single count was trying to: our per-request calls are 3 or 5,
+and the bootstrap happens once.
+
+Same family as the favicon exclusion in the theme check, and the same rule: a
+verdict decided by incidental traffic is worthless in both directions.
+
+**Two harness traps hit while verifying this, both worth not repeating.**
+
+1. **Deleting a log a running process holds does not give you a fresh log.** On
+   Linux the server keeps writing to the unlinked inode, so the new path stays
+   empty. `E2E_SERVER_LOG` then pointed at a 359-byte stub and all four
+   round-trip budgets read `0:` — four red checks that looked like a regression
+   and were an artefact. Kill the server FIRST, then remove the log.
+2. **`pgrep -f next-server | xargs kill -9` kills the shell running it.** Already
+   in STATUS as a diagnostic trap; it is also a foot-gun as a fix. Scan `/proc`
+   for the cmdline instead, and trust `ss -tln | grep :3000` for whether the
+   port is actually free.
+
+Both cost a full verification cycle. The rule underneath is the one this file
+keeps relearning: **when a check goes red, ask what it measured before asking
+what broke.**
+
+---
+
+### N50 — the filters become the data (Excel-style facets)
+
+The owner's reframing, and it is the clearest statement of the product's premise
+so far:
+
+> building a structure for competency assessment that can take a standard
+> framework and model it by Area → Competency → Control … having dynamic
+> filtering based on the content being filtered is a great feature, regardless
+> of what the control values are … you show the framework table, read the values
+> and populate filters against it … think excel style filtering
+
+**The premise is explicitly unverified.** Area → Competency → Control fits IPMA
+ICB4. Whether every standard models that way has not been tested. That is worth
+holding onto, because it is the one assumption the whole data model rests on.
+
+**Excel-style facets are the right answer whether or not the premise holds**, and
+that is the interesting part. An autofilter dropdown offers the distinct values
+in its column. It never needs to know what the column MEANS — so a filter layer
+built this way encodes no assumption about ICB4, about APM, or about a scale
+running 0–5. It is the one piece that cannot be wrong about a framework it has
+never seen.
+
+**What was hardcoded before this:**
+
+| | Was | Now |
+|---|---|---|
+| Area chips | `["Perspective","People","Practice"] as const` | distinct areas holding controls |
+| Target chips | every scale level, dimmed at zero | distinct levels in use |
+| Target validation | `/^[0-5]$/` | any level the scale defines |
+| Priority | no filter at all | distinct priorities in use |
+| `AreaFilter` type | union of three ICB4 literals | `string` |
+
+**THREE SOURCES, DELIBERATELY DIFFERENT — this is the design and it should not
+be collapsed.**
+
+1. **Chips: the values present in the data.** No chip for a value nothing
+   carries. This reverses the dimmed-chips build from earlier the same evening,
+   which the owner correctly called noise.
+2. **Validation: the definition tables.** A URL naming a level the scale defines
+   but nothing uses gets the honest empty state. Silently widening it to all 133
+   answers a different question than the one asked. Only a value the framework
+   cannot express falls back to everything (N44's rule).
+3. **The editor's picker: the framework structure.** The owner's correction:
+   *"editing is different, it is not data driven, it is framework structure
+   driven."* Exactly right, and it is also what makes the framework able to grow
+   — a data-derived picker could only ever offer levels already in use, so a new
+   level could never be introduced.
+
+**Priority is the purest case.** It has no definition table, so the column IS its
+own vocabulary. Whatever is in it is what the filter offers, ordered by
+frequency because there is no published order to honour.
+
+**A bug the tests caught while adding it.** With no `priority` in the URL and no
+priority on a control, `c.priority === params.priority` is
+`undefined === undefined` — true — so the filter silently became `undefined`
+rather than `null`. Found by the shape assertion that had been extended for the
+new field, not by reasoning.
+
+417 e2e / 0 failed, 130 unit. The facet checks read the distinct values out of
+Postgres rather than off the page: a filter row that agrees with its own chips
+proves nothing.
+
+---
+
+### N51 — DEFERRED, NOT FOR THE PILOT: the framework memo makes edits flicker
+
+**Owner's call: log it, build it later. This is an architecture change.**
+
+Now that the filter chips are derived from the data being edited, a
+pre-existing cache trade becomes visible in a way it was not before.
+
+**The mechanism.** `lib/framework.ts` holds the framework in a module-scope
+variable with a 10-minute TTL. Under Fluid Compute several instances are alive
+at once, each with its own copy, and there is no shared invalidation channel.
+`saveControlAction` calls `invalidateFramework()`, which clears the memo **on the
+instance that handled the POST and only that one**.
+
+**What the admin sees.** Retarget a control to a level nothing used. The chip
+appears — that render is on the warm instance. Refresh; if the request lands on
+a sibling, the chip is gone again and the old level's count is one too high.
+Refresh again and it may return. It self-corrects within ten minutes.
+
+**The data is never wrong.** Postgres has the truth from the moment of the write.
+Only the display is stale, and only on the framework-admin screens.
+
+**Why it is worse here than where the trade was argued.** `lib/framework.ts`
+justifies the TTL against a stale `kib_note` — a text field nobody is likely to
+be watching on two instances in the same minute. A filter chip that appears and
+disappears between refreshes is indistinguishable from a bug, and it is the same
+shape of confusion that already cost three rounds on N48.
+
+**Options, with honest costs:**
+
+| Option | Cost | Effect |
+|---|---|---|
+| Leave it | none | Up to 10 min of flicker after an edit. Only the admin ever sees it; PMs never touch these routes. |
+| Shorten the TTL | more framework loads everywhere | Shortens the window, does not close it. Still flickers. |
+| **Skip the memo on `/admin/*`** | ~1 extra Supabase call per admin page | Closes it for the admin. Costs the nine PMs nothing — they never hit those routes. |
+| Shared invalidation (Redis / Postgres channel) | a network hop on the hot path | Closes it everywhere. Explicitly argued against in `docs/deploy.md`. |
+
+**Recommendation: skip the memo on the admin routes.** They are used by one
+person, occasionally, and are not on the path the 2026-08 performance arc was
+protecting. One extra call on a page nobody measures buys a framework editor
+that tells the truth immediately — which matters more now that the filters
+reflect the data being edited.
+
+**Not built.** Deferred by the owner as post-pilot architecture work. If it is
+picked up, it wants `/plan-eng-review` first: it touches the seam the whole
+performance arc was built around, and "add a call back" is exactly the kind of
+change that arc exists to make people argue for rather than assume.
+
+#### New evidence, 2026-08-08: it now costs a flaky merge gate
+
+Found while running the preview e2e for the CE-target rollup change (`419c56e`),
+and recorded because it moves N51 from "cosmetic flicker an admin might notice"
+to "an automated gate that sometimes goes red for no reason" — which is
+decision-relevant to whether it stays deferred.
+
+**Observed:** across five consecutive preview runs of the same build, runs 2 and
+4 failed one check and runs 1, 3 and 5 passed:
+
+```
+✗ N50: the priority filter matches the database — 111 vs 112 at High
+```
+
+**The database was never wrong** — checked directly, immediately after:
+High/active **112**, Medium/active 17, Low/active 3, Low/**inactive** 1
+(`4.3.2.6`), zero null priorities. Exactly the documented distribution. So the
+page under-counted by one; the data did not.
+
+**Why it is N51 and not a new defect.** `saveControlAction` (`app/actions.ts:171`)
+writes `priority` on **every** save — and defaults it to `"High"` when the field
+is absent — alongside `active` and `target_level`. Section [18] of the suite saves
+`4.3.1.3` during the admin walk and restores it afterwards. Under Fluid Compute a
+sibling instance can hold a framework snapshot captured *between* those two
+writes and serve it for up to ten minutes, because `invalidateFramework()` only
+clears the instance that handled the POST. One control in an intermediate state
+is one row fewer in the `priority=High` view. That is 111 against 112.
+
+Every observation fits: **intermittent** (depends which instance serves the
+request) and **off by exactly one** (one control is edited).
+
+#### It is NOT preview-only. Corrected 2026-08-08 by a controlled local run.
+
+The paragraph above said **preview-only**, on the evidence that two local runs
+went 420/420. That was two runs against a *freshly started* server, and the
+inference from them was wrong. Reproducing it locally takes one condition: run
+the suite against a server that has **already served a previous run**.
+
+| Local server state | Result | Runs |
+|---|---|---|
+| Cold — started immediately before the run | **420 passed, 0 failed** | 2 |
+| Warm — already served one full suite | **419 passed, 1 failed** (`111 vs 112 at High`) | 2 |
+
+Four runs, same build, same database, and the only variable is whether the
+process had a framework memo left over from the previous run. The database was
+re-checked at the point of failure and was correct both times: High/active
+**112**, Medium 17, Low 3, plus the one inactive `4.3.2.6`/Low.
+
+This **strengthens** the N51 diagnosis rather than changing it — a memo holding a
+snapshot from mid-edit is exactly what survives between runs in one process, and
+`invalidateFramework()` clearing only the instance that handled the POST is the
+same root cause. What changes is the cost of fixing it: N51 no longer needs five
+preview runs to observe. It reproduces on demand in one local run, which means
+the "make an assertion fail before the fix" requirement below is now cheap to
+satisfy.
+
+Practical consequence for anyone running the suite locally: **a green run on a
+warm server is not the same evidence as a green run on a cold one.** Restart
+`next start` before a run that has to be trusted.
+
+**Not fixed here, and deliberately so.** The iron law is no fix without a root
+cause, and the root cause is the deferred architecture item, not this diff — which
+touches neither the filter, the editor, nor the save path. Two things follow for
+whoever picks N51 up:
+
+- The e2e's `state`/`priority`/`target` count assertions are the canary. They
+  compare a rendered count against a live database count, which is only sound if
+  the render is not from a stale snapshot. Any fix should make one of them fail
+  *before* the fix and pass after.
+- Skipping the framework memo on `/admin/*` (the recommendation above) would also
+  close this, because every count assertion in the suite reads an admin screen.
+
+---
+
+### N53 — benchmark profiles have never worked: `targetsForProfile` is a dead join
+
+**Found by the outside voice (Claude subagent), 2026-08-08**, while independently
+reviewing the CE-target rollup change. Pre-existing — no diff in that change
+caused it — but it was found *because* of that change, since the change is what
+made a false claim about it plausible enough to write down.
+
+**The mechanism, measured against the live database, not inferred.**
+`lib/framework.ts` builds each profile's per-control targets by joining on the
+APM competence name:
+
+```ts
+const published = c.apm_competence ? byCompetence.get(c.apm_competence) : undefined;
+byControl.set(c.code, published !== undefined ? published : c.target_level);
+```
+
+The two sides of that join are formatted differently and never match:
+
+| Side | Example | Distinct values |
+|---|---|---|
+| `control.apm_competence` | `'5 Business case'`, `'2 Governance arrangements'` | 25 |
+| `benchmark_target.apm_competence` | `'Business case'`, `'Governance arrangements'` | 29 |
+| **Overlap** | — | **0** |
+
+So `published` is always `undefined`, and `targetsForProfile(anyProfileName)`
+returns the stored `control.target_level` for all 133 controls — identically, on
+all four profiles. `approveAssessment` therefore freezes the stored targets, not
+the selected profile's.
+
+**Failure scenario.** The Head of PMO assesses a senior PM against Advanced,
+approves, and `/results` judges them against the Intermediate-seeded numbers. No
+error, no warning, and nothing on screen differs from the Intermediate run — the
+selection is silently a no-op.
+
+**What a fix would actually buy, measured 2026-08-08 by matching the two sides
+with the number prefix stripped.** Over the 132 active controls, 101 map to an APM
+competence and 31 do not (those keep their stored target either way):
+
+| Profile | Published values for those 101 | Effect if the join were fixed | Control-weighted mean target |
+|---|---|---|---|
+| **Entry** | 100 present, 1 N/R | **100 controls move DOWN, none up** | 2.83 → **1.89** |
+| **Intermediate** | 101 present | **0 controls change** | 2.83 → 2.83 |
+| **Advanced** | **0 present — all N/R** | nothing to apply | — |
+| **Master** | **0 present — all N/R** | nothing to apply | — |
+
+Two things follow, and the second is the more important:
+
+1. **Intermediate changing nothing is the proof** that the stored targets *are*
+   the Intermediate published values. That is why the default path is correct by
+   accident and why nobody has noticed.
+2. **Advanced and Master are empty columns.** `benchmark_target` holds 29 rows per
+   profile and **zero** of them carry a value for Advanced or Master — not "no
+   match", no data at all. So even with the join repaired, the framework supports
+   exactly **two** usable profiles, Entry and Intermediate. Any plan that assumes
+   a senior bar can be selected (N52's "Senior Level PM KIB 2026") needs those
+   numbers sourced first; the fix to this defect will not produce them.
+
+**Beware a mean quoted without its basis.** The earlier working figures for these
+profiles — Intermediate 2.48, Entry 1.42 — are the unweighted mean over the 29
+benchmark *rows*. The numbers above are the mean over the 132 *controls*, which is
+what the rollup actually averages, and are the ones that describe the bar a PM
+faces. Both are correct; they answer different questions.
+
+**Why it has never bitten.** `DEFAULT_PROFILE` is Intermediate and the stored
+targets *are* the Intermediate seed, so the default path is correct by accident.
+Only selecting a different profile exposes it.
+
+**Three claims elsewhere are false because of this, and are corrected in the
+same commit as this entry:**
+- `docs/STATUS.md` open item 7 — briefly claimed the rollup change had "mostly
+  closed" this. Retracted; it now points here.
+- `lib/db/assessment.ts` — *"Freezes the per-control targets applied by this
+  assessment's benchmark profile"*. It freezes the stored ones.
+- `docs/rollup-spec.md` §6 — justifies the snapshot by *"a later change to the
+  benchmark profile"*, which currently cannot change anything.
+
+**Not fixed here, and not pilot-blocking.** The pilot runs on Intermediate. The
+fix is a data or schema question — normalise `apm_competence` on one side, or add
+a join key — and it is the kind of change that should be measured before and
+after rather than assumed, so it wants `/investigate` and its own diff. **What a
+fix must prove:** an assessment on Entry and one on Advanced produce *different*
+control targets for the same control, asserted from the database, plus a
+regression test that fails on today's build.
+
+**One consequence worth knowing before the re-baseline.** Because the profile
+override never fires, an admin's hand-edited control target survives approval
+untouched. Fix the join and it will not — `approveAssessment` would begin
+overwriting admin edits with the profile's published value at approval time. That
+interaction needs deciding as part of the fix, not discovered after it.
+
+### N54 — an unsaved edit in the framework editor rides between controls
+
+**Status:** Fixed · reported by the owner using the framework editor, 2026-08-08
+
+**What was observed.** Open a control whose target is, say, 2. Change it to 3
+**without saving** and press Next. The next control shows 3 — the pick just made
+on the previous control, not its own stored target. Press Previous back and that
+first control now also shows 3. An uncommitted pick presented as if it were the
+record, on the screen whose whole job is to set that record correctly.
+
+**The mechanism, confirmed on a production build (red→green), not inferred.**
+Every field in `app/admin/page.tsx` is *uncontrolled*: the target radios use
+`defaultChecked`, the priority/active `<select>`s and the reason/kib `<textarea>`s
+use `defaultValue`. Previous/Next/Skip navigate to `/admin?c=<other>` — the SAME
+route — so Next.js does a **soft client-side navigation**: it re-renders this
+server component with the new control's data and reconciles the RSC payload into
+the existing DOM. React applies `defaultChecked`/`defaultValue` only at **mount**
+and never overwrites a field the admin has touched, and the form had no identity
+tied to the control, so the input DOM nodes were reused across the navigation and
+carried the unsaved edits onto the next control and back.
+
+**Why the tests and dev never caught it.** It reproduces on the **production**
+build only. In `next dev` (Turbopack / Fast Refresh) the subtree remounts on
+navigation, re-applying the per-control defaults, so the leak is invisible — the
+same dev≠prod trap the round-trip work already paid for. A page load (`goto`)
+also remounts, so any test that arrived by `goto` rather than walking Next/Previous
+would have been green against the broken build.
+
+**The fix.** Wrap the uncontrolled fields in `<div key={control.code}>`. A changed
+key gives that subtree a new identity, so React unmounts the old inputs and mounts
+fresh ones initialised from *this* control's values on every navigation. The key
+is on the fields wrapper, **not** the whole form, so the Save / Skip actions row
+stays mounted across a navigation — a `/review` pass caught that keying the whole
+form dropped keyboard focus to `<body>` when the in-form "Skip to next" link was
+used (the fields remounted under it). No client component is added — `key` is a
+reconciliation hint, honoured during soft-nav on a server-rendered tree, so the
+editor stays server-only.
+
+**Regression test.** `scripts/e2e.mjs` §10a walks the editor as an admin does:
+click a target the control does not have, press Next, and assert the next control
+shows **its own** stored target (and Previous shows the first control's own again),
+with nothing written to Postgres. Shown failing on the pre-fix production build
+first — `shown 0, own 3` on Next and `shown 0, own 2` on Previous — then green.
+Because it only bites on a prod build, the local suite must run against
+`next start`, not `next dev`.

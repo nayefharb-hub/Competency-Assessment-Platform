@@ -5,7 +5,7 @@ import { getFramework } from "@/lib/framework";
 import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
-import { fmtLevel, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
+import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +60,7 @@ function Bar({ r }: { r: CeResult }) {
       </div>
       <div className="val">
         <b className="tnum">{fmtLevel(r.actual)}</b>{" "}
-        <span className="muted tnum">/ {r.target ?? "—"}</span>{" "}
+        <span className="muted tnum">/ {fmtLevel(r.target)}</span>{" "}
         <HealthPill health={r.health} />
       </div>
     </div>
@@ -120,7 +120,7 @@ export default async function ResultsPage({
               {assessment.assessee_name} — {assessment.assessee_role}
             </h3>
             <div className="sub">
-              Assessment cycle {assessment.cycle} · Benchmark: {assessment.profile} · Approved
+              Assessment cycle {assessment.cycle} · Approved
               {assessment.approved_at ? ` ${assessment.approved_at.slice(0, 10)}` : ""} ·{" "}
               {revised} control{revised === 1 ? "" : "s"} revised by the assessor
             </div>
@@ -133,14 +133,21 @@ export default async function ResultsPage({
 
         <div className="tiles">
           {areas.map((ar) => {
-            const health: Health =
-              ar.actual === null || ar.target === null
-                ? "minor"
-                : ar.actual >= ar.target
-                  ? "ready"
-                  : ar.target - ar.actual <= 0.5
-                    ? "minor"
-                    : "deficit";
+            /*
+             * The SAME healthOf the CE rows use (rollup-spec §4: the thresholds
+             * are defined in exactly one place). This was an inlined copy of the
+             * three tiers with a bare `<= 0.5`, and it survived the 2026-08-08
+             * change that put an epsilon on the real one — leaving the copy MORE
+             * exposed than the original, because an area figure is a mean of
+             * means over 5, 10 and 13 competencies whose own denominators are
+             * 3-6. Five CEs at target 14/6 against actual 11/6 gives a gap of
+             * 0.5000000000000002 and painted the deficit colour on an area
+             * exactly half a level short.
+             *
+             * Areas have no health of their own (§5) — this only picks a bar
+             * colour, so a null rolls up to "minor" exactly as before.
+             */
+            const health: Health = healthOf(ar.actual, ar.target, false) ?? "minor";
             const width =
               ar.actual === null || ar.target === null || ar.target === 0
                 ? "0%"
@@ -219,7 +226,7 @@ async function NotYet({
   return (
     <div className="section">
       <div className="card pad">
-        <h2 style={{ fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
+        <h2 style={{ fontSize: "1.125rem", fontWeight: 650, marginBottom: 6 }}>
           Results are not available yet
         </h2>
         <p className="note">
@@ -248,7 +255,7 @@ async function NotYet({
             <div className="cap" style={{ margin: "18px 0 6px" }}>APPROVED ASSESSMENTS</div>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {others.map((a) => (
-                <li key={a.id} style={{ fontSize: 13.5 }}>
+                <li key={a.id} style={{ fontSize: "var(--fs-ui)" }}>
                   <Link href={`/results?a=${a.id}`}>{a.assessee_name}</Link> · cycle {a.cycle}
                 </li>
               ))}

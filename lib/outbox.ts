@@ -98,6 +98,45 @@ let save: Saver | null = null;
 let mirrorHealthy = true;
 const listeners = new Set<() => void>();
 
+/**
+ * EVERY ANSWER THIS BROWSER HAS CONFIRMED THIS SESSION — including the ones
+ * already acknowledged and dropped from the queue above.
+ *
+ * N33, and it is the reason `pendingFor` alone was never enough. The commit
+ * POST and the navigation GET leave together (D9), so the server render of the
+ * NEXT control is taken before the write lands — measured, every time, not
+ * occasionally. The queue then drops the entry the moment the server says ok.
+ * Between those two moments the answer exists nowhere the client can see it:
+ * the server render predates it and the queue has forgotten it. At the last
+ * control of a competency that made `ceComplete` false, so the button read
+ * "Next control" and the milestone never rose — on the walked path, which is
+ * the only path a PM actually takes.
+ *
+ * THE INVARIANT, stated exactly, because the first draft of this comment said
+ * "it only grows" and the same commit added two ways to remove an entry.
+ * ACKNOWLEDGEMENT never removes anything — that is the whole difference from
+ * the queue. A user change (`configure`) and a server refusal (`reject`) do,
+ * and both mean the answer is no longer this screen's to count.
+ *
+ * KEYED BY ASSESSMENT, not by control alone. A control code is not unique
+ * across time: `lib/db/assessment.ts` allows an archived assessment to be
+ * replaced by a fresh assignment, and a cycle rolls over. Both can happen while
+ * a tab stays open, and `configure` would not fire — same person, same storage
+ * key. Keyed by control alone, the morning's answers would declare an empty new
+ * record complete and hand the PM to a Submit the server refuses, which is the
+ * exact defect class the previous review pass found. Scoping by assessment also
+ * means a tab whose session moved to another PM can never read the first PM's
+ * answers, because the id in the render no longer matches the one they were
+ * stored under.
+ *
+ * IN MEMORY, NOT MIRRORED. Answers that have NOT reached the server are the
+ * QUEUE's job, and the queue is mirrored; `effectiveLevel` asks both, so a
+ * reload during an outage still sees them (that chain is load-bearing — see
+ * app/assess/score-panel.tsx).
+ */
+const answered = new Map<string, number>();
+const answeredKey = (scope: string, control: string) => `${scope}|${control}`;
+
 /* ------------------------------------------------------------ subscribe */
 
 export function subscribe(fn: () => void): () => void {
@@ -162,6 +201,18 @@ export function configure(userId: string, saver: Saver) {
   const next = `${KEY_PREFIX}${userId}`;
   if (next === key) return;          // already bound; keep the live queue
   key = next;
+  // A different person is signed in now. What the PREVIOUS one answered is not
+  // this one's assessment, and letting it decide whether a competency looks
+  // complete would show one PM their colleague's progress.
+  //
+  // DEFENCE IN DEPTH, NOT THE PRIMARY GUARD, and worth being honest about:
+  // every real sign-out is a hard navigation, so a new person almost always
+  // starts with an empty module scope and this clear is a no-op. The case it
+  // cannot reach is a tab left open while the session changes underneath it —
+  // `configure` is not called again there, because the root layout is not
+  // re-rendered by a client-side navigation. That case is covered instead by
+  // keying `answered` on the assessment id, which comes from the render.
+  answered.clear();
   try {
     const raw = localStorage.getItem(key);
     const parsed: unknown = raw ? JSON.parse(raw) : [];
@@ -195,8 +246,17 @@ function isEntry(v: unknown): v is OutboxEntry {
 /**
  * Commit one control. Called by Next — it returns immediately so navigation
  * is never blocked, and a new commit also retries everything already queued.
+ *
+ * `scope` is the assessment this answer belongs to. It scopes the client's own
+ * memory of what it confirmed (see `answered`); it is deliberately NOT part of
+ * the queued entry, because the server resolves the assessment from the session
+ * at write time and an id travelling in the payload would be one more thing a
+ * stale tab could aim at the wrong record.
  */
-export function commit(entry: Omit<OutboxEntry, "tries" | "userId" | "queuedAt">) {
+export function commit(
+  entry: Omit<OutboxEntry, "tries" | "userId" | "queuedAt">,
+  scope: string,
+) {
   // Dwell survives a re-commit for the same reason `tries` and `queuedAt` do,
   // though it took a review pass to see it. It measures the time taken to
   // reach the FIRST answer for this control; a re-commit while the first is
@@ -208,6 +268,7 @@ export function commit(entry: Omit<OutboxEntry, "tries" | "userId" | "queuedAt">
   // Changing your mind about a control that is ALREADY failing must not reset
   // its history: zeroing `tries` would unmount the failure banner while the
   // network is still down, and restart the backoff at 2s. Carry both forward.
+  answered.set(answeredKey(scope, entry.control), entry.level);
   const previous = queue.find((e) => e.control === entry.control);
   queue = [...queue.filter((e) => e.control !== entry.control), {
     ...entry,
@@ -229,6 +290,20 @@ export function retryNow() {
  *  than the server render while an entry is still in flight. */
 export function pendingFor(control: string): OutboxEntry | undefined {
   return queue.find((e) => e.control === control);
+}
+
+/**
+ * The level this browser confirmed for a control, sent or not — `null` when it
+ * has not been answered on this device this session.
+ *
+ * Deliberately NOT the same question as `pendingFor`, which asks "is this still
+ * unsent" and drives the offline hint. This one asks "did the PM answer it",
+ * which stays true after the server says ok. Screens that decide what the PM
+ * has DONE must ask this; screens that report what is still IN FLIGHT ask the
+ * other. Collapsing them is what produced N33.
+ */
+export function answeredLevel(scope: string, control: string): number | null {
+  return answered.get(answeredKey(scope, control)) ?? null;
 }
 
 /** False once a localStorage write has failed. The offline banner promises
@@ -283,7 +358,28 @@ async function flush() {
       // flush replaced the object; confirming the old value must not delete
       // the new one, which has not been sent yet.
       if (stillQueued === entry) queue = queue.filter((e) => e !== entry);
-      if (reject) console.warn(`[outbox] ${entry.control} refused: not this account`);
+      if (reject) {
+        /* Refused on identity grounds, so no record this browser can reach will
+           ever hold it. Every scope is dropped, not just the one it was
+           committed under: the refusal says this tab is signed in as somebody
+           else, which invalidates the claim for any assessment it holds.
+           Unconditional, and not guarded on the level — a re-commit at a
+           different level would only be refused again, and the earlier guard
+           protected nothing while reading as though it did.
+
+           WHAT THIS DOES NOT DO, said plainly because the comment here used to
+           overstate it: nothing subscribes to this map, so a card ALREADY on
+           screen keeps its counts until the panel's effect next runs. The
+           refusal path only ever fires in a tab whose session has moved to
+           another account, where the whole render is already the wrong
+           person's; correcting it for the next navigation is the honest scope
+           of this line. Wiring a notification would mean publishing on a map
+           the panel deliberately reads once per control. */
+        for (const k of [...answered.keys()]) {
+          if (k.endsWith(`|${entry.control}`)) answered.delete(k);
+        }
+        console.warn(`[outbox] ${entry.control} refused: not this account`);
+      }
     } else {
       failed = true;
       // Increment the entry that is actually IN the queue, not the detached

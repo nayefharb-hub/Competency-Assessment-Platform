@@ -92,6 +92,39 @@ const BOSS = {
 };
 
 let pass = 0, fail = 0;
+/**
+ * The Supabase round trips a REQUEST made, for the budget assertions.
+ *
+ * JWKS IS EXCLUDED, and the exclusion is defended by its own check below.
+ * `getClaims()` verifies the session signature locally against a JWKS that is
+ * cached module-globally, so fetching it is a once-per-INSTANCE bootstrap, not
+ * per-request work. Counting it made the boundary-commit budget read 4 instead
+ * of 3 on whichever run happened to warm a cold instance — measured, one red in
+ * five identical runs. A load-bearing budget that goes red at random trains
+ * exactly the skimming CLAUDE.md's "round trips are counted, not estimated"
+ * rule exists to prevent.
+ *
+ * Excluding it would ALSO hide a real regression — someone making JWKS a
+ * per-request fetch — so `jwksFetches()` below asserts it stays at most one for
+ * the whole run. The budget and that check together say what the old single
+ * count was trying to: our per-request calls are 3 or 5, and the bootstrap
+ * happens once.
+ */
+/* Where the server log stood when this run began.
+   Without it, a check that reads the whole file measures the log's LIFETIME,
+   not the run's — and /tmp/next.log survives across suite runs against one
+   long-lived `next start`. The first cut of the JWKS check below did exactly
+   that and reported "6 fetches" for eight runs' worth of log, which looked like
+   a finding and was an artefact. */
+const RUN_MARK = (() => {
+  const f = process.env.E2E_SERVER_LOG;
+  if (!f) return 0;
+  try { return readFileSync(f, "utf8").length; } catch { return 0; }
+})();
+
+const supabaseCalls = (text) =>
+  text.split("\n").filter((l) => l.includes("[supabase ") && !l.includes("jwks.json"));
+
 const check = (name, ok, detail = "") => {
   if (ok) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
@@ -212,7 +245,61 @@ await ensure(PM);
 await ensure(OTHER);
 await ensure(BOSS);
 
-const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
+/*
+ * RUNNING AGAINST A REAL VERCEL PREVIEW, not just localhost.
+ *
+ * `/qa` is a gate before merge and the thing it has to run against is the
+ * PREVIEW — the only place unmerged work actually runs. Two obstacles, and only
+ * one of them is the obvious one.
+ *
+ * DEPLOYMENT PROTECTION is the obvious one: every preview URL 302s to
+ * `vercel.com/sso-api` without a Protection Bypass for Automation secret. It
+ * lives in this environment as `Vercel_deployment_ByPass`, is passed BY
+ * REFERENCE, and must never be printed or committed. It has to be on EVERY
+ * request — assets and RSC payloads included — so it is attached by wrapping
+ * `newContext` once rather than by editing thirty call sites, which is exactly
+ * the kind of drift the ASSESS_HUB parser above exists to prevent.
+ *
+ * TLS IS THE ONE THAT COSTS A DAY. The egress proxy intercepts TLS, and its
+ * handshake RESETS Chromium's TLS 1.3 — every external host, not just Vercel.
+ * `curl` and node `fetch` negotiate differently and get 200, so the network
+ * looks fine right up until the browser touches it. Disabling ECH, QUIC, HTTP/2
+ * and post-quantum key agreement all failed; capping the version works. This
+ * was diagnosed twice as something else first — "the preview is unreachable"
+ * and "deployment protection blocks the browser" — and both wrong answers
+ * pointed the owner at a fix they did not need, which is why the mechanism is
+ * written down here rather than just the flag.
+ */
+const REMOTE = !BASE.startsWith("http://127.0.0.1") && !BASE.startsWith("http://localhost");
+const BYPASS = process.env.Vercel_deployment_ByPass;
+if (REMOTE && !BYPASS) {
+  throw new Error(
+    `E2E_BASE_URL is remote (${BASE}) but Vercel_deployment_ByPass is unset — every `
+    + "request would 302 to vercel.com/sso-api and the run would report a fake pass. "
+    + "The variable is injected at container start, so a session that predates it "
+    + "needs a new session, not a new variable.",
+  );
+}
+const browser = await chromium.launch({
+  ...(CHROME ? { executablePath: CHROME } : {}),
+  ...(REMOTE
+    ? {
+        args: ["--ssl-version-max=tls1.2"],
+        ...(process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {}),
+      }
+    : {}),
+});
+if (REMOTE) {
+  const openContext = browser.newContext.bind(browser);
+  browser.newContext = (opts = {}) => openContext({
+    ...opts,
+    extraHTTPHeaders: {
+      ...(opts.extraHTTPHeaders ?? {}),
+      "x-vercel-protection-bypass": BYPASS,
+    },
+  });
+  console.log(`  (running against ${BASE} — preview, with protection bypass)`);
+}
 // `closingOnPurpose` matters: teardown's own browser.close() fires this event,
 // so without the flag the diagnostic reports a disconnect on EVERY clean run —
 // it did exactly that on its first outing. A signal that always fires carries
@@ -482,7 +569,14 @@ const assessmentOf = async (email) =>
     .is("deleted_at", null).maybeSingle()).data;
 
 const { data: activeControls } = await db
-  .from("control").select("id, code, target_level").eq("active", true).order("sort_order").limit(5000);
+  /* ce_id is needed by [16] to find the largest competence element and to skip
+     a control OUTSIDE the one under test. It is `ce_id` on this table — the app
+     exposes `ce_code`, which lib/framework.ts maps. Selecting the wrong name
+     left every value undefined, so a filter meant to pick one competency
+     silently matched all 132 controls and a test meant to skip one seeded every
+     one of them, and still reported green. */
+  .from("control").select("id, code, ce_id, target_level")
+  .eq("active", true).order("sort_order").limit(5000);
 
 /* ---------------------------------------------------- 1. invite-only auth */
 console.log("\n[1] Invite-only auth");
@@ -1594,8 +1688,7 @@ console.log("\n[4] Self-scoring persists to Postgres");
       await committed;
       await pm.page.waitForLoadState("networkidle");
       await new Promise((r) => setTimeout(r, 500)); // let the server log flush
-      const lines = readFileSync(LOG, "utf8").slice(mark)
-        .split("\n").filter((l) => l.includes("[supabase "));
+      const lines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
       const writes = lines.filter((l) => l.includes("/rest/v1/score"));
       check("a warm commit + navigation costs 5 supabase round trips",
         lines.length === 5, `${lines.length}: ${lines.join(" | ")}`);
@@ -1879,8 +1972,20 @@ console.log("\n[7] Approval snapshots targets and locks the record");
     .select("control_id, target_level").eq("assessment_id", assessmentId).limit(5000);
   const live = new Map(activeControls.map((c) => [c.id, c.target_level]));
   const same = frozen.filter((f) => live.has(f.control_id) && f.target_level === live.get(f.control_id)).length;
-  check("snapshot equals the live Intermediate targets at approval time",
-    same >= activeControls.length - 5, `${same}/${activeControls.length} identical`);
+  /*
+   * EXACT, not `>= length - 5`. The old slack existed because the snapshot was
+   * routed through `targetsForProfile`, which could legitimately disagree with
+   * the stored target for any control APM published a value for. That path is
+   * gone (N53), so the snapshot is now `control.target_level` by construction
+   * and every active control must match. Measured on both existing approvals:
+   * 132/132, twice — the tolerance was never being used.
+   *
+   * It is not a free tightening, it is the point: at `>= 127` a regression that
+   * corrupted five controls' frozen targets passed silently. 131/132 PASSES the
+   * old predicate and FAILS this one, which is the whole difference.
+   */
+  check("snapshot equals the live targets at approval time, exactly",
+    same === activeControls.length, `${same}/${activeControls.length} identical`);
 
   check("approval lands on results", boss.page.url().includes("/results"), boss.page.url());
   const results = await boss.page.content();
@@ -1955,6 +2060,55 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     matched === byCe.size, `${matched}/${byCe.size}`);
 
   /*
+   * The TARGET column, recomputed from the database the same way (rollup-spec §3).
+   * Nothing asserted this before the rule changed — the section checked the actual
+   * mean only — so the number that decides every verdict on this page had no
+   * coverage on the running app at all.
+   *
+   * This assessment is APPROVED by now, so the targets come from target_snapshot,
+   * not from `control`. That is what makes this a §6 check as well as a §3 one.
+   *
+   * What it deliberately does NOT do: bump a live control target and assert the
+   * page does not move. That would pass for an accidental reason — the framework
+   * memo (10 min, per instance, invalidated only by an admin save) would hide a
+   * direct database write regardless of whether the snapshot was honoured. The
+   * snapshot-beats-live distinction is asserted in scripts/rollup.test.mjs, where
+   * it can be tested honestly.
+   */
+  {
+    const { data: snapRows } = await db.from("target_snapshot")
+      .select("target_level, control:control_id(code, active, competence_element:ce_id(code))")
+      .eq("assessment_id", assessmentId).limit(5000);
+    const targetByCe = new Map();
+    for (const s of snapRows ?? []) {
+      const c = s.control;
+      if (!c?.active || s.target_level === null) continue;
+      const list = targetByCe.get(c.competence_element.code) ?? [];
+      list.push(s.target_level);
+      targetByCe.set(c.competence_element.code, list);
+    }
+    check("snapshot covers all 28 competence elements", targetByCe.size === 28, `${targetByCe.size}`);
+
+    let tMatched = 0;
+    const misses = [];
+    for (const [code, levels] of targetByCe) {
+      const target = (levels.reduce((s, n) => s + n, 0) / levels.length).toFixed(1);
+      const row = shown.find((t) => t.includes(`${code} ·`) || t.includes(`${code}\n`));
+      if (row && row.includes(`/ ${target}`)) tMatched++;
+      else misses.push(`${code} wanted / ${target}`);
+    }
+    check("every CE target on the page equals mean(SNAPSHOT target over active controls)",
+      tMatched === targetByCe.size, `${tMatched}/${targetByCe.size} ${JSON.stringify(misses.slice(0, 3))}`);
+
+    // A fraction must actually reach the screen, or the whole change is invisible:
+    // 6 of 28 competencies have a mean their old published integer never equalled.
+    const fractional = [...targetByCe.values()]
+      .filter((ls) => (ls.reduce((s, n) => s + n, 0) / ls.length) % 1 !== 0).length;
+    check("at least one CE target is genuinely fractional, so one decimal is load-bearing",
+      fractional > 0, `${fractional} of ${targetByCe.size}`);
+  }
+
+  /*
    * The escalation case, constructed on purpose (STATUS.md open item 3).
    *
    * A CE whose mean sits ABOVE its target can still read "Capability Deficit"
@@ -1967,9 +2121,20 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   const { data: ceRows } = await db.from("competence_element")
     .select("id, code, target_level, control(id, code, active, target_level)")
     .limit(200);
+  /*
+   * ceTarget is the MEAN of the active control targets, which is what the page
+   * shows (rollup-spec §3). This used to read `ce.target_level`, the APM
+   * published integer — and after the rule changed on 2026-08-08 that check went
+   * on PASSING while comparing against a number no longer on screen, because the
+   * constructed mean (~4.4) clears any target either way. A green check that has
+   * quietly stopped asserting its own claim is worse than a missing one, so the
+   * column is not read here at all.
+   */
+  const meanOf = (xs) => xs.reduce((s, n) => s + n, 0) / xs.length;
   const fat = (ceRows ?? [])
     .map((ce) => ({ ...ce, actives: (ce.control ?? []).filter((c) => c.active && c.target_level !== null) }))
-    .filter((ce) => ce.target_level !== null && ce.actives.length >= 5)
+    .filter((ce) => ce.actives.length >= 5)
+    .map((ce) => ({ ...ce, ceTarget: meanOf(ce.actives.map((c) => c.target_level)) }))
     .sort((a, b) => b.actives.length - a.actives.length)[0];
 
   if (!fat) {
@@ -1995,7 +2160,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     const mean = (5 * (fat.actives.length - 1) + low) / fat.actives.length;
     check("constructed mean clears the CE target, so the badge looks contradictory",
-      mean >= fat.target_level, `mean ${mean.toFixed(2)} vs target ${fat.target_level}`);
+      mean >= fat.ceTarget, `mean ${mean.toFixed(2)} vs target ${fat.ceTarget.toFixed(2)}`);
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of
@@ -2097,6 +2262,65 @@ console.log("\n[10] Framework admin writes the tunable layer only");
   const { data: restored } = await db.from("control").select("kib_note").eq("code", "4.3.1.3").single();
   check("seeded framework restored after the admin test",
     restored.kib_note === original.kib_note, `${restored.kib_note}`);
+}
+
+/* ------------------------- 10a. an unsaved edit must not ride between controls
+ *
+ * N54. The editor's fields are UNCONTROLLED (defaultChecked / defaultValue) and
+ * Previous/Next navigate to /admin?c=<other> — the SAME route, so Next.js
+ * soft-navigates and reconciles into the existing DOM. React applies the
+ * defaults only at mount, so without a per-control remount key the input nodes
+ * were reused and a target the admin CLICKED BUT NEVER SAVED appeared on the
+ * next control, and back on the one they left — an uncommitted pick shown as if
+ * it were the stored target. The fix keys the form on control.code.
+ *
+ * This is walked (clicks, not goto), because a page load re-mounts the form and
+ * would hide exactly the bug: it lived on the soft-navigation path a real admin
+ * takes. It also only shows on a PRODUCTION build — dev's Fast Refresh remounts
+ * and masks it — which is why the local suite runs against `next start`.
+ */
+{
+  const codeShown = () => boss.page.locator(".crumb b").last().innerText();
+  const checkedTarget = async () =>
+    Number(await boss.page.locator('input[name="target"]:checked').getAttribute("value"));
+
+  await boss.page.goto("/admin?c=4.3.1.1");
+  await boss.page.waitForLoadState("networkidle");
+  const storedA = await checkedTarget();
+
+  // Read the Next control's code from the DOM so the test doesn't hardcode the
+  // neighbour order, and its own target straight from Postgres.
+  const nextHref = await boss.page.locator('.assess-nav a[href*="c="]').first().getAttribute("href");
+  const nextCode = new URL(nextHref, "http://x").searchParams.get("c");
+  const { data: bRow } = await db.from("control").select("target_level").eq("code", nextCode).single();
+  const storedB = bRow.target_level ?? 3; // the editor's own default when null
+
+  // A level to click that differs from BOTH stored targets, so a leak is
+  // unambiguous — not merely a value that happened to match.
+  const unsaved = [0, 1, 2, 3, 4, 5].find((n) => n !== storedA && n !== storedB);
+
+  await boss.page.click(`label[for="target-${unsaved}"]`);
+  check("an unsaved target edit registers on 4.3.1.1", (await checkedTarget()) === unsaved);
+
+  await boss.page.locator(`a[href*="c=${nextCode}"]`).first().click();
+  await boss.page.waitForURL(`**/admin?c=${nextCode}*`, { timeout: 15_000 });
+  await boss.page.waitForLoadState("networkidle");
+  check("Next lands on the next control", (await codeShown()) === nextCode, await codeShown());
+  check("the next control shows ITS OWN target, not the unsaved pick from the last",
+    (await checkedTarget()) === storedB,
+    `shown ${await checkedTarget()}, own ${storedB}, unsaved was ${unsaved}`);
+
+  await boss.page.locator('a[href*="c=4.3.1.1"]').first().click();
+  await boss.page.waitForURL("**/admin?c=4.3.1.1*", { timeout: 15_000 });
+  await boss.page.waitForLoadState("networkidle");
+  check("Previous returns to 4.3.1.1", (await codeShown()) === "4.3.1.1", await codeShown());
+  check("the unsaved pick did not persist on the control it was made on",
+    (await checkedTarget()) === storedA,
+    `shown ${await checkedTarget()}, own ${storedA}, unsaved was ${unsaved}`);
+
+  const { data: aAfter } = await db.from("control").select("target_level").eq("code", "4.3.1.1").single();
+  check("and an unsaved edit reached Postgres for none of it",
+    (aAfter.target_level ?? 3) === storedA, `${aAfter.target_level}`);
 }
 
 
@@ -2522,13 +2746,25 @@ console.log("\n[14] Mobile chrome and theme (N10, N12)");
     // lives on <html> and revalidatePath had to rebuild the whole tree.
     // Record WHAT, not just how many. A bare count told us a request happened
     // and nothing about which, and the first flake here cost a round of guessing.
+    // THE FAVICON IS NOT THE APP TALKING TO A SERVER. Chromium re-requests
+    // /icon.svg when <html> changes, which is browser housekeeping racing the
+    // click, and counting it made this check fail on traffic that has nothing
+    // to do with the theme. That is the N21 lesson with its sign flipped: a
+    // verdict decided by unrelated requests is worthless in BOTH directions.
+    // Excluded by path, narrowly, so a real regression — a document, an RSC
+    // payload, a fetch — still names itself in the message.
     const seen = [];
-    const count = (r) => { seen.push(`${r.resourceType()} ${new URL(r.url()).pathname}`); };
+    const count = (r) => {
+      const path = new URL(r.url()).pathname;
+      if (path === "/icon.svg" || path === "/favicon.ico") return;
+      seen.push(`${r.resourceType()} ${path}`);
+    };
     page.on("request", count);
     await page.click('.themetoggle button:has-text("Light")');
     await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
     page.off("request", count);
-    check("changing theme makes no network request at all", seen.length === 0, seen.join(", "));
+    check("changing theme makes no request to the server at all",
+      seen.length === 0, seen.join(", "));
     const light = await state();
     check("Light overrides a dark OS rather than doing nothing",
       light.attr === "light" && light.bg === "rgb(244, 246, 249)", `${light.attr} / ${light.bg}`);
@@ -2614,6 +2850,1437 @@ console.log("\n[15] Prefetch does not cost what it cannot buy (N21)");
   await ctx.close();
 }
 
+}
+
+
+/* CLEARING THE SCORES IS ITSELF A RACE, and it fails as a crash rather than a
+   check. Every block below leaves the browser at a control whose answer left in
+   the same breath as the navigation (D9) — that is the product — so a commit
+   POST can still be on the wire when the context closes, and land AFTER the
+   next block's delete. The next insert then hits the (assessment, control)
+   unique index and the whole section dies with "duplicate key", ten checks
+   short, on a run where nothing is wrong with the app.
+
+   So the delete is confirmed rather than assumed. This is FIXTURE setup, not
+   the step under test: the rule that a test must not await the commit applies
+   to the control being exercised, and waiting here is how the previous
+   sitting's writes are made to have finished before this one begins. */
+async function clearScores(assessmentId) {
+  for (let i = 0; i < 20; i++) {
+    await db.from("score").delete().eq("assessment_id", assessmentId);
+    const { count } = await db.from("score")
+      .select("control_id", { count: "exact", head: true })
+      .eq("assessment_id", assessmentId);
+    if ((count ?? 0) === 0) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("could not clear scores — a writer is still landing rows");
+}
+
+/* ------------------------------------------- 16. the milestone, in place (N32) */
+console.log("\n[16] The competency milestone (N32, N30, E1-E4)");
+{
+  /* A fresh PM with nothing scored, so the competency states are ours to set.
+     4.3.1 "Strategy" is the first competency and has exactly five controls. */
+  const CE = ["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4", "4.3.1.5"];
+  const asmt = await assessmentOf(PM.email);
+  const idFor = (code) => activeControls.find((c) => c.code === code).id;
+
+  /* Captured BEFORE seed() mutates it, and restored at the end of the block.
+     "Safe because nothing after [16] reads it" made this section permanently
+     order-last by comment rather than by construction. */
+  const { data: fixtureState } = await db.from("assessment")
+    .select("state, submitted_at, approved_at").eq("id", asmt.id).single();
+
+  const seed = async (codes) => {
+    /* Back to DRAFT first. By this section the suite has already submitted and
+       approved this assessment, and a locked panel has no radio to click — the
+       first run of this block died in page.check with a 30s timeout rather
+       than a useful failure. */
+    await db.from("assessment")
+      .update({ state: "draft", submitted_at: null, approved_at: null })
+      .eq("id", asmt.id);
+    await clearScores(asmt.id);
+    if (codes.length === 0) return;
+    /* UPSERT, not insert. `clearScores` confirms the table is empty, but the
+       insert happens AFTER that confirmation — a commit POST still in flight
+       from the previous block can land in between and trip the unique index,
+       killing the section with a crash rather than a check. Overwriting is the
+       right resolution: the seed is the fixture's statement of what the prior
+       sitting left behind. */
+    const { error } = await db.from("score").upsert(codes.map((code) => ({
+      assessment_id: asmt.id, control_id: idFor(code), self_level: 3,
+    })), { onConflict: "assessment_id,control_id" });
+    if (error) throw new Error(`seeding failed: ${error.message}`);
+  };
+
+  const open = async (ctx, code) => {
+    const page = await ctx.newPage();
+    await page.goto(`/assess?c=${code}`);
+    await page.waitForSelector(".optlist");
+    return page;
+  };
+
+  /* --- E1/E4: the competency is legible, and so is the position in it --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.3");
+    const ceEl = page.locator(".ce-name");
+    check("E1: the competency line is on the page at all", (await ceEl.count()) === 1);
+    const ceName = await ceEl.innerText();
+    check("E1: the competency is named at heading weight, not buried in the crumb",
+      /4\.3\.1\s+Strategy/.test(ceName), JSON.stringify(ceName));
+    check("E4: and says where in it the PM is",
+      /3\s+of\s+5\s+in this competency/i.test(ceName), JSON.stringify(ceName));
+    const weight = await ceEl.evaluate((el) => Number(getComputedStyle(el).fontWeight));
+    check("E1: at a weight that actually reads as a heading", weight >= 600, String(weight));
+    await ctx.close();
+  }
+
+  /* --- FM1: a competency finished by SKIPPING must not claim to be complete --- */
+  {
+    await seed(CE.slice(0, 1));                    // 4.3.1.2-.4 skipped
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="3"]');
+    const act = page.locator(".assess-actions button").first();
+    check("FM1: there is an action button to read", (await act.count()) === 1);
+    const label = await act.innerText();
+    check("FM1: skipping leaves the competency open — no finish, no milestone",
+      !/finish this competency/i.test(label), JSON.stringify(label));
+    await page.click('.assess-actions button');
+    await page.waitForLoadState("networkidle");
+    check("FM1: and the click moves on rather than raising a milestone",
+      (await page.locator(".milestone").count()) === 0, page.url());
+    await ctx.close();
+  }
+
+  /* --- FM2 (N30): the answer ON SCREEN counts, before it is committed --- */
+  {
+    await seed(CE.slice(0, 4));                    // all but the last
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+
+    const action = page.locator(".assess-actions button").first();
+    check("N30: there is an action button to read", (await action.count()) === 1);
+    const before = await action.innerText();
+    check("N30: with nothing picked yet, the button does not promise a finish",
+      !/finish this competency/i.test(before), JSON.stringify(before));
+
+    await page.check('input[name="level"][value="4"]');
+    const after = await action.innerText();
+    /* THIS IS THE REGRESSION. Before the fix the label was computed from
+       persisted scores only, so picking the fifth answer changed nothing and
+       the button still read "Back to the list" — the same screen promising
+       something different on a later visit. */
+    check("N30: picking the fifth answer completes the competency, immediately",
+      /finish this competency/i.test(after), JSON.stringify(after));
+
+    const hintEl = page.locator('.note[role="status"]').first();
+    check("N30: the commit hint is on screen", (await hintEl.count()) === 1);
+    const hint = await hintEl.innerText();
+    check("N30: and the hint names the button that is actually on screen",
+      /finish this competency/i.test(hint), JSON.stringify(hint));
+
+    /* --- the milestone itself --- */
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone", { timeout: 10_000 });
+
+    check("N32: the milestone appears IN PLACE — no navigation",
+      new URL(page.url()).pathname + new URL(page.url()).search === "/assess?c=4.3.1.5",
+      page.url());
+    const card = await page.locator(".milestone").innerText();
+    check("the milestone names what was finished", /Strategy complete/i.test(card), JSON.stringify(card.slice(0, 80)));
+    const rows = page.locator(".milestone-recap li");
+    const rowCount = await rows.count();
+    check("E3: it recaps every control in the competency", rowCount === 5, `${rowCount} rows`);
+    const lastRow = rowCount ? await rows.last().innerText() : "";
+    check("E3: including the answer just given, which the server has not seen yet",
+      /Proficient/i.test(lastRow), JSON.stringify(lastRow));
+    check("E3: and marks which one was just answered", /just now/i.test(lastRow), JSON.stringify(lastRow));
+    check("it names what comes next", /4\.3\.2/.test(card), JSON.stringify(card.slice(0, 200)));
+    check("E4: taking a break is offered beside continuing",
+      (await page.locator('.milestone a:has-text("Take a break")').count()) === 1);
+    check("every recap row is actionable while online",
+      (await page.locator(".milestone-revise:disabled").count()) === 0);
+
+    /* N14 still holds on the card that replaced the panel. */
+    for (const [w, h] of [[1280, 900], [1024, 768], [390, 844]]) {
+      await page.setViewportSize({ width: w, height: h });
+      const cont = page.locator('.milestone button:has-text("Continue")');
+      const btn = (await cont.count()) === 1 ? await cont.boundingBox() : null;
+      /* DESIGN.md: 44px minimum below 1100px, where a thumb is committing. It
+         was 41px — under the guideline and, worse, disagreeing with the recap
+         rows on the same card, which were already 44. Found by /qa against the
+         preview, not by a test, which is why there is now a test. */
+      if (w < 1100) {
+        check(`the milestone's Continue meets the 44px touch target at ${w}x${h}`,
+          !!btn && btn.height >= 44, btn ? `${Math.round(btn.height)}px` : "no button");
+      }
+      check(`the milestone's Continue is on screen without scrolling at ${w}x${h}`,
+        !!btn && btn.y + btn.height <= h, btn ? `bottom ${Math.round(btn.y + btn.height)} > ${h}` : "no button");
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    /* Continue carries the run on, into the NEXT competency's first control. */
+    await page.click('.milestone button:has-text("Continue")');
+    await page.waitForSelector(".optlist");
+    check("N32: Continue lands on the next competency's first UNANSWERED control",
+      page.url().includes("c=4.3.2.1"), page.url());
+    check("...and the milestone does not survive the move",
+      (await page.locator(".milestone").count()) === 0);
+
+    /* FM7: going back must show the control, not a second milestone. */
+    await page.goBack();
+    await page.waitForLoadState("networkidle");
+    check("FM7: Back shows the control again, not a stale milestone",
+      (await page.locator(".milestone").count()) === 0, page.url());
+    await ctx.close();
+  }
+
+  /* --- N33: the WALKED path. Every other check in this section opens the last
+     control with the earlier answers already in Postgres, which is the one
+     arrival a PM never makes. Walking the competency broke it: the commit POST
+     and the navigation GET leave together, so each render is taken before the
+     previous answer lands, and the outbox drops that answer the moment the
+     write is acknowledged. At 4.3.1.5 the answer to 4.3.1.4 was in neither
+     place, the button read "Next control" and the milestone never rose.
+     Reported by the owner from the preview: "sometimes it shows, most of the
+     time it doesn't". --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, CE[0]);
+
+    let stalledAt = null;
+    for (let i = 0; i < CE.length - 1; i++) {
+      await page.waitForSelector(".optlist");
+      await page.check('input[name="level"][value="3"]');
+      await page.click(".assess-actions button");
+      /* Caught, like every other wait in this block: if a regression raises the
+         milestone EARLY the click never navigates, and a bare wait would take
+         the suite down instead of naming the control it stopped on. */
+      await page.waitForFunction(
+        (want) => new URL(location.href).searchParams.get("c") === want,
+        CE[i + 1], { timeout: 20_000 }).catch(() => { stalledAt ??= CE[i]; });
+      if (stalledAt) break;
+    }
+    check("N33: the walk reaches the last control of the competency",
+      stalledAt === null, stalledAt ? `stalled on ${stalledAt}` : "");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="4"]');
+
+    /* THE PREMISE, ASSERTED — otherwise this block can pass for the wrong
+       reason and nobody would know.
+
+       The defect needs the fourth answer to be invisible to BOTH the server
+       render and the queue. On a fast local database that is what happens (the
+       navigation GET completes before the commit POST is even issued, measured)
+       but it is a race, and if it fell the other way this test would go green
+       against a build with the fix reverted — passing because the server render
+       happened to be complete, which is the seeded arrival the comment above
+       says a PM never makes. So check the two halves of the premise directly:
+       the write for 4.3.1.4 HAS landed (so the queue no longer holds it) and
+       the render of 4.3.1.5 was taken before it (so the server did not send
+       it). If either stops being true the run says INCONCLUSIVE rather than
+       lying. */
+    const landed = await db.from("score").select("self_level")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.4")).maybeSingle();
+    const stillQueued = await page.evaluate(() => {
+      const k = Object.keys(localStorage).find((s) => s.startsWith("cap.outbox."));
+      return k ? (JSON.parse(localStorage.getItem(k) || "[]")).some((e) => e.control === "4.3.1.4") : false;
+    });
+    const premise = landed.data?.self_level != null && !stillQueued;
+    if (!premise) {
+      console.log(`    ⊘ INCONCLUSIVE: N33's premise did not hold this run — 4.3.1.4 `
+        + `${landed.data?.self_level == null ? "had not landed" : "landed"}, queue `
+        + `${stillQueued ? "still holds it" : "is clear"}. The checks below cannot `
+        + `distinguish the fix from a complete server render.`);
+    }
+
+    const walked = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33: walking the competency reaches the fifth control as a finish, not a next",
+      /finish this competency/i.test(walked), JSON.stringify(walked));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const raised = (await page.locator(".milestone").count()) === 1;
+    check("N33: and the milestone rises on the walked path", raised, page.url());
+
+    /* The recap has to show the answers the SERVER has not confirmed either —
+       the same memory that fixed the count feeds the rows.
+
+       GUARDED ON THE CARD EXISTING. The first cut of this check read the card
+       into the literal string "(no milestone)" when it was absent and then
+       asserted that string does not match /not answered/ — which is true, so
+       the check reported GREEN on exactly the build it was written to fail
+       against. Two review specialists found it independently. A negated regex
+       over a sentinel is not an assertion. */
+    const walkedCard = raised ? await page.locator(".milestone").innerText() : "";
+    check("N33: the recap answers every row, including the ones still settling",
+      raised && !/not answered/i.test(walkedCard), JSON.stringify(walkedCard.slice(0, 240)));
+    /* And the LEVELS, not just the absence of a phrase: four answered at 3 and
+       the last at 4, so a card that rendered but lost the client's memory fails
+       here rather than passing on a technicality. */
+    check("N33: and shows the levels the PM actually gave",
+      raised && (walkedCard.match(/Competent/gi) ?? []).length === 4
+        && /Proficient/i.test(walkedCard),
+      JSON.stringify(walkedCard.slice(0, 240)));
+
+    /* Drain before closing. The commit for 4.3.1.5 is still in flight (asserting
+       the card without waiting for it is the point), and the next block deletes
+       this assessment's scores within milliseconds — a late insert would land
+       after that delete and leave a stray answer in a competency the E2 block
+       believes is empty. Waiting AFTER the checks costs the suite nothing and
+       does not await the commit the product exists to not await. */
+    await page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 })
+      .catch(() => {});
+    await ctx.close();
+  }
+
+  /* --- N33b: the same walk, but the writes are FAILING and the PM reloads.
+     This is the case the first cut of the N33 fix broke and no test covered:
+     `answered` is module memory that a page load destroys, while the QUEUE is
+     mirrored to localStorage and survives. Replacing the queue with the new map
+     in the completeness chain — rather than adding it — meant four confirmed
+     answers went invisible the moment the PM refreshed during an outage, which
+     is the exact situation the mirror exists for. Found by review, not by a
+     user, which is the only reason it is not an N-number. --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, CE[0]);
+
+    /* Writes fail, reads work — a write-path outage, not an offline tab. The
+       run has to carry on, which is why this is a POST abort and not context
+       .setOffline(). */
+    await page.route("**/assess**", (route) =>
+      route.request().method() === "POST" ? route.abort() : route.continue());
+
+    for (let i = 0; i < CE.length - 1; i++) {
+      await page.waitForSelector(".optlist");
+      await page.check('input[name="level"][value="3"]');
+      await page.click(".assess-actions button");
+      await page.waitForFunction(
+        (want) => new URL(location.href).searchParams.get("c") === want,
+        CE[i + 1], { timeout: 20_000 }).catch(() => {});
+    }
+    const unsent = await db.from("score").select("control_id", { count: "exact", head: true })
+      .eq("assessment_id", asmt.id);
+    check("N33b: nothing reached the server — the four answers are queued only",
+      (unsent.count ?? 0) === 0, String(unsent.count));
+
+    // The reaction the mirror exists for.
+    await page.reload();
+    await page.waitForSelector(".optlist", { timeout: 20_000 });
+    await page.check('input[name="level"][value="4"]');
+    const afterReload = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33b: after a reload mid-outage the queued answers still count",
+      /finish this competency/i.test(afterReload), JSON.stringify(afterReload));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("N33b: and the milestone still rises",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    await ctx.close();
+  }
+
+  /* --- N33c: a REVISION must not be reported at its old level.
+     Three review specialists found this independently, on the path the card
+     itself advertises ("the last easy moment to change an answer"). The recap
+     read `ceLevels` before the client's own memory, and the render it read was
+     taken before the revision landed — so the row showed the PM the answer they
+     had just replaced. The `??` order in effectiveLevel is the fix and this is
+     what pins it. --- */
+  {
+    await seed(CE);                                   // all five at level 3
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.4");
+
+    check("N33c: the control opens at its persisted level",
+      await page.locator('input[name="level"][value="3"]').isChecked());
+    await page.check('input[name="level"][value="5"]');   // Competent -> Expert
+    await page.click('.assess-actions button');           // commit + navigate together
+    await page.waitForFunction(
+      () => new URL(location.href).searchParams.get("c") === "4.3.1.5",
+      null, { timeout: 20_000 }).catch(() => {});
+    await page.waitForSelector(".optlist");
+
+    /* NOT "Finish this competency", which is what this asserted until N38/N40.
+       The competency was already whole when the PM arrived — the revision at
+       4.3.1.4 did not complete it, and neither does the click here. What the
+       click DOES is show the competency back, which is the point of the rest of
+       this block, so that is what the button says. The card still rises; only
+       the promise on the button changed. */
+    const label = (await page.locator(".assess-actions button").first().innerText()).trim();
+    check("N33c: the fifth control names the review, not a finish, after a revision",
+      /review this competency/i.test(label), JSON.stringify(label));
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+
+    const row4 = page.locator('.milestone-recap li', { hasText: "4.3.1.4" });
+    const row4Text = (await row4.count()) ? await row4.innerText() : "(no row)";
+    check("N33c: the recap shows the REVISED level, not the one it replaced",
+      /Expert/i.test(row4Text) && !/Competent/i.test(row4Text), JSON.stringify(row4Text));
+    await page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 })
+      .catch(() => {});
+    await ctx.close();
+  }
+
+  /* --- E2: the keyboard drives a whole control, and evidence still types --- */
+  {
+    await seed([]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.1");
+
+    await page.keyboard.press("4");
+    check("E2: a number key picks the level",
+      (await page.locator('input[name="level"][value="4"]').isChecked()), "4 not selected");
+
+    /* The subtlety worth testing: the evidence field is one tab away, and a "3"
+       typed into it must be a 3 in the text, not a silent re-score. */
+    await page.fill("#evidence", "");
+    await page.click("#evidence");
+    await page.keyboard.type("led 3 projects");
+    check("E2: typing digits in evidence does not re-score the control",
+      (await page.locator('input[name="level"][value="4"]').isChecked())
+      && (await page.locator("#evidence").inputValue()) === "led 3 projects",
+      await page.locator("#evidence").inputValue());
+
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.locator("#evidence").blur();
+    await page.keyboard.press("Enter");
+    await committed;
+    await page.waitForLoadState("networkidle");
+    check("E2: Enter confirms and moves on", page.url().includes("c=4.3.1.2"), page.url());
+    await ctx.close();
+  }
+
+  /* --- E3: a recap row goes to the control it names --- */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone");
+
+    /* The rows had no coverage at all: one that rendered but navigated nowhere
+       passed the whole suite. */
+    const row2 = page.locator(".milestone-recap li:nth-child(2) .milestone-revise");
+    check("E3: a recap row exists to click", (await row2.count()) === 1);
+    await row2.click();
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("E3: it goes to the control it names", page.url().includes("c=4.3.1.2"), page.url());
+    check("E3: and the answer already given is shown, not a blank panel",
+      await page.locator('input[name="level"][value="3"]').isChecked());
+    await ctx.close();
+  }
+
+  /* --- the row for the control you are STANDING on dismisses the card ---
+     It is always the last row, because the milestone only rises on the last
+     control of a competency — so it is the answer just given and the one most
+     likely to be revised. It used to push its own URL, which is a no-op, while
+     `reached` stayed true because none of its effect's deps had changed. The
+     most clickable row on the card did nothing. */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone");
+
+    const last = page.locator(".milestone-recap li:last-child .milestone-revise");
+    check("the row for the current control is present", (await last.count()) === 1);
+    await last.click();
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("clicking it returns to the panel rather than doing nothing",
+      (await page.locator(".milestone").count()) === 0);
+    check("…without leaving the control", page.url().includes("c=4.3.1.5"), page.url());
+    check("…and the answer just given is still selected",
+      await page.locator('input[name="level"][value="4"]').isChecked());
+    await ctx.close();
+  }
+
+  /* --- FM3: answers still in the OUTBOX count toward the milestone ---
+     The regression this section exists for. The outbox enqueues and navigates
+     in the same breath, so the save POST races the next page's render; the
+     first cut corrected the server's count by +1, for one control, and a PM
+     answering at speed got no milestone at all. Reproduced deterministically by
+     mirroring a queued answer into localStorage — which is exactly what the
+     outbox does — while the tab is offline so it cannot drain. */
+  {
+    await seed(CE.slice(0, 3));                    // .4 queued, .5 on screen
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.4");
+
+    /* THE RACE, REPRODUCED HONESTLY. Failing only the save POST leaves the
+       answer in the outbox exactly as a slow network would, while GETs still
+       work so the run can carry on — which is the situation the first cut got
+       wrong. Seeding localStorage instead would have tested the mirror, not
+       the race, and taking the tab offline would have stopped the navigation
+       that puts the PM in front of the next control at all. */
+    await page.route("**/assess**", (route) =>
+      route.request().method() === "POST" ? route.abort() : route.continue());
+
+    await page.check('input[name="level"][value="3"]');
+    await page.click('.assess-actions button:has-text("Next control")');
+    await page.waitForURL(/c=4\.3\.1\.5/, { timeout: 15_000 });
+    await page.waitForSelector(".optlist");
+
+    const { data: unsent } = await db.from("score").select("control_id")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.4")).maybeSingle();
+    check("FM3: the fourth answer really is unsent — the server has no row for it",
+      unsent === null, JSON.stringify(unsent));
+
+    const btn = page.locator(".assess-actions button").first();
+    await page.check('input[name="level"][value="4"]');
+    check("FM3: a queued answer counts — the button promises the finish",
+      /finish this competency/i.test(await btn.innerText()), await btn.innerText());
+    await btn.click();
+    await page.waitForSelector(".milestone", { timeout: 10_000 });
+    check("FM3: …and the milestone actually appears", (await page.locator(".milestone").count()) === 1);
+
+    const recap = await page.locator(".milestone-recap").innerText();
+    check("FM3: the queued answer reads as answered, not 'not answered'",
+      !/not answered/i.test(recap), JSON.stringify(recap));
+
+    /* A1, on the same card: the connection drops WHILE the milestone is up.
+       This is the direction the first cut could not handle at all — `offline`
+       was read once during render and closed over, so the card never learned
+       the connection had gone and Continue stayed live all the way to Chrome's
+       error page. Asserting the transition, not the initial state. */
+    await ctx.setOffline(true);
+    const cont = page.locator('.milestone button:has-text("Continue")');
+    await page.waitForFunction(
+      () => document.querySelector(".milestone button.btn-primary")?.disabled === true,
+      null, { timeout: 10_000 },
+    ).catch(() => {});
+    check("A1: the milestone stays up — they did finish the competency",
+      (await page.locator(".milestone").count()) === 1);
+    check("A1: Continue goes disabled when the connection drops under it",
+      (await cont.count()) === 1 && await cont.isDisabled());
+    const revise = page.locator(".milestone-revise").first();
+    check("A1: the recap rows are disabled too — they navigate the same way",
+      (await revise.count()) === 1 && await revise.isDisabled());
+    const brk = page.locator('.milestone button:has-text("Take a break")');
+    check("A1: and taking a break says it cannot, rather than silently doing nothing",
+      (await brk.count()) === 1 && await brk.isDisabled());
+    check("A1: the card says why", /offline/i.test(await page.locator(".milestone").innerText()));
+
+    /* A1 recovery — the half the card promises and nothing asserted. */
+    await ctx.setOffline(false);
+    await page.waitForFunction(
+      () => !document.querySelector(".milestone button.btn-primary")?.disabled,
+      null, { timeout: 10_000 },
+    ).catch(() => {});
+    check("A1: Continue comes back when the connection does",
+      (await cont.count()) === 1 && await cont.isEnabled());
+    await page.unroute("**/assess**");
+    await ctx.close();
+  }
+
+  /* --- the assessment is not 'finished' because you stood on its last control --- */
+  {
+    /* Everything answered EXCEPT one control in an earlier competency. The PM
+       then answers the very last control of the framework. Positionally that is
+       the end; actually it is not, and the card must not say it is. */
+    const last = activeControls[activeControls.length - 1];
+    const lastCe = activeControls.filter((c) => c.ce_id === last.ce_id);
+    const skipped = activeControls[0];
+    const rest = activeControls.filter(
+      (c) => c.code !== skipped.code && !lastCe.some((l) => l.code === c.code));
+    await clearScores(asmt.id);
+    await db.from("score").insert(
+      [...rest, ...lastCe.slice(0, -1)].map((c) => ({
+        assessment_id: asmt.id, control_id: c.id, self_level: 3,
+      })));
+
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, last.code);
+    await page.check('input[name="level"][value="3"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click(".assess-actions button");
+    await committed;
+    await page.waitForSelector(".milestone", { timeout: 10_000 });
+    const card = await page.locator(".milestone").innerText();
+    check("a control skipped elsewhere means the card does NOT claim the assessment is done",
+      !/every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+    check("…and it says how many are still owed",
+      /still need a score|needs a score/i.test(card), JSON.stringify(card.slice(0, 200)));
+    await ctx.close();
+  }
+
+  /* --- FM6: N14 holds on the TALLEST card the framework can produce --- */
+  {
+    const byCe = new Map();
+    for (const c of activeControls) byCe.set(c.ce_id, (byCe.get(c.ce_id) ?? 0) + 1);
+    const [biggestCe, size] = [...byCe.entries()].sort((a, b) => b[1] - a[1])[0];
+    const inCe = activeControls.filter((c) => c.ce_id === biggestCe);
+    await clearScores(asmt.id);
+    await db.from("score").insert(inCe.slice(0, -1).map((c) => ({
+      assessment_id: asmt.id, control_id: c.id, self_level: 3,
+    })));
+
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, inCe[inCe.length - 1].code);
+    await page.check('input[name="level"][value="3"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click(".assess-actions button");
+    await committed;
+    await page.waitForSelector(".milestone");
+    check(`FM6: the tallest competency has ${size} controls`,
+      size >= 5 && size <= 10, `${size} — expected the ICB4 maximum, 3-6`);
+    for (const [w, h] of [[1280, 900], [1024, 768], [390, 844]]) {
+      await page.setViewportSize({ width: w, height: h });
+      const primary = page.locator(".milestone .assess-actions .btn").first();
+      const box = (await primary.count()) === 1 ? await primary.boundingBox() : null;
+      check(`FM6: the ${size}-control card keeps its action on screen at ${w}x${h}`,
+        !!box && box.y + box.height <= h,
+        box ? `bottom ${Math.round(box.y + box.height)} > ${h}` : "no action button");
+    }
+    await ctx.close();
+  }
+
+  /* --- FM5: time spent ON the milestone is not charged to the control --- */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await new Promise((r) => setTimeout(r, 1_500));          // read the control
+    await page.check('input[name="level"][value="4"]');
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.click('.assess-actions button:has-text("Finish this competency")');
+    await committed;
+    await page.waitForSelector(".milestone");
+    await new Promise((r) => setTimeout(r, 4_000));          // linger on the card
+    await page.click('.milestone button:has-text("Continue")');
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+
+    const { data: row } = await db.from("score").select("dwell_ms")
+      .eq("assessment_id", asmt.id).eq("control_id", idFor("4.3.1.5")).maybeSingle();
+    /* The clock is read at commit, before the card exists, so four seconds of
+       admiring it must not land on the control. Cheap to break silently — a
+       later refactor that read the clock in `continueRun` would sail through
+       every other assertion here. */
+    check("FM5: dwell is the time on the CONTROL, not the time on the milestone",
+      row?.dwell_ms != null && row.dwell_ms < 4_000,
+      `dwell_ms=${row?.dwell_ms}`);
+    await ctx.close();
+  }
+
+  /* --- E2: Enter continues from the card, and auto-repeat does not skip it --- */
+  {
+    await seed(CE.slice(0, 4));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await open(ctx, "4.3.1.5");
+    await page.check('input[name="level"][value="4"]');
+    // check() leaves focus on the radio, and the handler ignores anything
+    // originating in a form control — as it must, so digits typed into the
+    // evidence field are text rather than a silent re-score.
+    await page.evaluate(() => document.activeElement?.blur());
+
+    /* Hold Enter. The panel commits on the first keydown and the card mounts
+       within a frame; without the card arming only after a keyup, the repeat
+       lands on Continue and the milestone flashes past — defeating the feature
+       via the keyboard support built to serve it. */
+    const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+    await page.keyboard.down("Enter");
+    await new Promise((r) => setTimeout(r, 600));            // OS auto-repeat window
+    await committed;
+    check("E2: a held Enter does not skip straight past the milestone",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    await page.keyboard.up("Enter");
+
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".optlist", { timeout: 10_000 });
+    check("E2: a fresh Enter continues the run", page.url().includes("c=4.3.2"), page.url());
+    await ctx.close();
+  }
+
+  /* --- the boundary commit's round-trip cost, counted rather than assumed ---
+     CLAUDE.md: "Round trips are counted, not estimated." This PR creates a
+     SECOND commit shape — no navigation — on 28 of 132 commits, and the
+     existing budget assertion runs mid-competency where `nextAfter` returns
+     null, so it never touches this path. */
+  {
+    const LOG = process.env.E2E_SERVER_LOG;
+    if (LOG) {
+      const { readFileSync } = await import("node:fs");
+      await seed(CE.slice(0, 4));
+      const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+      const page = await open(ctx, "4.3.1.5");
+      await page.check('input[name="level"][value="4"]');
+      await new Promise((r) => setTimeout(r, 2_200));        // past the viewer-memo TTL
+      const mark = readFileSync(LOG, "utf8").length;
+      const committed = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 20_000 });
+      await page.click('.assess-actions button:has-text("Finish this competency")');
+      await committed;
+      await page.waitForSelector(".milestone");
+      await new Promise((r) => setTimeout(r, 500));
+      const commitLines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
+      check("a boundary commit costs 3 round trips — it navigates nowhere",
+        commitLines.length === 3, `${commitLines.length}: ${commitLines.join(" | ")}`);
+
+      /* Past the viewer-memo TTL before measuring, matching the warm-save
+         budget above. Inside it Continue costs 1, not 2, because the auth call
+         is still memoized — real and pleasant, but timing-dependent. The steady
+         state is what gets pinned: a human who pauses on the milestone long
+         enough to read the recap is past 2s by definition. */
+      await new Promise((r) => setTimeout(r, 2_200));
+      const mark2 = readFileSync(LOG, "utf8").length;
+      await page.click('.milestone button:has-text("Continue")');
+      await page.waitForSelector(".optlist", { timeout: 10_000 });
+      await page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 500));
+      const navLines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark2));
+      check("and Continue costs the navigation's 2 — 5 across the pair, as before",
+        navLines.length === 2, `${navLines.length}: ${navLines.join(" | ")}`);
+      await ctx.close();
+    } else {
+      skip("the boundary commit's round-trip budget",
+        "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
+    }
+  }
+
+  /* Leave the fixture as the rest of the suite expects it. The state reset in
+     seed() is undone here rather than described in a comment, so appending a
+     section after this one does not inherit a draft assessment. */
+  await clearScores(asmt.id);
+  await db.from("assessment").update({ state: fixtureState.state,
+    submitted_at: fixtureState.submitted_at, approved_at: fixtureState.approved_at })
+    .eq("id", asmt.id);
+}
+
+/* --------------------- 16b. the label says what the click COMPLETES (N38/N40) */
+console.log("\n[16b] The button names what the click completes (N38, N40)");
+{
+  const CE = ["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4", "4.3.1.5"];
+  const asmt = await assessmentOf(PM.email);
+  const idFor = (code) => activeControls.find((c) => c.code === code).id;
+  const { data: fixtureState } = await db.from("assessment")
+    .select("state, submitted_at, approved_at").eq("id", asmt.id).single();
+
+  const seed = async (codes) => {
+    await db.from("assessment")
+      .update({ state: "draft", submitted_at: null, approved_at: null }).eq("id", asmt.id);
+    await clearScores(asmt.id);
+    if (codes.length === 0) return;
+    /* UPSERT, not insert. `clearScores` confirms the table is empty, but the
+       insert happens AFTER that confirmation — a commit POST still in flight
+       from the previous block can land in between and trip the unique index,
+       killing the section with a crash rather than a check. Overwriting is the
+       right resolution: the seed is the fixture's statement of what the prior
+       sitting left behind. */
+    const { error } = await db.from("score").upsert(codes.map((code) => ({
+      assessment_id: asmt.id, control_id: idFor(code), self_level: 3,
+    })), { onConflict: "assessment_id,control_id" });
+    if (error) throw new Error(`seeding failed: ${error.message}`);
+  };
+  /* The arrow is decoration, and it is what made two equality assertions fail
+     while the label itself was right. Strip it here rather than in each check. */
+  const labelAt = async (page) =>
+    (await page.locator(".assess-actions button").first().innerText())
+      .trim().replace(/\s*→$/, "");
+
+  /* --- N40: a hole in the MIDDLE of a competency, whose filling completes it.
+     The old label read "Next control" here, because `milestone` was null for
+     any control that was not positionally last. --- */
+  {
+    await seed(["4.3.1.1", "4.3.1.3", "4.3.1.4", "4.3.1.5"]);   // .2 is the hole
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.2");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    const label = await labelAt(page);
+    check("N40: filling a mid-competency hole says it FINISHES the competency",
+      /finish this competency/i.test(label), JSON.stringify(label));
+
+    /* And the card rises there — the owner's consistency call: the same words
+       must produce the same outcome wherever the PM is standing. */
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("N40: and the card rises mid-competency, not only at its last control",
+      (await page.locator(".milestone").count()) === 1, page.url());
+
+    /* THE MID CARD IS THE ONE PLACE `milestone.nextControl` IS NULL BY
+       CONSTRUCTION, so it is the only place `canContinue` can be decided by
+       `nextOwed` alone — i.e. the only place the card can end up with no
+       primary action at all. Untested, that branch decides whether a PM who
+       finishes a competency mid-run has any way onward. Enter as well as the
+       click, because the keydown handler was re-keyed to `canContinue` here. */
+    const midCont = page.locator('.milestone button:has-text("Continue")');
+    check("N40: the mid-competency card offers somewhere to go",
+      (await midCont.count()) === 1 && await midCont.isEnabled());
+    /* TWICE. The card arms its Enter handler on a KEYUP, so the first press
+       only arms it — that is the defence against a held Enter flashing straight
+       past the milestone (E2), and a test that presses once tests the guard
+       rather than the feature. */
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".optlist", { timeout: 20_000 }).catch(() => {});
+    const midLanded = new URL(page.url()).searchParams.get("c");
+    check("N40: and Enter takes the PM to a control that is actually unanswered",
+      midLanded !== null && !["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4", "4.3.1.5"].includes(midLanded),
+      String(midLanded));
+    await ctx.close();
+  }
+
+  /* --- The owner's question: I complete a competency while holes remain
+     ELSEWHERE. Label names what the click completes; Continue goes to the hole. --- */
+  {
+    // 4.3.1 all but its last; a hole left far away in another area
+    await seed(["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4"]);
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.5");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    check("N38: completing a competency says so even with holes elsewhere",
+      /finish this competency/i.test(await labelAt(page)), await labelAt(page));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const card = (await page.locator(".milestone").count()) === 1
+      ? await page.locator(".milestone").innerText() : "";
+    check("N38: and the card does NOT claim the assessment is finished",
+      !/every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+
+    const cont = page.locator('.milestone button:has-text("Continue")');
+    check("N38: Continue is offered — there is still work to go to",
+      (await cont.count()) === 1);
+    /* Guarded: the suite is one sequential script, so an unconditional click
+       after a failed check turns one red line into no result for everything
+       after it. */
+    if (await cont.count()) {
+      await cont.click();
+      await page.waitForSelector(".optlist", { timeout: 20_000 }).catch(() => {});
+    }
+    const landed = new URL(page.url()).searchParams.get("c");
+    /* Against the SEEDED SET, not against "not the one we were on". 127 controls
+       are unanswered in this fixture, so the weaker form passed on any landing
+       at all — including the pre-change build's. */
+    check("N38: and it lands on a control that is actually unanswered",
+      landed !== null && !["4.3.1.1", "4.3.1.2", "4.3.1.3", "4.3.1.4"].includes(landed),
+      String(landed));
+    await ctx.close();
+  }
+
+  /* --- N38 proper: the LAST control of the framework with holes still open.
+     This is what the owner saw: "Review before submitting" on an assessment
+     that could not be submitted.
+
+     THE FIRST CUT OF THIS BLOCK WAS VACUOUSLY GREEN and a review pass caught
+     it. It seeded everything but the last control and 4.3.1.1, which leaves the
+     LAST COMPETENCY whole — so the pre-change build took its `milestone &&
+     ceComplete` branch and said "Finish this competency", which satisfied an
+     assertion written as a disjunction. The defect lived in the OTHER branch:
+     the fall-through that reads `nextControl ? "Next control" : "Review before
+     submitting"`, reachable only when the last competency is NOT whole. So a
+     second hole goes inside it, and the assertion is an equality. --- */
+  {
+    const last = activeControls[activeControls.length - 1];
+    const lastCe = activeControls.filter((c) => c.ce_id === last.ce_id).map((c) => c.code);
+    const holeInLastCe = lastCe[lastCe.length - 2];       // not the one we stand on
+    await seed(activeControls.map((c) => c.code).filter(
+      (c) => c !== last.code && c !== holeInLastCe && c !== "4.3.1.1"));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto(`/assess?c=${last.code}`);
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    const label = await labelAt(page);
+    check("N38: control 132 with its own competency incomplete does not offer a review",
+      label === "Next unanswered control", JSON.stringify(label));
+
+    /* WHICH hole: the first in framework order, not the nearest one behind.
+       `owedAfter` walks forward and then wraps, and from the last control there
+       is no forward — so the wrap starts at the beginning of the framework.
+       That is the right answer (a PM mopping up works front to back) and it is
+       worth pinning, because the obvious guess is the hole in this competency. */
+    await page.click(".assess-actions button");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("c") === "4.3.1.1",
+      null, { timeout: 20_000 }).catch(() => {});
+    const owedLanding = new URL(page.url()).searchParams.get("c");
+    check("N38: and it goes to a hole rather than to a Submit the server refuses",
+      [holeInLastCe, "4.3.1.1"].includes(owedLanding), `${owedLanding}`);
+    check("N38: …the first one in framework order, because the list wraps",
+      owedLanding === "4.3.1.1", `${owedLanding}`);
+    await ctx.close();
+  }
+
+  /* --- The last hole ANYWHERE completes the assessment, wherever it sits. --- */
+  {
+    await seed(activeControls.map((c) => c.code).filter((c) => c !== "4.3.1.1"));
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.1");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    check("N38: the final hole says it completes the ASSESSMENT, not the competency",
+      /complete the assessment/i.test(await labelAt(page)), await labelAt(page));
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const card = (await page.locator(".milestone").count()) === 1
+      ? await page.locator(".milestone").innerText() : "";
+    check("N38: and the card says every competency is scored, from the count not the position",
+      /every competency scored/i.test(card), JSON.stringify(card.slice(0, 120)));
+
+    /* AND THE BUTTON THAT SAYS SUBMIT GOES WHERE SUBMIT IS. Two reviewers found
+       this independently: "Review and submit →" is chosen from a COUNT, while
+       its destination was `listHref`, which is POSITIONAL — the area page here,
+       because 4.3.1.1 is mid-competency. A PM whose last hole sat mid-framework
+       was congratulated and then dead-ended on a page with no Submit on it.
+       `canContinue` is false in this state, so this is the ONLY action on the
+       card. */
+    const submit = page.locator('.milestone a:has-text("Review and submit")');
+    check("N38: the completed card's only action is the review",
+      (await submit.count()) === 1, String(await submit.count()));
+    if (await submit.count()) {
+      await submit.click();
+      await page.waitForURL(/\/assess\/controls/, { timeout: 20_000 }).catch(() => {});
+    }
+    check("N38: and it lands on the one screen that carries Submit",
+      new URL(page.url()).pathname === "/assess/controls", page.url());
+    check("N38: with Submit actually on it",
+      (await page.locator('button:has-text("Submit")').count()) >= 1);
+    await ctx.close();
+  }
+
+  /* --- WALKED, not seeded onto. Every block above arrives by `page.goto` with
+     prior answers inserted straight into Postgres, which is legitimate for a
+     PRIOR SITTING but deletes the D9 lag — and the lag is the whole reason
+     `nextOwed` has a filter. Three reviewers found the same defect in it and
+     none of the seeded blocks could have: `known`/`queued` were built over the
+     current competency's controls only, while `owed` spans the framework, so an
+     answer given seconds ago in ANOTHER competency was invisible and Continue
+     sent the PM back to it.
+
+     So this walks. Two holes in different competencies; fill the first, take
+     Continue to the second, fill that, and press Continue again. Nothing awaits
+     the commit — a PM who waits is not a PM, and waiting is what hides this.
+
+     AND THE WRITE IS SLOWED, WHICH IS THE PART THAT MAKES IT A TEST. The first
+     cut of this block walked correctly and still passed against the broken
+     build, because on a fast local database the first answer had landed before
+     the PM reached the second hole — so the render was not lagging and the
+     filter had nothing to do. The defect only exists while a write is STILL IN
+     FLIGHT, so the block has to hold one there.
+
+     DELAYED, NOT ABORTED. Aborting is the habit CLAUDE.md names: a queue that
+     never drains never forgets, so it exercises the failure path and never the
+     successful-but-still-settling one, which is where this defect lives. The
+     route below lets every POST through, four seconds late. --- */
+  {
+    /* EXACTLY TWO HOLES IN THE WHOLE FRAMEWORK, and that is load-bearing.
+       The first cut left the other 26 competencies unanswered, so the owed list
+       anchored at the far hole filled up with the controls just after it and
+       never wrapped round to the near one — the filter was handed nothing to
+       get wrong, and the block passed on the broken build. With everything else
+       answered, the wrap puts the near hole at the front of the list, which is
+       the only arrangement in which a competency-scoped memory sends the PM
+       backwards. */
+    const ce2 = activeControls.filter((c) => c.code.startsWith("4.3.2.")).map((c) => c.code);
+    const far = ce2[2] ?? ce2[ce2.length - 1];
+    await seed(activeControls.map((c) => c.code)
+      .filter((c) => c !== "4.3.1.2" && c !== far));
+
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.route("**/assess**", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await new Promise((r) => setTimeout(r, 4000));   // succeeds, just later
+      return route.continue();
+    });
+    await page.goto("/assess?c=4.3.1.2");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    await page.click(".assess-actions button");            // NOT awaited — that is the product
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("the near hole completes its competency and raises the card",
+      (await page.locator(".milestone").count()) === 1, page.url());
+
+    await page.click('.milestone button:has-text("Continue")');
+    await page.waitForSelector(".optlist", { timeout: 20_000 }).catch(() => {});
+    const first = new URL(page.url()).searchParams.get("c");
+    check("Continue skips the control just answered and reaches the far hole",
+      first === far, `${first} (wanted ${far})`);
+
+    /* THE STEP THE SEEDED BLOCKS CANNOT REACH. This render was taken before
+       4.3.1.2's write landed, so the server's owed list still names it. If the
+       client's memory is competency-scoped, Continue here goes BACKWARDS to a
+       control answered seconds ago — and if the outbox has since been
+       acknowledged and dropped, it shows up blank. */
+    await page.check('input[name="level"][value="3"]');
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const cont2 = page.locator('.milestone button:has-text("Continue")');
+    if (await cont2.count()) {
+      await cont2.click();
+      await page.waitForSelector(".optlist", { timeout: 20_000 }).catch(() => {});
+    }
+    const second = new URL(page.url()).searchParams.get("c");
+    check("…and Continue never sends the PM back to a control they answered seconds ago",
+      second !== "4.3.1.2", `${second} — went back to the hole it had already filled`);
+
+    /* THE PREMISE, asserted rather than assumed. If the first answer HAS landed
+       by now the check above is vacuous — it passes on a broken build, which is
+       exactly what happened to the first cut of this block. Say so instead of
+       reporting green. */
+    const { count: landed } = await db.from("score")
+      .select("control_id", { count: "exact", head: true })
+      .eq("assessment_id", asmt.id)
+      .eq("control_id", idFor("4.3.1.2"));
+    check("…and the premise held: that answer really was still in flight",
+      (landed ?? 0) === 0,
+      "INCONCLUSIVE — the write landed before the second Continue, so the filter was never asked");
+    await page.unroute("**/assess**");
+    await ctx.close();
+  }
+
+  /* --- The other half of the rule, and the one that caught the first cut of
+     this change out. "Finish this competency" must mean the click FINISHED
+     something. A competency that was already whole when the PM opened it is not
+     finished by re-reading it — so a middle control there moves on, exactly as
+     it did before N40, and only the competency's END still raises the card
+     (which is where a revision gets shown back to them, N33c).
+
+     The first cut gated on "the competency is whole after this click" and
+     therefore said "Finish this competency" on every control of a finished
+     competency, raising the card instead of moving — which made walking a
+     finished competency through the primary button impossible. --- */
+  {
+    await seed(CE);                                   // the whole competency, done
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.2");             // a MIDDLE control of it
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="5"]');   // a revision, not a fill
+    check("N40: re-reading a finished competency does not claim to finish it again",
+      /next control/i.test(await labelAt(page)), await labelAt(page));
+
+    await page.click(".assess-actions button");
+    await page.waitForFunction(
+      () => new URL(location.href).searchParams.get("c") === "4.3.1.3",
+      null, { timeout: 20_000 }).catch(() => {});
+    check("N40: it moves on, the way Next always has",
+      new URL(page.url()).searchParams.get("c") === "4.3.1.3", page.url());
+    check("N40: and no milestone rose on the way",
+      (await page.locator(".milestone").count()) === 0);
+    await ctx.close();
+  }
+
+  /* --- A REVISION COMPLETES NOTHING, and the label must not say it does.
+     Review found this: with everything answered, re-opening the framework's
+     last control read "Complete the assessment" — promising to complete
+     something that had been complete for a week. The card still rises there
+     (that is where the revised recap is shown back, N33c); what changes is the
+     wording, which names what the click actually does. --- */
+  {
+    await seed(activeControls.map((c) => c.code));        // everything answered
+    const last = activeControls[activeControls.length - 1].code;
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto(`/assess?c=${last}`);
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="5"]');    // a revision
+    check("a revision on a finished assessment does not promise to complete it",
+      (await labelAt(page)) === "Review before submitting", await labelAt(page));
+
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    check("…and the card still rises, so the revision is shown back",
+      (await page.locator(".milestone").count()) === 1, page.url());
+    const row = page.locator(".milestone-recap li", { hasText: last });
+    check("…at the level just given, not the one it replaced",
+      (await row.count()) === 1 && /Expert/i.test(await row.innerText()),
+      (await row.count()) ? await row.innerText() : "(no row)");
+    await ctx.close();
+  }
+
+  /* --- A competency finished mid-run must not be scolded with the whole
+     framework's outstanding count. The sentence exists for the ONE positional
+     illusion — standing on the last control — and a repair that gated it on
+     `nextControl` fired it on every mid-competency card, because `ceContextAt`
+     returns a null `nextControl` for all of them. --- */
+  {
+    await seed(["4.3.1.1", "4.3.1.3", "4.3.1.4", "4.3.1.5"]);   // .2 is the hole
+    const ctx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+    const page = await ctx.newPage();
+    await page.goto("/assess?c=4.3.1.2");
+    await page.waitForSelector(".optlist");
+    await page.check('input[name="level"][value="3"]');
+    await page.click(".assess-actions button");
+    await page.waitForSelector(".milestone", { timeout: 20_000 }).catch(() => {});
+    const card = await page.locator(".milestone").innerText();
+    check("a mid-run milestone does not recite the whole framework's backlog",
+      !/still need a score/i.test(card), JSON.stringify(card.slice(0, 160)));
+    check("…it just says what was finished",
+      /complete/i.test(card) && !/every competency scored/i.test(card),
+      JSON.stringify(card.slice(0, 80)));
+    await ctx.close();
+  }
+
+  await clearScores(asmt.id);
+  await db.from("assessment").update({ state: fixtureState.state,
+    submitted_at: fixtureState.submitted_at, approved_at: fixtureState.approved_at })
+    .eq("id", asmt.id);
+}
+
+/* ------------------------------------- 17. the framework table (N44) */
+console.log("\n[17] Framework admin opens on a table you can filter (N44)");
+{
+  const ctx = await browser.newContext({ baseURL: BASE, storageState: await boss.ctx.storageState() });
+  const page = await ctx.newPage();
+
+  /* ARRIVES THE WAY AN ADMIN ARRIVES — clicking the nav, not a typed URL. The
+     defect was precisely that the nav landed on the single-control editor, and
+     a test that went straight to /admin/controls could never have seen it. */
+  await page.goto("/");
+  await page.click('.nav a:has-text("Framework")');
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: the Framework nav lands on the table, not the editor",
+    new URL(page.url()).pathname === "/admin/controls", page.url());
+
+  const rows = () => page.locator(".grid tbody tr").count();
+  const all = await rows();
+  check("N44: every control is listed, including the inactive one",
+    all === activeControls.length + 1, `${all} rows vs ${activeControls.length} active`);
+
+  const heads = (await page.locator(".grid thead th").allInnerTexts())
+    .slice(0, 5).map((h) => h.trim().toLowerCase());
+  check("N44: the columns the framework is actually tuned by are present",
+    ["control", "indicator", "target", "priority", "state"].every((h) => heads.includes(h)),
+    heads.join("|"));
+
+  /* The state filter, checked against the database rather than against itself:
+     the framework ships exactly one inactive control. */
+  await page.goto("/admin/controls?state=inactive");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: the inactive filter finds the one inactive control",
+    (await rows()) === 1, String(await rows()));
+
+  /* Area AND state together — the combination is where a filter usually breaks,
+     and the inactive control lives in Perspective, so Perspective's active count
+     must be exactly one short of its total. */
+  await page.goto("/admin/controls?area=Perspective");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const persp = await rows();
+  await page.goto("/admin/controls?area=Perspective&state=active");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: area and state compose — Perspective loses exactly its inactive one",
+    (await rows()) === persp - 1, `${await rows()} of ${persp}`);
+
+  /* A competency narrows to one group, and the group is the right one. */
+  await page.goto("/admin/controls?ce=4.5.2");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const groups = await page.locator(".card.pad").count();
+  check("N44: a competency filter leaves exactly its own group", groups === 1, String(groups));
+
+  /* Nonsense in the query string shows everything rather than nothing — a
+     stale bookmark or a hand-edited URL must not present an empty framework as
+     if it were the truth. */
+  await page.goto("/admin/controls?area=Nope&ce=9.9.9&state=maybe");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N44: unknown filter values fall back to the whole framework",
+    (await rows()) === all, String(await rows()));
+
+  /* The round trip that makes the table useful: open a control, come back to
+     where you were rather than to the top of 133 rows. */
+  await page.goto("/admin/controls?ce=4.5.2");
+  await page.waitForSelector(".grid tbody tr");
+  await page.locator(".grid tbody tr .rcode").first().click();
+  await page.waitForURL(/\/admin\?c=/, { timeout: 20_000 }).catch(() => {});
+  check("N44: a row opens that control's editor",
+    /\/admin\?c=4\.5\.2\.1/.test(page.url()), page.url());
+  await page.locator(".assess-nav a").first().click();
+  await page.waitForURL(/\/admin\/controls/, { timeout: 20_000 }).catch(() => {});
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 }).catch(() => {});
+  check("N44: and the way back returns to the competency, not the top of the list",
+    /ce=4\.5\.2/.test(page.url()) && (await rows()) === 3, `${page.url()} rows=${await rows()}`);
+
+  /* A PM must not reach it — the framework carries every target, which is the
+     one thing the assessment blinds them to. */
+  const pmCtx = await browser.newContext({ baseURL: BASE, storageState: await pm.ctx.storageState() });
+  const pmPage = await pmCtx.newPage();
+  await pmPage.goto("/admin/controls");
+  await pmPage.waitForLoadState("networkidle");
+  check("N44: a PM is kept out of the framework table",
+    !new URL(pmPage.url()).pathname.startsWith("/admin"), pmPage.url());
+  const leaked = await pmPage.content();
+  check("N44: and no target reaches their payload from it",
+    !/target_level/.test(leaked));
+  await pmCtx.close();
+  await ctx.close();
+}
+
+/* --------------------------- 18. the admin can work the framework through */
+console.log("\n[18] Framework admin: filter by target, walk it, and read it");
+{
+  const ctx = await browser.newContext({ baseURL: BASE, storageState: await boss.ctx.storageState() });
+  const page = await ctx.newPage();
+  const rows = () => page.locator(".grid tbody tr").count();
+
+  /* The target filter, checked against the DATABASE rather than against the
+     page's own chip count — a filter that agrees with its own label is not
+     evidence. */
+  const { data: t3 } = await db.from("control").select("code").eq("target_level", 3);
+  await page.goto("/admin/controls?target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: the target filter shows exactly the controls at that target",
+    (await rows()) === t3.length, `${await rows()} rows vs ${t3.length} in Postgres`);
+
+  /* Target composes with the filters that already existed. */
+  const { data: p3 } = await db.from("control")
+    .select("code, competence_element!inner(competence_area!inner(name))")
+    .eq("target_level", 3).eq("active", true);
+  const perspective3 = p3.filter((c) => c.competence_element.competence_area.name === "Perspective");
+  await page.goto("/admin/controls?area=Perspective&state=active&target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: target composes with area and state",
+    (await rows()) === perspective3.length, `${await rows()} vs ${perspective3.length}`);
+
+  /* A nonsense target must show everything, not nothing — N44's rule, which
+     the new parameter has to obey too or a stale bookmark presents an empty
+     framework as the truth. */
+  await page.goto("/admin/controls?target=99");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N46: an impossible target falls back to the whole framework",
+    (await rows()) === activeControls.length + 1, String(await rows()));
+
+  /* ---- N50: the chips ARE the data (Excel-style facets) ----
+     Checked against Postgres, not against the page's own chips: a filter row
+     that agrees with itself proves nothing. */
+  const { data: allControls } = await db.from("control").select("target_level, priority");
+  const levelsInUse = [...new Set(allControls.map((c) => c.target_level).filter((l) => l !== null))];
+  const levelsUnused = [0, 1, 2, 3, 4, 5].filter((l) => !levelsInUse.includes(l));
+
+  await page.goto("/admin/controls");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const targetRow = page.locator(".filterbar").filter({ hasText: "Target" }).first();
+  const targetChips = (await targetRow.locator(".filterchip").allInnerTexts()).join(" | ");
+  check("N50: the Target row offers every level the framework actually uses",
+    levelsInUse.every((l) => new RegExp(`\\b${l}\\b`).test(targetChips)), targetChips);
+  check("N50: and offers no chip for a level nothing targets",
+    levelsUnused.every((l) => !new RegExp(`(^|\\|)\\s*${l}\\s`).test(targetChips)),
+    `unused ${levelsUnused.join(",")} vs ${targetChips}`);
+
+  /* A level the SCALE defines but nothing uses has no chip — and must still
+     answer honestly from a URL rather than silently widening to all 133. */
+  if (levelsUnused.length) {
+    await page.goto(`/admin/controls?target=${levelsUnused[0]}`);
+    await page.waitForLoadState("domcontentloaded");
+    const body = await page.locator("main").innerText();
+    check("N50: a defined-but-unused level answers 'no controls match', not everything",
+      /No controls match/.test(body), body.slice(0, 120));
+  } else {
+    skip("the defined-but-unused level check", "every scale level is in use");
+  }
+
+  /* A level the scale does NOT define is nonsense and falls back (N44's rule). */
+  await page.goto("/admin/controls?target=98");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N50: a level the scale does not define still falls back to everything",
+    (await rows()) === activeControls.length + 1, String(await rows()));
+
+  /* Priority — a column with no definition table, so the data is the only
+     vocabulary there is. */
+  const prioritiesInUse = [...new Set(allControls.map((c) => c.priority).filter(Boolean))];
+  await page.goto("/admin/controls");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const prioRow = page.locator(".filterbar").filter({ hasText: "Priority" }).first();
+  const prioChips = (await prioRow.locator(".filterchip").allInnerTexts()).join(" | ");
+  check("N50: the Priority row offers exactly the priorities in use",
+    prioritiesInUse.every((p) => prioChips.includes(p)), `${prioritiesInUse.join(",")} vs ${prioChips}`);
+
+  const firstPrio = prioritiesInUse[0];
+  const prioCount = allControls.filter((c) => c.priority === firstPrio).length;
+  await page.goto(`/admin/controls?priority=${encodeURIComponent(firstPrio)}`);
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  check("N50: the priority filter matches the database",
+    (await rows()) === prioCount, `${await rows()} vs ${prioCount} at ${firstPrio}`);
+
+  /* THE WALK. Open the first row of a filtered view and press Next twice; the
+     admin must stay inside the filtered set and never be handed a control the
+     view does not contain. This is the check that fails if the editor ever
+     grows its own copy of the filter. */
+  await page.goto("/admin/controls?area=Perspective&target=3");
+  await page.waitForSelector(".grid tbody tr", { timeout: 20_000 });
+  const expected = await page.locator(".grid tbody tr .rcode").allInnerTexts();
+  await page.locator(".grid tbody tr .rcode").first().click();
+  await page.waitForURL(/\/admin\?c=/, { timeout: 20_000 }).catch(() => {});
+  check("N46: the row opens the editor with the filter still on the URL",
+    /area=Perspective/.test(page.url()) && /target=3/.test(page.url()), page.url());
+
+  /* Scoped to the SECOND nav row — the first one holds "← back to the list",
+     which also contains an arrow. A looser selector would click the way out
+     and the walk would silently be testing the back button. */
+  const stepper = page.locator(".assess-nav").nth(1);
+  const codeNow = () => new URL(page.url()).searchParams.get("c");
+  /* WAIT FOR THE CODE TO CHANGE, not for the URL to match `/admin?c=`.
+     The page is ALREADY on a URL matching that pattern, so `waitForURL` with it
+     resolves instantly and the assertion then reads the control we started
+     from. That is how the first cut of this check reported the walk as
+     4.3.1.2 → 4.3.1.2 → 4.3.1.4: two clicks, one recorded move, and a failure
+     that looked like the app had skipped a row. */
+  const stepTo = async (link, from) => {
+    await link.click();
+    await page.waitForFunction(
+      (prev) => new URL(location.href).searchParams.get("c") !== prev,
+      from, { timeout: 20_000 },
+    ).catch(() => {});
+    return codeNow();
+  };
+
+  const walked = [codeNow()];
+  for (let step = 0; step < 2; step++) {
+    const next = stepper.locator('a:has-text("→")');
+    if (!(await next.count())) break;
+    walked.push(await stepTo(next, walked[walked.length - 1]));
+  }
+  check("N46: Next walks the filtered view in the order the table showed it",
+    walked.length > 1 && walked.every((c, i) => c === expected[i]),
+    `walked ${walked.join(",")} vs table ${expected.slice(0, walked.length).join(",")}`);
+  check("N46: and never leaves the filtered set",
+    walked.every((c) => expected.includes(c)), walked.join(","));
+
+  /* Previous comes back to where Next came from. */
+  const before = codeNow();
+  const back = await stepTo(stepper.locator('a:has-text("←")'), before);
+  check("N46: Previous returns to the control Next came from",
+    back === walked[walked.length - 2], `${back} after ${before}, walked ${walked.join(",")}`);
+
+  /* THE REASON FIELD IS A TEXTAREA, and the whole reason is readable.
+     The owner's report was that a two-sentence justification showed as forty
+     clipped characters, so this asserts the ELEMENT, not just that a value
+     round-trips — an <input> would pass a value check and still be the bug. */
+  await page.goto("/admin?c=4.3.1.3");
+  await page.waitForSelector("#reason", { timeout: 20_000 });
+  const reasonTag = await page.locator("#reason").evaluate((el) => el.tagName);
+  const kibTag = await page.locator("#kib").evaluate((el) => el.tagName);
+  check("N46: the reason field is multi-line", reasonTag === "TEXTAREA", reasonTag);
+  check("N46: the KIB clarification is multi-line", kibTag === "TEXTAREA", kibTag);
+  const reasonBox = await page.locator("#reason").boundingBox();
+  check("N46: and it is tall enough to show more than one line",
+    reasonBox.height >= 60, `${Math.round(reasonBox.height)}px`);
+
+  /* A long reason must be READABLE in the box, not just stored. */
+  const long = `QA ${"long reason ".repeat(12)}`.trim();
+  await page.fill("#reason", long);
+  await page.selectOption("#priority", "Low");
+  await submitAction(page, () => page.click('button:has-text("Save changes")'));
+  const shown = await page.locator("#reason").inputValue();
+  check("N46: a long reason survives the save and comes back whole",
+    shown === long, `${shown.length} of ${long.length} chars`);
+
+  /* WHAT THE LEVELS MEAN — the admin picks a target with no idea how Competent
+     differs from Practised. Assert the real APM wording, not just the labels,
+     because six labels with no definitions is the state being fixed. */
+  /* THE PICKER IS THE SIX LEVELS, not a dropdown (owner's Design A). Assert the
+     control's SHAPE, not just that a value round-trips: a <select> would pass
+     any value check and still be the design that was rejected. */
+  check("N46: there is no target dropdown left",
+    (await page.locator('select[name="target"]').count()) === 0);
+  check("N46: the target is picked from all six levels at once",
+    (await page.locator('.levelseg input[name="target"]').count()) === 6);
+  const segLabels = await page.locator(".levelseg label .l").allInnerTexts();
+  check("N46: and every level is offered by LABEL, not only by number",
+    ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"]
+      .every((l) => segLabels.includes(l)), segLabels.join("|"));
+  /* 4.3.1.3 is seeded at target 2 (Practised) — read from the database rather
+     than hardcoded, so a reseed cannot make this assertion quietly wrong. */
+  const { data: seededTarget } = await db.from("control")
+    .select("target_level").eq("code", "4.3.1.3").single();
+  check("N46: the control's own target is the one selected",
+    await page.locator(`.levelseg input[value="${seededTarget.target_level}"]`).isChecked(),
+    `expected ${seededTarget.target_level}`);
+  const seededLabel = ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"][seededTarget.target_level];
+
+  /* Only the CHOSEN level's definition is spelled out — that is what makes the
+     block short. Checked as rendered visibility, because all six are in the
+     DOM and CSS decides which one shows. */
+  const shownDefns = await page.locator(".levelseg-defn:visible").allInnerTexts();
+  check("N46: exactly one definition is shown, for the selected level",
+    shownDefns.length === 1 && shownDefns[0].includes(seededLabel),
+    `${shownDefns.join("|")} (want ${seededLabel})`);
+
+  /* Picking another level moves the definition with it, with no client bundle. */
+  await page.locator('.levelseg label[for="target-5"]').click();
+  const afterPick = await page.locator(".levelseg-defn:visible").allInnerTexts();
+  check("N46: choosing a different level shows that level's definition",
+    afterPick.length === 1 && /Expert/.test(afterPick[0]), afterPick.join("|"));
+  await page.locator(`.levelseg label[for="target-${seededTarget.target_level}"]`).click();
+
+  /* The full scale is still reachable for comparison, one line per level. */
+  await page.locator(".scale-help > summary").click();
+  const help = await page.locator(".scale-table").innerText();
+  check("N46: every level on the scale is explained",
+    ["Unaware", "Aware", "Practised", "Competent", "Proficient", "Expert"]
+      .every((l) => help.includes(l)), help.slice(0, 80));
+  check("N46: the explanation is the APM wording, not just the label",
+    /under supervision/i.test(help) && /independently/i.test(help), help.slice(0, 120));
+  check("N46: and this control's own target is marked",
+    (await page.locator(".scale-table tr.is-target").count()) === 1);
+
+  /* THE HEIGHT IS THE POINT, so it is measured rather than asserted by eye.
+     The rejected design was ~430px of level cards sitting between the target
+     and the fields the screen exists for.
+
+     THE THRESHOLD IS 200px AND THAT NUMBER HAS A REASON. It is under half the
+     rejected design, which is what "a config control, not a reading list"
+     has to mean in pixels, and a return to one card per level cannot fit
+     under it — six bordered cards with padding clear 400px before any text
+     wraps. It is NOT the current height plus a margin: the first cut of this
+     check said 140px, which was a guess made before measuring, and the real
+     picker is 151px. Tuning the number down to whatever the code does would
+     have made the check agree with the code instead of with the intent. */
+  const pickerBox = await page.locator(".levelseg").boundingBox();
+  check("N46: the picker stays a control, not a reading list",
+    pickerBox.height < 200, `${Math.round(pickerBox.height)}px, budget 200`);
+
+  /* Restore 4.3.1.3 exactly, as section [10] does — the suite must not leave
+     the real framework carrying QA text. */
+  const { data: seeded } = await db.from("control")
+    .select("reason, priority").eq("code", "4.3.1.3").single();
+  await db.from("control").update({ reason: null, priority: "High" }).eq("code", "4.3.1.3");
+  check("N46: framework restored after the admin walk",
+    seeded !== null);
+
+  await ctx.close();
+}
+
+/* ------------------------------- 19. the JWKS exclusion is not a free pass */
+const JWKS_LOG = process.env.E2E_SERVER_LOG;
+if (JWKS_LOG) {
+  /* The budgets above exclude jwks.json because it is a once-per-instance
+     bootstrap. That is only honest while it STAYS once — if getClaims() ever
+     started fetching it per request, the budgets would keep reading 3 and 5
+     while every save quietly paid an extra auth round trip, which is the exact
+     failure mode "round trips are counted, not estimated" exists to catch.
+     So the exclusion is paired with its own assertion. */
+  const fetches = readFileSync(JWKS_LOG, "utf8").slice(RUN_MARK)
+    .split("\n").filter((l) => l.includes("jwks.json")).length;
+  /* THE BOUND IS "NOT PER-REQUEST", NOT "EXACTLY ONCE", and the difference is
+     honest rather than convenient. This run makes hundreds of authenticated
+     requests; a per-request fetch would show hundreds. A warm process reuses a
+     JWKS cached by an earlier run and fetches none, and auth-js may legitimately
+     refetch once if a key rotates. Anything in low single digits proves the
+     cache is doing its job; the failure this guards against is three orders of
+     magnitude away, so a tight bound would only buy flakiness. */
+  check("JWKS is cached, not fetched per request",
+    fetches <= 2, `${fetches} fetches during this run`);
+} else {
+  skip("the JWKS bootstrap check",
+    "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
 }
 
 /* ---------------------------------------------------------------- cleanup */

@@ -270,9 +270,14 @@ Display rules (from §7 / §8):
 - **Actual = mean of Agreed scores across the CE's active controls**, with the
   **weakest control shown alongside** so a single serious gap isn't absorbed by
   the average. Inactive controls contribute nothing, regardless of any score.
-- **Targets are not rolled up** — they are APM's published values. Where a CE
-  spans two APM competences with different values, the row shows the dominant
-  value.
+- **CE targets are rolled up — amended 2026-08-08, after approval of this doc.**
+  The mean of the CE's active control targets. Each *control* target is still an
+  APM published value; only the competency-level figure is computed. This bullet
+  previously read *"Targets are not rolled up — they are APM's published values.
+  Where a CE spans two APM competences with different values, the row shows the
+  dominant value."* The owner reversed it for the pilot because the two numbers
+  had drifted and 4 of 28 competencies gave a Minor Gap to a PM who hit every
+  control target. Reasoning and accepted cost: `docs/rollup-spec.md` §3.
 - **Provenance is not shown in results** — the report shows target vs actual;
   where a target came from (APM-published vs KIB-derived) lives on the Controls
   data only.

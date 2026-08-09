@@ -23,7 +23,7 @@ export default async function ChangePasswordPage({
   return (
     <div className="section reading" style={{ maxWidth: 460 }}>
       <div className="card pad">
-        <h2 style={{ fontSize: 20, fontWeight: 680, marginBottom: 6 }}>
+        <h2 style={{ fontSize: "var(--fs-h2)", fontWeight: 680, marginBottom: 6 }}>
           {forced ? "Set your password" : "Change your password"}
         </h2>
 

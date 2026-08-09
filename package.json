@@ -12,7 +12,7 @@
     "verify:db": "node --env-file=.env.local scripts/verify-db.mjs",
     "e2e": "node --env-file=.env.local scripts/e2e.mjs --write",
     "demo": "node --env-file=.env.local scripts/demo.mjs",
-    "test:unit": "node --experimental-strip-types --test scripts/ttl-map.test.mjs scripts/shape.test.mjs scripts/pace.test.mjs scripts/routes.test.mjs",
+    "test:unit": "node --experimental-strip-types --test scripts/ttl-map.test.mjs scripts/shape.test.mjs scripts/pace.test.mjs scripts/routes.test.mjs scripts/outbox.test.mjs scripts/commit-label.test.mjs scripts/control-filter.test.mjs scripts/rollup.test.mjs",
     "perf:save": "node --env-file=.env.local scripts/perf-save.mjs"
   },
   "dependencies": {

@@ -50,8 +50,9 @@ the client never holds a table-capable key.
 
 ## Architecture rules that must not drift
 
-Learned by measurement during the 2026-08 performance arc; each has a cost
-that was paid once already.
+Each was learned by measurement — most during the 2026-08 performance arc, the
+last from a defect that reached the owner — and each has a cost that was paid
+once already. None of them is a preference.
 
 - **No synchronous network dependency in the per-request hot path unless it
   fetches the data being served.** Auth is verified locally by signature
@@ -68,6 +69,23 @@ that was paid once already.
   commit a server action with the navigation beside it; the e2e assertion moved
   and this line did not. A review pass caught the two disagreeing. The number
   to trust is the one in `scripts/e2e.mjs`, because it is the one that runs.)
+
+  **There are two commit shapes since N32, and both are asserted.** A commit
+  that COMPLETES a competency raises the milestone in place and navigates
+  nowhere: 3 calls, then Continue costs the navigation's 2 — still 5 across the
+  pair. Any other commit is the ordinary 5-call navigate. Measured past the 2s
+  viewer-memo TTL; inside it Continue costs 1, which is real but
+  timing-dependent, so the steady state is what is pinned. This was written
+  down because the budget assertion runs at `4.3.1.1`, which completes nothing,
+  so it never touched the other path — a change that made the milestone fetch
+  anything would have been invisible.
+
+  **The trigger is completion, not position, since N40** — this paragraph said
+  "at a competency boundary … on 28 of the 132 commits" and that was true only
+  while the card could rise nowhere else. A hole filled anywhere now takes the
+  3-call shape too, so the count is 28 plus however many holes the PM left
+  behind. Same numbers, wider distribution; both remain asserted in
+  `scripts/e2e.mjs`, which is the copy to trust.
 - **Performance claims come from `npm run perf:save` (or the phase logs),
   never from reasoning about where time "must" be going.** Four asserted
   mechanisms in a row were wrong before measurement; the rule exists because
@@ -76,6 +94,21 @@ that was paid once already.
   `docs/deploy.md`** (Fluid Compute: instances serve interleaved requests).
   One exists — `viewerMemo`, token-keyed, 2s TTL. Retire it if Next ever
   provides a request store spanning a server action and its redirect render.
+- **A test must arrive the way the PM arrives, and must never await the commit
+  the product exists to not await.** The save and the navigation leave together
+  (D9), so every server render in a run lags one answer; that lag IS the
+  product. Three habits each engineered it away and each cost a defect that
+  reached the owner: `page.goto` onto the control under test with the earlier
+  answers seeded straight into Postgres (a page load postdates every write);
+  `await committed` before the next step (a PM who waits is not a PM); and
+  aborting the save POST to simulate a queue (a queue that never drains never
+  forgets, so it tests the failure path and not the successful one, which is
+  where N33 lived). Seeding is for PRIOR SITTINGS. The step under test is
+  walked. **Anything the app made asynchronous is tested in its
+  successful-but-still-settling state, not only its failed state** — success is
+  what deletes the evidence. Cost: six green milestone tests, one of them
+  written for this exact failure mode (FM3), against a build where the feature
+  did not work at all on the only path a PM takes.
 
 ## Domain rules that must not drift
 - Framework: IPMA ICB4 v4.0.1 — 3 areas, 28 competence elements, **133 controls
@@ -85,8 +118,21 @@ that was paid once already.
   underneath. Build the scale as a swappable module (a PDCF variant may be added later).
 - Scores: `self_level` (PM) and `assessor_level` (authoritative, shows in results).
   The assessor reviews and revises — accept as-is or override specific controls.
-- Targets come from the selected APM benchmark profile (default Intermediate).
-  Targets are **not** rolled up or averaged; they are published values.
+- **CONTROL** targets come from the selected APM benchmark profile (default
+  Intermediate) — published values, never computed.
+- **COMPETENCY** targets ARE rolled up: `target(CE) = mean of its ACTIVE control
+  targets` (owner, 2026-08-08, for the pilot). **This line said the opposite until
+  that date and the reversal is deliberate — do not restore it.** The two numbers
+  were seeded from separate sources and drifted, so 4 of 28 competencies handed a
+  Minor Gap to a PM who had hit every single control target. Full reasoning, the
+  evidence that retired the old circularity objection, and the cost accepted are
+  in `docs/rollup-spec.md` §3. `competence_element.target_level` is retained in
+  the database as the recoverable APM anchor and is read by **no rollup** — it is
+  still written by the seed and captured by `scripts/framework-baseline.mjs`,
+  which is what keeps the anchor recoverable.
+  Consequence for scoping: use `active`, **not** a low target, for a control that
+  is not the role's job at all — an inactive control leaves the rollup entirely
+  rather than sitting in the mean dragging the bar down.
 - Rollup per competence element: **mean of assessor scores across active controls**,
   with the **weakest control** shown alongside.
 - Health: Role Ready (at/above target) · Minor Gap (within half a level below) ·
@@ -95,6 +141,13 @@ that was paid once already.
 - ICB4 source text is **never edited**. KIB clarifications are added in their own
   field alongside it.
 - The tool **supports a decision, never gates one** — no pass/fail verdicts.
+- **The primary button names what the click COMPLETES if it completes
+  something, and otherwise names where it GOES** (owner, N38/N39/N40).
+  Completion is a fact about ANSWERS and is asked of answers; position decides
+  only where you go, and the two must never share an expression — that shared
+  expression was N30, N33, N38 and N40, four times. "Completes something" is
+  narrower than "is now whole": re-opening a competency that was already
+  finished completes nothing, and the button must not claim otherwise.
 - Language: never use "interest" in the financial sense (Sharia-compliant bank);
   use "profit rate" / "rate of return" / "return".
 
@@ -103,6 +156,70 @@ that was paid once already.
 gstack is installed automatically by the SessionStart hook. When a request
 matches a skill, invoke it via the Skill tool rather than answering ad hoc —
 the skills carry checklists and quality gates. When in doubt, invoke the skill.
+
+### The loop (owner's, 2026-08-07)
+
+The order things happen in. Not every stage fires for every change — the
+trigger column says when.
+
+| # | Stage | Skill | Fires when |
+|---|---|---|---|
+| 1 | Is it worth building | `/office-hours` | a new idea or a scope question |
+| 2 | Scope and ambition | `/plan-ceo-review` | anything larger than a fix |
+| 3 | How it should feel | `/design-consultation`, then `/plan-design-review` | the change is visible to a PM |
+| 4 | Architecture | `/plan-eng-review` | **gate** — the plan must end with no unresolved decisions |
+| 5 | Backlog item | `/spec` | the work is being handed off or deferred |
+| 6 | **Build** | — | to the approved plan, not around it |
+| 7 | Diff review | `/review` | **gate — before merge** |
+| 7b | Security | `/cso` | **only** a diff touching auth, sessions, storage, or the allowlist |
+| 8 | Does it actually work | `/qa` | **gate — before merge**, against the preview build |
+| 9 | Ship | `/ship`, then `/land-and-deploy` | |
+| 10 | Production | — | **the owner's own pass, by hand** |
+| 11 | Release notes | **`/ship` writes the `CHANGELOG.md` entry**, `/document-release` polishes it and syncs the rest | a user-visible change shipped |
+| 12 | Product documentation | `/document-generate`, **consolidated into `docs/user-guide.md`** | **every feature** — the manual is kept current, not appended to |
+| 13 | Compound | `/retro`, `/learn` | weekly |
+| ⚡ | Something is broken | `/investigate` | **an interrupt, at any point** — never a scheduled stage |
+
+**Ground rules, each paid for once.**
+
+0. **A new regression test must be shown FAILING on the build that has the
+   bug, before it counts.** Not a preference and not TDD ceremony — it is the
+   only thing that separates a test from a decoration. Measured on N38/N40: the
+   walked test was written first and was still vacuous through THREE cuts. Cut
+   one because the write landed before the PM reached the second control, so no
+   render lagged; cut two because the owed list filled up going forward and
+   never wrapped; cut three finally went red. A test written first that has
+   never been red proves only that it agrees with the code in front of it.
+1. **A gate that has never run is not a gate.** `/qa` sat unrun for three days
+   on a branch carrying the hottest screen in the product. That is how N33
+   reached the owner.
+2. **A review round that produces non-trivial fixes gets reviewed.** Measured
+   here: `/review` on the N33 fix found two defects *in the fix*, one of them a
+   fresh regression. Repair-then-merge is how a fix ships a new bug.
+3. **Every finding gets a written answer — fixed, or why it is a false
+   positive.** Same rule the SonarCloud section already states, for the same
+   reason: an un-triaged list trains the next reader to skim.
+4. **Conditional gates stay conditional.** `/cso` on auth and storage diffs,
+   `/design-review` on visual ones. Firing everything every time is the
+   banner-on-every-save failure.
+5. **Docs are part of the diff, not a follow-up.** Three doc claims went stale
+   inside one day and a review pass had to catch them.
+6. **No fix without a root cause** — `/investigate`'s own iron law, and what
+   turned "sometimes it works" into a one-line mechanism.
+7. **The product documentation is a manual, not a changelog.** `docs/user-guide.md`
+   describes the product as it is today. History belongs in
+   `docs/pilot-feedback.md` and the release notes; a manual that accretes
+   "and then we added…" stops being usable at about the third feature.
+
+**Which skill owns which document — checked against the skills, not assumed.**
+
+| Document | Written by | Notes |
+|---|---|---|
+| `docs/user-guide.md` | `/document-generate` | Left alone it emits a Diátaxis *set* (`docs/reference-*.md`, `docs/explanation-*.md`, separate how-tos). **Point it at the single manual**, or it scatters files. |
+| `CHANGELOG.md` | **`/ship`** (its Step 13, from the diff) | Does not exist yet; `/ship` creates the first entry on the first real release. |
+| Changelog polish, README / ARCHITECTURE / CONTRIBUTING / CLAUDE.md sync, TODOS, diagram drift | `/document-release` | It is a post-ship docs SYNC, not a release-notes author. Its own rule: *"Never clobber CHANGELOG. Polish wording only."* |
+| `docs/pilot-feedback.md` | `/investigate` | One entry per defect, with the mechanism. |
+| `docs/STATUS.md` | whoever ships the change | Current state and open decisions, in the same diff as the code. |
 
 | Situation | Skill |
 |---|---|
@@ -129,8 +246,75 @@ written tests.
 |---|---|
 | **Merging anything containing code** | `/review` on the diff |
 | A diff touching **auth, sessions, storage, or the allowlist** | `/cso` as well |
-| A **user-visible** change reaching production | `/qa` after it deploys |
+| A **user-visible** change reaching a **preview someone is about to use** | `/qa` against that preview, before the merge |
 | **Any push containing code** | Read the **SonarCloud** findings for it |
+
+**`/qa` runs ONCE, on the preview. Production is the owner's own pass** (owner's
+call, 2026-08-06). There used to be a second row here — `/qa` after it deploys —
+and it was removed deliberately, so do not restore it: the owner is the second
+level of QA on production and does it by hand. Two automated passes over the
+same build would be the banner-that-fires-on-every-save failure, and the later
+one lands after the nine PMs already have it.
+
+That places the whole weight on the preview run, which is exactly where it
+belongs and also where it is easiest to skip. **N33 is why.** The milestone
+never rose on the path a PM walks; it was invisible to 336 green tests and to a
+full `/review` (five specialists, a red team, an adversarial pass), because a
+diff-reading pass can only check that the code does what the diff says. It
+cannot notice that every test describes a user who does not exist. It took
+ninety seconds of clicking to find, and the owner found it — on a branch that
+had carried three days of user-visible work with `/qa` never once run.
+
+**`/qa` CAN drive the real Vercel preview from this container. Solved
+2026-08-07, and the two earlier versions of this paragraph were both wrong** —
+recorded because each wrong version pointed at a fix the owner would have had to
+make, and neither was needed.
+
+- Wrong once: "the preview is unreachable". It is reachable.
+- Wrong twice: "deployment protection blocks it; a bypass token would unlock the
+  browser". The token was never the browser's problem, and no Vercel setting or
+  environment network policy needed changing.
+
+**The actual cause: the egress proxy's TLS interception resets Chromium's
+TLS 1.3 handshake.** `curl` and node `fetch` negotiate differently and get
+`200`. Chromium got `ERR_CONNECTION_RESET` on *every* external host until the
+handshake was capped. Disabling ECH, QUIC, HTTP/2 and post-quantum key agreement
+all failed; `--ssl-version-max=tls1.2` works.
+
+**`scripts/e2e.mjs` now does this itself.** Set `E2E_BASE_URL` to the preview
+and the suite caps TLS, routes through the proxy, and attaches the bypass header
+to every context by wrapping `newContext` once — so the whole suite runs against
+the preview, not just a hand-written walk:
+
+```bash
+E2E_CHROMIUM=/opt/pw-browsers/chromium \
+E2E_BASE_URL=https://<preview-host> npm run e2e
+```
+
+It REFUSES to run remote without `Vercel_deployment_ByPass` rather than
+reporting a pass earned from thirty redirects to `vercel.com/sso-api`. First
+run against a preview: 382 passed, 1 failed — the documented `viewerMemo` flake.
+
+The underlying recipe, verified against `/login`, `/assess`, `/results` and
+`/review` with assets loading, redirects correct and no page errors:
+
+```js
+chromium.launch({
+  executablePath: "/opt/pw-browsers/chromium",
+  args: ["--ssl-version-max=tls1.2"],        // the proxy resets TLS 1.3
+  proxy: { server: process.env.HTTPS_PROXY },
+})
+// and on the context, so every request carries it — assets and RSC included:
+{ extraHTTPHeaders: { "x-vercel-protection-bypass": process.env.Vercel_deployment_ByPass } }
+```
+
+The bypass secret lives in this environment as `Vercel_deployment_ByPass`. It is
+a secret: pass it by env reference, never print it, never commit it.
+
+**So `/qa` runs against the real preview URL, and the report says so.** If a run
+ever falls back to a local production build — a proxy change, a missing secret —
+that is a different target and the report must name it, so nobody reads
+"preview: clean" and believes Vercel was tested.
 
 **SonarCloud.** The project is analysed at sonarcloud.io. Every finding gets
 one of two answers, and the answer is written down: *fix it*, or *why it is a
