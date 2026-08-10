@@ -15,6 +15,43 @@ does not reproduce in `next dev`). Gated: `/review` (one adversarial finding,
 fixed), `/qa` local suite **152 unit / 426 e2e (cold) / 0 failed**, budgets still
 5 and 3. See `docs/pilot-feedback.md` N54.
 
+**Also on this branch (2026-08-10): the results-report enhancements (task #5).**
+Four owner-approved additions to `/results`, decided this session and built to
+`docs/eng-plan-results-enhancements.md` (the `/plan-eng-review` record, ends with
+no unresolved decisions):
+
+1. **A 4th health tier, "Above target"** — `actual >= target + 1.0` (a full level
+   clear), coloured **indigo**. Splits the old "Role Ready" (which collapsed
+   *at target* and *comfortably past it*) so the report can recognise strength,
+   not only adequacy. Escalation still outranks it. Two locked lines were reversed
+   on the record for this: `rollup-spec.md` §4 (3-tier → 4-tier) and, for the radar
+   below, §7 + `DESIGN.md` (no-radar → 3-axis area radar). `CLAUDE.md`'s Health
+   domain rule and DESIGN.md's decision log are synced in the same diff.
+2. **Per-area + per-gap narrative lines** — deterministic templates assembled from
+   the rollup numbers (`lib/narrative.ts`), no LLM, no runtime network, unit-tested.
+3. **A development-plan table** — gap competencies only, current/target/gap plus a
+   focus line and a *suggested* action (phrased as a suggestion, never a mandate).
+4. **A 3-axis area radar** — People/Practice/Perspective, actual vs target, drawn
+   as **hand-rolled inline SVG** (`app/results/area-radar.tsx`); no charting
+   dependency, no client component, so `/results` stays fully server-rendered.
+
+The engine change is small and type-guarded: `Health` gains `"above"`, `healthOf`
+gains one branch (`FULL_LEVEL = 1 - 1e-9`, the mirror of `HALF_LEVEL`), and
+`Record<Health,string>` forced every consumer to handle it. `app/results/page.tsx`
+is the only health-rendering page.
+
+**Gate state (2026-08-10):** `npm run test:unit` **161/161** (baseline 152 + the
+new "Above target" tier tests, shown RED on the 3-tier engine before the branch was
+added per ground rule 0, + `scripts/narrative.test.mjs`); `npm run typecheck` clean;
+`npm run build` succeeds. **e2e assertions are WRITTEN (section [7]: the 4th-tier
+legend, the radar, the narrative block, the development-plan table) but NOT RUN** —
+`npm run e2e` needs `.env.local` Supabase creds for its own DB setup, which this
+session does not have (STATUS.md item 1). **`/qa` on the preview, `/design-review`
+of the built UI, and `/review` of the diff are the remaining pre-merge gates.**
+A prototype board of the two look-decisions (radar build, tier colour) was reviewed
+by the owner before building. No `/cso` — nothing touches auth, sessions, storage
+or the allowlist.
+
 **The change in flight: the competency target is now the mean of its active
 control targets** (owner's decision 2026-08-08, for the pilot). Spec first
 (`docs/rollup-spec.md` §3, `6a4be6c`), then `/plan-eng-review`, then the engine.
