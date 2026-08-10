@@ -6,6 +6,8 @@ import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
 import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
+import { areaNarrative, ceNarrative, gapsOf, suggestedAction } from "@/lib/narrative";
+import { AreaRadar } from "./area-radar";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -100,8 +102,9 @@ export default async function ResultsPage({
   const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
   const sorted = sortByGap(results);
+  const gapRows = gapsOf(results);
   const initials = assessment.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
-  const gaps = results.filter((r) => r.health === "minor" || r.health === "deficit").length;
+  const gaps = gapRows.length;
   const revised = assessment.scores.filter((s) => s.assessor_touched).length;
 
   return (
@@ -169,6 +172,14 @@ export default async function ResultsPage({
           })}
         </div>
 
+        <AreaRadar areas={areas} />
+
+        <div className="narrative">
+          {areas.map((ar) => (
+            <p key={ar.area}>{areaNarrative(ar, results.filter((r) => r.area === ar.area))}</p>
+          ))}
+        </div>
+
         <div className="cap" style={{ marginBottom: 6 }}>
           CAPABILITY BY COMPETENCE ELEMENT · sorted by gap · actual vs target on 0–5
         </div>
@@ -188,6 +199,10 @@ export default async function ResultsPage({
 
         <div className="legend">
           <span>
+            <i style={{ background: "var(--above)" }} />
+            Above target
+          </span>
+          <span>
             <i style={{ background: "var(--ready)" }} />
             Role Ready
           </span>
@@ -205,10 +220,51 @@ export default async function ResultsPage({
           </span>
         </div>
 
+        {gapRows.length > 0 && (
+          <>
+            <div className="cap" style={{ margin: "22px 0 6px" }}>
+              DEVELOPMENT PLAN · {gapRows.length} competenc{gapRows.length === 1 ? "y" : "ies"} below target · most serious first
+            </div>
+            <div className="devplan-wrap">
+              <table className="devplan">
+                <thead>
+                  <tr>
+                    <th scope="col">Competency</th>
+                    <th scope="col" className="num">Current</th>
+                    <th scope="col" className="num">Target</th>
+                    <th scope="col" className="num">Gap</th>
+                    <th scope="col">Focus</th>
+                    <th scope="col">Suggested action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gapRows.map((r) => (
+                    <tr key={r.ce_code}>
+                      <td className="cename">
+                        {r.ce_name}
+                        <small>
+                          {r.ce_code}
+                          {r.health ? ` · ${HEALTH_LABEL[r.health]}` : ""}
+                        </small>
+                      </td>
+                      <td className="num tnum">{fmtLevel(r.actual)}</td>
+                      <td className="num tnum">{fmtLevel(r.target)}</td>
+                      <td className="num tnum">{r.gap !== null && r.gap > 0 ? r.gap.toFixed(1) : "—"}</td>
+                      <td className="focus">{ceNarrative(r)}</td>
+                      <td>{suggestedAction(r)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
         <p className="note" style={{ marginTop: 14 }}>
           Actual is the mean of approved scores across each element’s active controls; the
           weakest control is shown alongside so a single serious gap is not absorbed by the
-          average. This report supports a decision — it does not approve, reject or gate one.
+          average. Suggested actions are prompts, not requirements — this report supports a
+          decision, it does not approve, reject or gate one.
         </p>
       </div>
     </div>
