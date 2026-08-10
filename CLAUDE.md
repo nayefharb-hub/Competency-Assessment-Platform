@@ -135,9 +135,12 @@ once already. None of them is a preference.
   rather than sitting in the mean dragging the bar down.
 - Rollup per competence element: **mean of assessor scores across active controls**,
   with the **weakest control** shown alongside.
-- Health: Role Ready (at/above target) · Minor Gap (within half a level below) ·
-  Capability Deficit (more than half a level below, or any single control 2+ levels
-  below its own target).
+- Health (4-tier since 2026-08-10): Above target (a full level or more clear —
+  `actual >= target + 1.0`) · Role Ready (at target, up to just under a full level
+  above) · Minor Gap (within half a level below) · Capability Deficit (more than
+  half a level below, or any single control 2+ levels below its own target).
+  Escalation outranks every tier — a severe single control is a Deficit even when
+  the mean is Above target. See `docs/rollup-spec.md` §4.
 - ICB4 source text is **never edited**. KIB clarifications are added in their own
   field alongside it.
 - The tool **supports a decision, never gates one** — no pass/fail verdicts.

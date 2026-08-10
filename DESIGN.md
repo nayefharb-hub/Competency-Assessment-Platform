@@ -66,15 +66,20 @@ decision; do not deviate without explicit approval.
 - **Ink:** `#16202E` · **Muted:** `#5B6675`.
 - **Neutrals:** canvas `#F4F6F9` · surface `#FFFFFF` · surface-2 `#F9FAFC` · border `#E3E8EF`.
 - **Semantic — health tiers (reserved; always shipped with a label, never color-alone):**
+  - Above target `#5B21B6` on `#EDE9FE`
   - Role Ready `#15803D` on `#E7F6EC`
   - Minor Gap `#B45309` on `#FBEED6`
   - Capability Deficit `#B91C1C` on `#FBE7E7`
-  - (Deliberately echo the workbook's green/amber legend for continuity.)
+  - (Role Ready / Minor Gap / Deficit deliberately echo the workbook's green/amber
+    legend for continuity. **Above target** — a full level clear of target,
+    rollup-spec §4 — is indigo: a distinct hue that reads as beyond-target while
+    staying clearly apart from the Role Ready green and the azure interactive color.)
 - **Target mark:** ink at 62% opacity.
 - **Dark mode (designed, not inverted):** bg `#0E1621` · surface `#14202E` · border
   `#26374C` · ink `#E8EEF5` · muted `#9DACBF` · navy surfaces deepen to `#12283F` ·
-  accent lightens to `#5B93F5` · status lightened/desaturated (ready `#4ADE80`,
-  minor `#FBBF24`, deficit `#F87171`). Theme via `prefers-color-scheme` + a
+  accent lightens to `#5B93F5` · status lightened/desaturated (above `#A78BFA` on
+  `#241A3D`, ready `#4ADE80`, minor `#FBBF24`, deficit `#F87171`). Theme via
+  `prefers-color-scheme` + a
   `data-theme` override on `:root` in both directions.
 
 ## Spacing
@@ -133,7 +138,13 @@ decision; do not deviate without explicit approval.
   **target is hidden** while the PM self-scores.
 - **Bar-on-bar mark (signature):** neutral 0–5 track, an ink **target tick**, and an
   **actual** bar filled by health tier; rounded ends, 2px surface ring, tabular-nums
-  values. **No radar chart. Numbers, not percentages.**
+  values. **Numbers, not percentages.**
+- **Area radar (3 axes):** a hand-drawn inline-SVG triangle over People · Practice ·
+  Perspective, actual (azure fill+stroke) against a dashed ink-muted target polygon,
+  faint 0–5 grid rings, values printed at each vertex. Server-rendered, no charting
+  dependency, themed through the same tokens as everything else. **A 28-competency
+  radar is still excluded** (an unreadable hairball, per the decision log); three
+  axes are legible and give the summary a shape at a glance (rollup-spec §7).
 - **Status pills:** dot + label, health-tier colored.
 - **Read-only source block:** ICB4 indicator text + measures shown for context; the
   editable **KIB clarification** field sits alongside; ICB4 source text is locked.
@@ -157,3 +168,5 @@ decision; do not deviate without explicit approval.
 | 2026-08-07 | `--measure` 52ch → 44ch, and the old rationale retired as wrong | The file claimed 52ch = 68 characters. Measured, it rendered 79 in `.ro p` and 72 in `.measures li` — above the band this rule exists to hold, not below it. The line was already too long; the empty pane beside it was a container problem, which is a different fix (N47) |
 | 2026-08-07 | Option rows tighten only under `max-height: 950px`, not everywhere | The bigger type put Save 32px below the fold at 1440×900 — the exact defect N14 exists to prevent, caught by the e2e rather than the owner. It is a HEIGHT constraint, so it takes a height query: paying for a laptop's short viewport with a worse control on every other screen would be the wrong trade. Rows stay 55px, above the 44px touch minimum |
 | 2026-08-03 | Palette left unchanged after a readability complaint | Light ink-on-surface measures 16.4:1 vs dark mode's 14.1:1 — light is the harsher of the two. But measure was the dominant fatigue driver, so it is fixed first and the palette re-judged after. If still tiring, soften the reading **surface** toward dark's ~14:1 rather than lightening the ink: ink `#16202E` carries the "serious, trustworthy" anchor, and lifting it compresses the ink/muted hierarchy |
+| 2026-08-10 | 4th health tier **Above target** (actual ≥ target + 1.0), coloured **indigo** | The 3-tier model collapsed *at target* and *comfortably past it* into one "Role Ready" verdict, so the report could recognise adequacy and shortfall but never strength — unlike the Provek/Comaea reports it was measured against. A full-level margin (not a half) makes "Above" a real distinction rather than routine. Indigo chosen over teal and a deeper green: distinct from the Role Ready green and the azure accent, and the two-greens pair was the hardest to separate at a glance (owner reviewed all three in a prototype). rollup-spec §4 |
+| 2026-08-10 | 3-axis **area radar** added; 28-competency radar still excluded | Reversal of the 2026-08-03 "no radar" decision, scoped to three axes only. The original objection was legibility over a 28-axis radar and it stands unchanged for competencies; three axes (People/Practice/Perspective) are legible and give the summary a shape. Built hand-rolled inline SVG rather than a charting library — a triangle needs no dependency, keeps /results fully server-rendered with zero client JS, and fits the perf discipline. Recharts (the aspirational stack line) earns its place only when 28-CE views are actually specced. rollup-spec §7 |
