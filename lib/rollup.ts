@@ -98,14 +98,34 @@ function scoreMap(assessment: Assessment): Map<string, Level | null> {
  */
 const HALF_LEVEL = 0.5 + 1e-9;
 
+/**
+ * A full level, minus the same tolerance HALF_LEVEL carries, for the same reason.
+ *
+ * "Above target" (rollup-spec §4, added 2026-08-10) begins at a full level clear:
+ * `actual - target >= 1`. Both sides are means since §3, so an actual that is
+ * EXACTLY one level above target can render a hair under 1.0 — 13/6 - 7/6 is
+ * 0.9999999999999998 — and a bare `>= 1` would hand it back to Role Ready. The
+ * `1 - 1e-9` floor keeps that case in the tier it belongs to.
+ *
+ * This is the mirror of HALF_LEVEL and carries the same warning: it is a
+ * comparison tolerance, NOT rounding, and it must NOT touch the exact `gap <= 0`
+ * Role Ready floor below. Role Ready is exact for the reason spelled out on
+ * HALF_LEVEL; only the two OUTER boundaries (a half level short, a full level
+ * over) are ratios of ratios and need the epsilon.
+ */
+const FULL_LEVEL = 1 - 1e-9;
+
 export function healthOf(
   actual: number | null,
   target: number | null,
   hasSevereControlGap: boolean,
 ): Health | null {
   if (actual === null || target === null) return null;
+  // Escalation outranks every tier — a severe single control is a Capability
+  // Deficit even when the mean sits a full level above target (rollup-spec §4).
   if (hasSevereControlGap) return "deficit";
   const gap = target - actual;
+  if (gap <= -FULL_LEVEL) return "above";
   if (gap <= 0) return "ready";
   if (gap <= HALF_LEVEL) return "minor";
   return "deficit";
@@ -262,6 +282,7 @@ export function sortByGap(results: CeResult[]): CeResult[] {
 }
 
 export const HEALTH_LABEL: Record<Health, string> = {
+  above: "Above target",
   ready: "Role Ready",
   minor: "Minor Gap",
   deficit: "Capability Deficit",
