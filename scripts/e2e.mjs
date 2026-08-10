@@ -1991,8 +1991,16 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   const results = await boss.page.content();
   check("results render the gap list", results.includes("CAPABILITY BY COMPETENCE ELEMENT"));
   check("health tiers carry a label, never colour alone",
-    results.includes("Role Ready") || results.includes("Minor Gap") || results.includes("Capability Deficit"));
+    results.includes("Above target") || results.includes("Role Ready") ||
+    results.includes("Minor Gap") || results.includes("Capability Deficit"));
+  // The 4th tier (Above target, 2026-08-10) reaches the page unconditionally via
+  // the legend — the arithmetic is unit-tested; this proves the label ships.
+  check("the legend names the 4th tier, Above target", results.includes("Above target"));
+  check("the 3-axis area radar renders",
+    results.includes('class="arearadar"') || results.includes("Area radar"));
+  check("per-area narrative lines render", results.includes('class="narrative"'));
   check("weakest control shown beside the mean", results.includes("weakest"));
+  // The radar plots 0–5 levels, never percentages — the no-percentage rule holds.
   check("no percentage-of-target anywhere", !/%\s*of\s*target/i.test(results));
 
   await pm.page.goto("/results");
@@ -2177,6 +2185,22 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
       !!row && row.includes(`deficit driven by ${victim.code}`), where);
     check("and states what that control scored against its own target",
       !!row && row.includes(`scored ${low} against target ${victim.target_level}`), where);
+
+    /*
+     * The development-plan table lists gap competencies with a suggested action.
+     * This CE is a deficit, so it must appear; its action is a SUGGESTION, never
+     * a mandate (the tool supports a decision, never gates one). Renders on the
+     * same /results?a= page as the row checks above.
+     */
+    const planCount = await boss.page.locator("table.devplan").count();
+    check("the development-plan table renders when there are gap competencies", planCount > 0);
+    if (planCount > 0) {
+      const planText = await boss.page.locator("table.devplan").first().innerText();
+      check("the development plan lists the escalated competency",
+        planText.includes(fat.code), `plan: ${JSON.stringify(planText.slice(0, 240))}`);
+      check("its suggested action reads as a suggestion, not a mandate",
+        /Consider /.test(planText), `plan: ${JSON.stringify(planText.slice(0, 240))}`);
+    }
 
     // The note must never appear on a row that is not a deficit — otherwise it
     // is explaining a verdict that was never given.
