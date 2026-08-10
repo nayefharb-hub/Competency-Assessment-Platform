@@ -60,9 +60,18 @@ export function areaNarrative(area: AreaResult, ces: CeResult[]): string {
         ? "close to target overall"
         : "below target overall";
   const w = gaps[0];
+  // A deficit can be driven by one severe control while the CE MEAN sits at or
+  // above target (escalation_drove_health). Describing it as "<mean> against
+  // <target>" would print e.g. "3.4 against 3.0" — a mean above target labelled
+  // as the gap, the number contradicting the verdict. Name the escalating
+  // control instead, the way ceNarrative does.
+  const wdesc =
+    w.escalation_drove_health && w.escalated_by.length > 0
+      ? `${w.ce_name} (${w.ce_code}), held in deficit by control ${w.escalated_by[0].control_code} at ${lvl(w.escalated_by[0].level)} against ${lvl(w.escalated_by[0].target)}`
+      : `${w.ce_name} (${w.ce_code}), ${fmtLevel(w.actual)} against ${fmtLevel(w.target)}`;
   const others = gaps.length - 1;
   const more = others > 0 ? `, and ${others} other${others === 1 ? "" : "s"}` : "";
-  return `${area.area}: ${lead} (${nums}); the main gap is ${w.ce_name} (${w.ce_code}), ${fmtLevel(w.actual)} against ${fmtLevel(w.target)}${more}.`;
+  return `${area.area}: ${lead} (${nums}); the main gap is ${wdesc}${more}.`;
 }
 
 /**

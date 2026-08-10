@@ -82,3 +82,26 @@ test("gapsOf keeps only gap competencies, deficits before minors, then by gap", 
   ];
   assert.deepEqual(gapsOf(rows).map((r) => r.ce_code), ["d", "b", "a"]);
 });
+
+// Regression (/review 2026-08-10): the top gap in an area can be an
+// escalation-driven deficit whose MEAN is at or above target. The old line
+// printed "<actual> against <target>" for it — e.g. "3.4 against 3.0" — labelling
+// a competency whose mean exceeds target as "the main gap", the number
+// contradicting the verdict. It must name the escalating control instead, the
+// same way ceNarrative does, and never print a mean-above-target "X against Y".
+test("area narrative describes an escalation-driven top gap by its control, not a mean above target", () => {
+  const ces = [
+    ce({
+      ce_code: "4.4.1", ce_name: "Leadership", health: "deficit",
+      actual: 3.4, target: 3, gap: -0.4,
+      escalation_drove_health: true,
+      escalated_by: [{ control_code: "4.4.1.5", level: 1, target: 3 }],
+    }),
+    ce({ ce_code: "4.4.2", ce_name: "Teamwork", health: "minor", actual: 2.6, target: 3, gap: 0.4 }),
+  ];
+  const s = areaNarrative(area({ actual: 3.0, target: 3.0 }), ces);
+  assert.ok(!s.includes("3.4 against 3.0"), `must not label a mean above target as the gap: ${s}`);
+  assert.ok(s.includes("4.4.1.5"), `must name the escalating control: ${s}`);
+  assert.ok(/held in deficit by/.test(s), s);
+  assert.ok(s.includes("and 1 other"), s);
+});
