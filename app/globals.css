@@ -652,7 +652,12 @@ textarea.input {
 }
 .barrow:last-of-type { border-bottom: 0; }
 .barrow .name { font-size: var(--fs-ui); }
-.barrow .name small { display: block; color: var(--ink-muted); font-size: var(--fs-label); }
+/* Indicator text can be long; clip() bounds each label and this clamps the
+   composed line to 3 lines so the meta never towers over its own bar row. */
+.barrow .name small {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--ink-muted); font-size: var(--fs-label); line-height: 1.35;
+}
 .track { position: relative; height: 14px; background: var(--track); border-radius: var(--radius-pill); }
 .actual {
   position: absolute; left: 0; top: 0; height: 100%;

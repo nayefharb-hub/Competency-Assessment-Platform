@@ -7,7 +7,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { areaNarrative, gapsOf } from "../lib/narrative.ts";
+import { areaNarrative, gapsOf, tidyIndicator } from "../lib/narrative.ts";
 
 function ce(o) {
   return {
@@ -58,6 +58,31 @@ test("area narrative names the escalating control by its indicator text, not its
   const s = areaNarrative(area({ actual: 3.0, target: 3.0, ce_count: 1 }), ces, label);
   assert.ok(s.includes("Take ownership and show commitment"), s);
   assert.ok(!s.includes("4.4.1.2"), `must not print the raw control code: ${s}`);
+});
+
+test("tidyIndicator strips the extractor's trailing OCR boilerplate", () => {
+  // The real contaminated cells from data/seed/icb4-framework.json (4.5.13.4 is
+  // 394 chars, active, target 2 — reaches the screen as a weakest/escalating control).
+  assert.equal(
+    tidyIndicator("Implement change or transformation management strategy Version 4.0 www.ipma.world ® MOVING FORWARD The International Project Management Association Version 4.0."),
+    "Implement change or transformation management strategy",
+  );
+  assert.equal(
+    tidyIndicator("Share own vision and goals in order to gain the engagement and commitment of others © 2015 International Project Management Association"),
+    "Share own vision and goals in order to gain the engagement and commitment of others",
+  );
+  assert.equal(
+    tidyIndicator("Determine complexity and its consequences for the approach 119 © 2015 International Project Management Association"),
+    "Determine complexity and its consequences for the approach",
+  );
+});
+
+test("tidyIndicator leaves a clean indicator untouched", () => {
+  const clean = "Align with organisational mission and vision";
+  assert.equal(tidyIndicator(clean), clean);
+  // a legitimately long-but-clean indicator is not truncated by tidy (that is clip()'s job)
+  const long = "Identify and ensure that the project complies with all relevant health, safety, security and environmental regulations (HSSE)";
+  assert.equal(tidyIndicator(long), long);
 });
 
 test("gapsOf keeps only gap competencies, deficits before minors, then by gap", () => {

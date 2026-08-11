@@ -6,7 +6,7 @@ import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
 import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
-import { areaNarrative, gapsOf } from "@/lib/narrative";
+import { areaNarrative, gapsOf, tidyIndicator } from "@/lib/narrative";
 import { AreaRadar } from "./area-radar";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
@@ -36,11 +36,33 @@ function HealthPill({ health }: { health: Health | null }) {
  * more than half a level short the badge needs no defence, and explaining it
  * anyway would train people to skim past the line in the case that matters.
  */
-function escalationNote(r: CeResult, label: (code: string) => string): string | null {
+/**
+ * Some ICB4 indicators run long (41 of 132 active exceed 80 chars even after
+ * `tidyIndicator` strips extraction junk), and the meta line sits in a fixed
+ * 190px column. Clip the DISPLAYED label so one competency's weakest control
+ * cannot become a wall of text under its name; the full text rides in the row's
+ * `title` for hover. Clip on a word boundary where one is near the end.
+ */
+function clip(s: string, n = 66): string {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n - 1);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > n - 18 ? cut.slice(0, sp) : cut).trimEnd() + "…";
+}
+
+function escalationNote(
+  r: CeResult,
+  label: (code: string) => string,
+): { display: string; full: string } | null {
   if (!r.escalation_drove_health || r.escalated_by.length === 0) return null;
   const [first, ...rest] = r.escalated_by;
   const more = rest.length === 0 ? "" : ` and ${rest.length} more`;
-  return `deficit driven by “${label(first.control_code)}”, scored ${first.level} against target ${first.target}${more}`;
+  const t = label(first.control_code);
+  const tail = `”, scored ${first.level} against target ${first.target}${more}`;
+  return {
+    display: `deficit driven by “${clip(t)}${tail}`,
+    full: `deficit driven by “${t}${tail}`,
+  };
 }
 
 /**
@@ -48,13 +70,26 @@ function escalationNote(r: CeResult, label: (code: string) => string): string | 
  * BY INDICATOR TEXT rather than by code (4.4.10.1 means nothing to a PM — the
  * indicator it stands for does). `label` resolves a control code to its ICB4
  * indicator, falling back to the code if the framework has no text for it.
+ * Returns a clipped `display` string and the untruncated `full` string (row title).
  */
-function metaLine(r: CeResult, label: (code: string) => string): string | null {
-  const parts: string[] = [];
-  if (r.weakest) parts.push(`weakest: “${label(r.weakest.control_code)}” (${r.weakest.level})`);
+function metaLine(
+  r: CeResult,
+  label: (code: string) => string,
+): { display: string; full: string } | null {
+  const display: string[] = [];
+  const full: string[] = [];
+  if (r.weakest) {
+    const t = label(r.weakest.control_code);
+    display.push(`weakest: “${clip(t)}” (${r.weakest.level})`);
+    full.push(`weakest: “${t}” (${r.weakest.level})`);
+  }
   const esc = escalationNote(r, label);
-  if (esc) parts.push(esc);
-  return parts.length ? parts.join(" · ") : null;
+  if (esc) {
+    display.push(esc.display);
+    full.push(esc.full);
+  }
+  if (!display.length) return null;
+  return { display: display.join(" · "), full: full.join(" · ") };
 }
 
 function Bar({ r, label }: { r: CeResult; label: (code: string) => string }) {
@@ -63,7 +98,9 @@ function Bar({ r, label }: { r: CeResult; label: (code: string) => string }) {
     <div className="barrow">
       <div className="name">
         {r.ce_name}
-        {meta && <small>{meta}</small>}
+        {meta && (
+          <small title={meta.full !== meta.display ? meta.full : undefined}>{meta.display}</small>
+        )}
       </div>
       <div className="track">
         {r.target !== null && <div className="target" style={{ left: pct(r.target) }} />}
@@ -118,9 +155,10 @@ export default async function ResultsPage({
   const revised = assessment.scores.filter((s) => s.assessor_touched).length;
 
   // Resolve a control code to its ICB4 indicator text, so the report names
-  // controls by what they mean, not by "4.4.10.1". Falls back to the code.
+  // controls by what they mean, not by "4.4.10.1". tidyIndicator strips the
+  // extraction junk a few indicators carry; falls back to the code if absent.
   const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const controlLabel = (code: string) => ctrlText.get(code) ?? code;
+  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
 
   return (
     <div className="section">

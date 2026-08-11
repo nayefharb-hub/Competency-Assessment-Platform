@@ -66,11 +66,28 @@ replacement is deferred to a separate workstream (a framework-extractor extensio
 for competency-level text, plus a control-score drill-down — item 4/6), to be
 routed through `/plan-eng-review`. Consequently `lib/narrative.ts` loses
 `ceNarrative`/`suggestedAction` (dead with the table) and `areaNarrative` gains an
-injected control-label resolver so it names controls by indicator too. Gate
-state: `test:unit` **160/160**, `typecheck` clean, `build` succeeds; e2e section
-[7] assertions were **updated** (locate CE rows by name, assert indicator text
-not codes, assert the three area sections render) but NOT RUN locally (no
-`.env.local`); `/review`, `/design-review` and `/qa` on the preview remain.
+injected control-label resolver so it names controls by indicator too.
+
+**Gates ran, two real defects caught and fixed.** `/review` (adversarial subagent)
+found the showcase regression: some ICB4 indicators run long — up to **394 chars
+on 4.5.13.4, active, target 2** — and several carry **OCR extraction junk**
+(copyright lines, `www.ipma.world`, version footers on 5 of 133 cells), all newly
+surfaced the moment the screen shows indicator text instead of codes. Fix:
+`tidyIndicator()` strips the trailing extraction boilerplate (presentation guard,
+stored ICB4 text untouched; durable fix is the item-6 extractor), `clip()` bounds
+each displayed label with the full text in the row `title`, and a 3-line CSS clamp
+backstops the column. **The corrupt seed cells are a distinct pre-existing data
+defect** (root cause: the T0 PDF extractor) — logged for the item-6 workstream, not
+fixed in the DB here. `/qa` **against the real Vercel preview** (382-test suite, TLS
+capped through the proxy — this session HAS `.env.local` + the bypass, so STATUS
+item 11's "no creds" note is stale) then caught a second regression: two arithmetic
+checks scrape every CE's mean/target off the page by **control code**, which the
+row no longer shows — re-pointed to match by CE **name**. Preview run: the new
+results surfaces all passed (radar, area grouping, indicator-named controls, 4th
+tier); the two scraper checks are fixed and being re-run; one `page.goto` timeout
+was a network flake. Unit **162/162**, `typecheck` clean, `build` succeeds.
+`/design-review`: the built UI was checked against DESIGN.md (synced same-diff) via
+a faithful static render in light + dark.
 
 **The change in flight: the competency target is now the mean of its active
 control targets** (owner's decision 2026-08-08, for the pilot). Spec first

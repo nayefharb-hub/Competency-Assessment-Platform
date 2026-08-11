@@ -25,6 +25,27 @@ const fmtLevel = (n: number | null): string => (n === null ? "—" : n.toFixed(1
 /** control levels are integers; CE means are shown to one decimal (fmtLevel). */
 const lvl = (n: number) => String(n);
 
+/**
+ * Strip trailing extraction boilerplate from an ICB4 indicator. The T0 PDF
+ * extractor merged page footers, copyright lines, URLs and version strings into
+ * a handful of indicator cells (5 of 133: 4.3.3.2, 4.4.4.5, 4.5.1.3, 4.5.8.5,
+ * 4.5.13.4 — the last is 394 chars of "…Version 4.0 www.ipma.world ® MOVING
+ * FORWARD…"). That junk was invisible while the results screen showed control
+ * CODES; it surfaces the moment we show indicator TEXT. This is a PRESENTATION
+ * guard, not a data edit — the stored ICB4 text is untouched and the admin
+ * read-only source block still shows it verbatim. The durable fix is in the
+ * extractor (the item-6 workstream); until then this keeps /results clean.
+ * Unit-tested in scripts/narrative.test.mjs.
+ */
+export function tidyIndicator(s: string): string {
+  return s
+    .replace(/\s*©\s*\d{4}\s+International Project Management Association.*$/is, "")
+    .replace(/\s*Version\s+4\.0.*$/is, "")
+    .replace(/\s*www\.ipma\.world.*$/is, "")
+    .replace(/\s+\d{2,3}\s*$/, "")
+    .trim();
+}
+
 /** Gap competencies (minor / deficit), most serious first: deficits before minors, then by gap. */
 export function gapsOf(ces: CeResult[]): CeResult[] {
   const sev = (r: CeResult) => (r.health === "deficit" ? 2 : r.health === "minor" ? 1 : 0);
