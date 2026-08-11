@@ -82,12 +82,16 @@ fixed in the DB here. `/qa` **against the real Vercel preview** (382-test suite,
 capped through the proxy — this session HAS `.env.local` + the bypass, so STATUS
 item 11's "no creds" note is stale) then caught a second regression: two arithmetic
 checks scrape every CE's mean/target off the page by **control code**, which the
-row no longer shows — re-pointed to match by CE **name**. Preview run: the new
-results surfaces all passed (radar, area grouping, indicator-named controls, 4th
-tier); the two scraper checks are fixed and being re-run; one `page.goto` timeout
-was a network flake. Unit **162/162**, `typecheck` clean, `build` succeeds.
-`/design-review`: the built UI was checked against DESIGN.md (synced same-diff) via
-a faithful static render in light + dark.
+row no longer shows — re-pointed to match by CE **name**. Final preview run (bd5377b): **426
+passed, 0 failed, 3 skipped** (the two round-trip budget checks + the JWKS
+bootstrap, all pre-existing skips) — the fixed scrapers and every new results
+surface (radar, area grouping, indicator-named controls, 4th tier) green on the
+real Vercel preview. (Two earlier runs each hit one `page.goto` 30s timeout, the
+documented proxy-TLS flake; the third was clean.) Unit **162/162**, `typecheck`
+clean, `build` succeeds. `/design-review`: the built UI was checked against
+DESIGN.md (synced same-diff) via a faithful static render in light + dark,
+including the worst-case long/clamped indicator row. PR #27 stays a **draft** —
+merge and the production pass are the owner's (loop stage 10).
 
 **The change in flight: the competency target is now the mean of its active
 control targets** (owner's decision 2026-08-08, for the pilot). Spec first
