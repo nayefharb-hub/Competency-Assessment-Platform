@@ -2174,10 +2174,12 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     // The competency row now leads with the CE NAME (codes are meaningless to a
-    // PM), so locate it by name. CE names are distinct, so includes() is safe
-    // where a bare code substring was not (4.4.3 is a prefix of 4.4.3.2).
+    // PM), so locate it by name. Match the FIRST LINE exactly, not a substring:
+    // the name is the row's first text node, and an exact match avoids the
+    // prefix trap the old `${code} ·` anchor existed to dodge (one CE name being
+    // a substring of another would otherwise grab the wrong row).
     const rows = await boss.page.locator(".barrow").allInnerTexts();
-    const row = rows.find((t) => t.includes(fat.name));
+    const row = rows.find((t) => t.split("\n")[0].trim() === fat.name);
     const where = `ce ${fat.code} (${fat.name}) victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
 
     check("escalated CE still reads Capability Deficit",
@@ -2224,7 +2226,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     const rows2 = await boss.page.locator(".barrow").allInnerTexts();
-    const row2 = rows2.find((t) => t.includes(fat.name));
+    const row2 = rows2.find((t) => t.split("\n")[0].trim() === fat.name);
     const where2 = `ce ${fat.code} (${fat.name}): ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
 
     // Named + counted: one control is named, the rest are counted. With two

@@ -141,10 +141,17 @@ decision; do not deviate without explicit approval.
   values. **Numbers, not percentages.**
 - **Area radar (3 axes):** a hand-drawn inline-SVG triangle over People · Practice ·
   Perspective, actual (azure fill+stroke) against a dashed ink-muted target polygon,
-  faint 0–5 grid rings, values printed at each vertex. Server-rendered, no charting
-  dependency, themed through the same tokens as everything else. **A 28-competency
-  radar is still excluded** (an unreadable hairball, per the decision log); three
-  axes are legible and give the summary a shape at a glance (rollup-spec §7).
+  faint 0–5 grid rings, the **area name at each vertex** and the **actual/target
+  figures read beneath the chart**. It is the centrepiece of the results screen —
+  large and centred in its panel, not a side-panel thumbnail. Server-rendered, no
+  charting dependency, themed through the same tokens as everything else. **A
+  28-competency radar is still excluded** (an unreadable hairball, per the decision
+  log); three axes are legible and give the summary a shape at a glance (rollup-spec §7).
+- **Capability list (results):** grouped into the three areas, each a section with
+  its own header (area name + actual/target); within a section, most serious first.
+  Each competency row leads with its **name**, and any control it references (the
+  weakest, or the control that escalated a deficit) is named by its **ICB4 indicator
+  text**, never by an opaque code like `4.4.10.1`.
 - **Status pills:** dot + label, health-tier colored.
 - **Read-only source block:** ICB4 indicator text + measures shown for context; the
   editable **KIB clarification** field sits alongside; ICB4 source text is locked.
@@ -170,3 +177,4 @@ decision; do not deviate without explicit approval.
 | 2026-08-03 | Palette left unchanged after a readability complaint | Light ink-on-surface measures 16.4:1 vs dark mode's 14.1:1 — light is the harsher of the two. But measure was the dominant fatigue driver, so it is fixed first and the palette re-judged after. If still tiring, soften the reading **surface** toward dark's ~14:1 rather than lightening the ink: ink `#16202E` carries the "serious, trustworthy" anchor, and lifting it compresses the ink/muted hierarchy |
 | 2026-08-10 | 4th health tier **Above target** (actual ≥ target + 1.0), coloured **indigo** | The 3-tier model collapsed *at target* and *comfortably past it* into one "Role Ready" verdict, so the report could recognise adequacy and shortfall but never strength — unlike the Provek/Comaea reports it was measured against. A full-level margin (not a half) makes "Above" a real distinction rather than routine. Indigo chosen over teal and a deeper green: distinct from the Role Ready green and the azure accent, and the two-greens pair was the hardest to separate at a glance (owner reviewed all three in a prototype). rollup-spec §4 |
 | 2026-08-10 | 3-axis **area radar** added; 28-competency radar still excluded | Reversal of the 2026-08-03 "no radar" decision, scoped to three axes only. The original objection was legibility over a 28-axis radar and it stands unchanged for competencies; three axes (People/Practice/Perspective) are legible and give the summary a shape. Built hand-rolled inline SVG rather than a charting library — a triangle needs no dependency, keeps /results fully server-rendered with zero client JS, and fits the perf discipline. Recharts (the aspirational stack line) earns its place only when 28-CE views are actually specced. rollup-spec §7 |
+| 2026-08-11 | Results Increment 1: radar **enlarged + centred** with figures beneath it; capability list **grouped by area**; controls named by **indicator text**, not code; development-plan table **removed** | Owner walkthrough of the built screen. The radar reads as the centrepiece rather than a side-panel thumbnail, so it is enlarged and centred with the per-area figures beneath. The flat gap-sorted list is grouped into the three areas so the shape the radar shows has a matching structure below it. Control codes (`4.4.10.1`) are meaningless to a PM, so weakest/escalation references now show the ICB4 indicator text. The dev-plan table's auto-suggested "Consider …" actions were rejected as noise; a reflective, ICB4-grounded replacement is a separate workstream, so the table is removed rather than kept as filler. |
