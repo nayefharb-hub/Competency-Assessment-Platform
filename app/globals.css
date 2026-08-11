@@ -670,39 +670,47 @@ textarea.input {
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
-/* ---------- results: narrative lines, area radar, development plan ---------- */
+/* ---------- results: narrative lines, area radar, capability-by-area ---------- */
 .narrative { margin: 4px 0 20px; display: grid; gap: 8px; }
 .narrative p { font-size: var(--fs-ui); line-height: 1.5; color: var(--ink); max-width: var(--measure); margin: 0; }
 .narrative p b { font-weight: 650; }
 
+/* The radar is the centrepiece: a large triangle centred in its panel, with the
+   per-area figures read directly beneath it and a compact actual/target key. */
 .radarwrap {
-  display: flex; flex-wrap: wrap; gap: 24px; align-items: center;
-  margin: 4px 0 20px; padding: 16px 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  margin: 4px 0 22px; padding: 20px 18px 18px;
   border: 1px solid var(--border); border-radius: var(--radius-in); background: var(--surface-2);
 }
-.radarwrap .rlegend { font-size: var(--fs-sm); color: var(--ink-muted); display: grid; gap: 10px; min-width: 190px; }
-.radarwrap .rlegend .k { display: inline-flex; align-items: center; gap: 8px; }
-.radarwrap .rlegend .sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
-.radarwrap .rlegend .sw.act { background: var(--accent); }
-.radarwrap .rlegend .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ink-muted); border-radius: 0; }
-.radarwrap .rlegend .arow { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
-.radarwrap .rlegend .arow b { color: var(--ink); font-weight: 650; }
+.radarwrap .arearadar { width: 100%; max-width: 340px; height: auto; }
+.radarwrap .rvalues { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 28px; }
+.radarwrap .rvalues .arow {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: var(--fs-sm); color: var(--ink-muted);
+}
+.radarwrap .rvalues .arow b { color: var(--ink); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
+.radarwrap .rvalues .arow b .muted { font-weight: 500; }
+.radarwrap .rkey { display: flex; gap: 20px; font-size: var(--fs-sm); color: var(--ink-muted); }
+.radarwrap .rkey .k { display: inline-flex; align-items: center; gap: 8px; }
+.radarwrap .rkey .sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
+.radarwrap .rkey .sw.act { background: var(--accent); }
+.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ink-muted); }
 svg.arearadar .grid { fill: none; stroke: var(--border); stroke-width: 1; }
 svg.arearadar .spoke { stroke: var(--border); stroke-width: 1; }
-svg.arearadar .tgt { fill: var(--ink-muted); fill-opacity: 0.10; stroke: var(--ink-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
-svg.arearadar .act { fill: var(--accent); fill-opacity: 0.16; stroke: var(--accent); stroke-width: 2; }
-svg.arearadar .dot { fill: var(--accent); }
-svg.arearadar .lab { fill: var(--ink-muted); font-size: 10px; font-weight: 600; }
-svg.arearadar .tick { fill: var(--ink-muted); font-size: 8px; }
+svg.arearadar .tgt { fill: var(--ink-muted); fill-opacity: 0.10; stroke: var(--ink-muted); stroke-width: 1.75; stroke-dasharray: 4 3; }
+svg.arearadar .act { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 2.5; }
+svg.arearadar .dot { fill: var(--accent); stroke: var(--surface-2); stroke-width: 1.5; }
+svg.arearadar .lab { fill: var(--ink); font-size: 12px; font-weight: 640; }
+svg.arearadar .tick { fill: var(--ink-muted); font-size: 9px; }
 
-.devplan-wrap { overflow-x: auto; margin: 4px 0 8px; }
-table.devplan { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-table.devplan th, table.devplan td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-table.devplan thead th { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); font-weight: 700; }
-table.devplan td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-table.devplan .cename { font-weight: 600; }
-table.devplan .cename small { display: block; color: var(--ink-muted); font-weight: 500; font-size: var(--fs-label); }
-table.devplan .focus { color: var(--ink-muted); max-width: 30ch; }
+/* Capability list, grouped by area (Perspective · People · Practice). */
+.cesection { margin-bottom: 6px; }
+.cehead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 20px 0 2px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+}
+.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; }
+.cehead .cehead-val { font-size: var(--fs-sm); color: var(--ink); }
 
 /* ---------- review + admin ---------- */
 .rrow { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }

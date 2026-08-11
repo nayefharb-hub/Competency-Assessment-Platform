@@ -37,7 +37,16 @@ export function gapsOf(ces: CeResult[]): CeResult[] {
  * One interpretive sentence per area (People / Practice / Perspective).
  * `ces` are that area's competence-element results.
  */
-export function areaNarrative(area: AreaResult, ces: CeResult[]): string {
+export function areaNarrative(
+  area: AreaResult,
+  ces: CeResult[],
+  /**
+   * Resolve a control code to human text (its ICB4 indicator). Injected rather
+   * than imported so this module stays dependency-free and node-testable; the
+   * default is the identity, which is what the unit tests assert against.
+   */
+  controlLabel: (code: string) => string = (c) => c,
+): string {
   if (area.actual === null || area.target === null) {
     return `${area.area}: not yet scored.`;
   }
@@ -64,44 +73,12 @@ export function areaNarrative(area: AreaResult, ces: CeResult[]): string {
   // above target (escalation_drove_health). Describing it as "<mean> against
   // <target>" would print e.g. "3.4 against 3.0" — a mean above target labelled
   // as the gap, the number contradicting the verdict. Name the escalating
-  // control instead, the way ceNarrative does.
+  // control (by its indicator text) instead.
   const wdesc =
     w.escalation_drove_health && w.escalated_by.length > 0
-      ? `${w.ce_name} (${w.ce_code}), held in deficit by control ${w.escalated_by[0].control_code} at ${lvl(w.escalated_by[0].level)} against ${lvl(w.escalated_by[0].target)}`
-      : `${w.ce_name} (${w.ce_code}), ${fmtLevel(w.actual)} against ${fmtLevel(w.target)}`;
+      ? `${w.ce_name}, held in deficit by “${controlLabel(w.escalated_by[0].control_code)}” at ${lvl(w.escalated_by[0].level)} against ${lvl(w.escalated_by[0].target)}`
+      : `${w.ce_name}, ${fmtLevel(w.actual)} against ${fmtLevel(w.target)}`;
   const others = gaps.length - 1;
   const more = others > 0 ? `, and ${others} other${others === 1 ? "" : "s"}` : "";
   return `${area.area}: ${lead} (${nums}); the main gap is ${wdesc}${more}.`;
-}
-
-/**
- * One sentence naming what drives a gap competency (minor / deficit). Used in the
- * development-plan table's focus column. Names the escalating control when
- * escalation alone set the verdict, otherwise the weakest control.
- */
-export function ceNarrative(r: CeResult): string {
-  if (r.escalation_drove_health && r.escalated_by.length > 0) {
-    const [first, ...rest] = r.escalated_by;
-    const more = rest.length > 0 ? ` (and ${rest.length} more ${rest.length === 1 ? "control" : "controls"} 2+ levels below)` : "";
-    return `The mean is on target, but ${first.control_code} scored ${lvl(first.level)} against a target of ${lvl(first.target)}${more}.`;
-  }
-  if (r.weakest) {
-    return `Weakest control ${r.weakest.control_code} at ${lvl(r.weakest.level)}, against an element target of ${fmtLevel(r.target)}.`;
-  }
-  return `Below the element target of ${fmtLevel(r.target)}.`;
-}
-
-/**
- * A suggested development action for a gap competency. A SUGGESTION — the tool
- * supports a decision and never gates one, so this never reads as a mandate.
- */
-export function suggestedAction(r: CeResult): string {
-  if (r.escalation_drove_health && r.escalated_by.length > 0) {
-    const first = r.escalated_by[0];
-    return `Consider prioritising ${first.control_code}: one control this far below target holds the whole element in deficit.`;
-  }
-  if (r.weakest) {
-    return `Consider focused development on ${r.weakest.control_code} (currently ${lvl(r.weakest.level)}) to lift the element toward target.`;
-  }
-  return `Consider development across this element's active controls.`;
 }

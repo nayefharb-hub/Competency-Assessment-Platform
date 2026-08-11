@@ -52,6 +52,26 @@ A prototype board of the two look-decisions (radar build, tier colour) was revie
 by the owner before building. No `/cso` — nothing touches auth, sessions, storage
 or the allowlist.
 
+**Also on this branch (2026-08-11): results-report Increment 1 (owner walkthrough).**
+On seeing the built results screen the owner directed a visual iteration ("cheap
+set first"): (1) the area radar is **enlarged, centred** in its panel with the
+per-area figures read directly beneath it; (2) the capability list is **grouped
+by area** (Perspective · People · Practice), each a section with its own header,
+replacing the flat gap-sorted list; (3) each competency row leads with its
+**name**; and (5) controls are named by their **ICB4 indicator text**, never by
+opaque codes (`4.4.10.1` → "Align with organisational mission and vision"). The
+**development-plan table (item 3 above) is removed** — the owner rejected its
+auto-suggested "Consider …" actions as noise; a reflective, ICB4-grounded
+replacement is deferred to a separate workstream (a framework-extractor extension
+for competency-level text, plus a control-score drill-down — item 4/6), to be
+routed through `/plan-eng-review`. Consequently `lib/narrative.ts` loses
+`ceNarrative`/`suggestedAction` (dead with the table) and `areaNarrative` gains an
+injected control-label resolver so it names controls by indicator too. Gate
+state: `test:unit` **160/160**, `typecheck` clean, `build` succeeds; e2e section
+[7] assertions were **updated** (locate CE rows by name, assert indicator text
+not codes, assert the three area sections render) but NOT RUN locally (no
+`.env.local`); `/review`, `/design-review` and `/qa` on the preview remain.
+
 **The change in flight: the competency target is now the mean of its active
 control targets** (owner's decision 2026-08-08, for the pilot). Spec first
 (`docs/rollup-spec.md` §3, `6a4be6c`), then `/plan-eng-review`, then the engine.

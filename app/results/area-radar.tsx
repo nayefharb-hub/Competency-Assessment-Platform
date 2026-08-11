@@ -10,13 +10,19 @@ import type { AreaResult } from "@/lib/types";
  * DESIGN.md decision log 2026-08-10). Colours, grid and text all come from the
  * same CSS variables as the rest of the page, so it themes with everything else.
  *
- * Geometry: an equilateral triangle centred at (120,110), radius 80 = level 5.
+ * The radar is the centre of attention on the results screen (owner, N-results):
+ * large, centred in its panel, with the per-area figures read beneath it rather
+ * than in a side legend. Geometry is parametric off CX/CY/R so the size can move
+ * without re-hand-placing a single label — axis and label positions are computed
+ * from the axis angle, not typed in.
+ *
+ * Geometry: an equilateral triangle centred at (CX,CY), radius R = level 5.
  * Axis i sits at (-90 + 120·i)°, so the three areas take top / lower-right /
  * lower-left in the order rollupAreas() returns them.
  */
-const CX = 120;
-const CY = 110;
-const R = 80;
+const CX = 160;
+const CY = 146;
+const R = 110;
 const MAX = 5;
 const AXES = [-90, 30, 150]; // degrees, aligned to rollupAreas order
 
@@ -30,12 +36,15 @@ function poly(values: number[]): string {
   return values.map((v, i) => pt(i, v).map((n) => n.toFixed(2)).join(",")).join(" ");
 }
 
-// Vertex label anchors, aligned to the three fixed axes.
-const LABELS = [
-  { x: CX, y: 15, anchor: "middle" as const },
-  { x: 198, y: 168, anchor: "middle" as const },
-  { x: 42, y: 168, anchor: "middle" as const },
-];
+/** Vertex label position, computed from the axis angle — no hand-placed coords. */
+function labelPos(i: number): { x: number; y: number } {
+  const a = (AXES[i] * Math.PI) / 180;
+  const lr = R + 16;
+  const x = CX + lr * Math.cos(a);
+  // top vertex sits above its point; the two lower vertices sit below theirs
+  const y = CY + lr * Math.sin(a) + (AXES[i] === -90 ? -4 : 15);
+  return { x, y };
+}
 
 export function AreaRadar({ areas }: { areas: AreaResult[] }) {
   const targets = areas.map((a) => a.target);
@@ -53,9 +62,9 @@ export function AreaRadar({ areas }: { areas: AreaResult[] }) {
     <div className="radarwrap">
       <svg
         className="arearadar"
-        width="240"
-        height="220"
-        viewBox="0 0 240 220"
+        width="320"
+        height="250"
+        viewBox="0 0 320 250"
         role="img"
         aria-label={label}
       >
@@ -70,7 +79,7 @@ export function AreaRadar({ areas }: { areas: AreaResult[] }) {
         })}
         {/* level ticks along the top spoke */}
         {[1, 2, 3, 4, 5].map((v) => (
-          <text key={v} className="tick" x={123} y={CY - (R * v) / MAX + 3}>
+          <text key={v} className="tick" x={CX + 4} y={CY - (R * v) / MAX + 3}>
             {v}
           </text>
         ))}
@@ -80,29 +89,35 @@ export function AreaRadar({ areas }: { areas: AreaResult[] }) {
             <polygon className="act" points={poly(actuals as number[])} />
             {(actuals as number[]).map((v, i) => {
               const [x, y] = pt(i, v);
-              return <circle key={i} className="dot" cx={x} cy={y} r={3} />;
+              return <circle key={i} className="dot" cx={x} cy={y} r={4} />;
             })}
           </>
         )}
         {/* axis labels */}
-        {areas.map((a, i) => (
-          <text key={a.area} className="lab" x={LABELS[i].x} y={LABELS[i].y} textAnchor={LABELS[i].anchor}>
-            {a.area}
-          </text>
-        ))}
+        {areas.map((a, i) => {
+          const { x, y } = labelPos(i);
+          return (
+            <text key={a.area} className="lab" x={x} y={y} textAnchor="middle">
+              {a.area}
+            </text>
+          );
+        })}
       </svg>
 
-      <div className="rlegend">
-        <span className="k"><span className="sw act" />Actual</span>
-        <span className="k"><span className="sw tgt" />Target</span>
+      <div className="rvalues">
         {areas.map((a) => (
           <span className="arow" key={a.area}>
             {a.area}
-            <span>
-              <b>{fmtLevel(a.actual)}</b> / {fmtLevel(a.target)}
-            </span>
+            <b>
+              {fmtLevel(a.actual)} <span className="muted">/ {fmtLevel(a.target)}</span>
+            </b>
           </span>
         ))}
+      </div>
+
+      <div className="rkey">
+        <span className="k"><span className="sw act" />Actual</span>
+        <span className="k"><span className="sw tgt" />Target</span>
       </div>
     </div>
   );

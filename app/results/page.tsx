@@ -6,7 +6,7 @@ import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
 import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
-import { areaNarrative, ceNarrative, gapsOf, suggestedAction } from "@/lib/narrative";
+import { areaNarrative, gapsOf } from "@/lib/narrative";
 import { AreaRadar } from "./area-radar";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
@@ -36,23 +36,34 @@ function HealthPill({ health }: { health: Health | null }) {
  * more than half a level short the badge needs no defence, and explaining it
  * anyway would train people to skim past the line in the case that matters.
  */
-function escalationNote(r: CeResult): string | null {
+function escalationNote(r: CeResult, label: (code: string) => string): string | null {
   if (!r.escalation_drove_health || r.escalated_by.length === 0) return null;
   const [first, ...rest] = r.escalated_by;
   const more = rest.length === 0 ? "" : ` and ${rest.length} more`;
-  return ` · deficit driven by ${first.control_code}, scored ${first.level} against target ${first.target}${more}`;
+  return `deficit driven by “${label(first.control_code)}”, scored ${first.level} against target ${first.target}${more}`;
 }
 
-function Bar({ r }: { r: CeResult }) {
+/**
+ * The line under a competency name, naming the control(s) that drive its verdict
+ * BY INDICATOR TEXT rather than by code (4.4.10.1 means nothing to a PM — the
+ * indicator it stands for does). `label` resolves a control code to its ICB4
+ * indicator, falling back to the code if the framework has no text for it.
+ */
+function metaLine(r: CeResult, label: (code: string) => string): string | null {
+  const parts: string[] = [];
+  if (r.weakest) parts.push(`weakest: “${label(r.weakest.control_code)}” (${r.weakest.level})`);
+  const esc = escalationNote(r, label);
+  if (esc) parts.push(esc);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function Bar({ r, label }: { r: CeResult; label: (code: string) => string }) {
+  const meta = metaLine(r, label);
   return (
     <div className="barrow">
       <div className="name">
         {r.ce_name}
-        <small>
-          {r.ce_code}
-          {r.weakest && ` · weakest ${r.weakest.control_code} (${r.weakest.level})`}
-          {escalationNote(r)}
-        </small>
+        {meta && <small>{meta}</small>}
       </div>
       <div className="track">
         {r.target !== null && <div className="target" style={{ left: pct(r.target) }} />}
@@ -101,11 +112,15 @@ export default async function ResultsPage({
 
   const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
-  const sorted = sortByGap(results);
   const gapRows = gapsOf(results);
   const initials = assessment.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
   const gaps = gapRows.length;
   const revised = assessment.scores.filter((s) => s.assessor_touched).length;
+
+  // Resolve a control code to its ICB4 indicator text, so the report names
+  // controls by what they mean, not by "4.4.10.1". Falls back to the code.
+  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  const controlLabel = (code: string) => ctrlText.get(code) ?? code;
 
   return (
     <div className="section">
@@ -176,16 +191,31 @@ export default async function ResultsPage({
 
         <div className="narrative">
           {areas.map((ar) => (
-            <p key={ar.area}>{areaNarrative(ar, results.filter((r) => r.area === ar.area))}</p>
+            <p key={ar.area}>
+              {areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel)}
+            </p>
           ))}
         </div>
 
         <div className="cap" style={{ marginBottom: 6 }}>
-          CAPABILITY BY COMPETENCE ELEMENT · sorted by gap · actual vs target on 0–5
+          CAPABILITY BY COMPETENCE ELEMENT · grouped by area · most serious first · actual vs target on 0–5
         </div>
-        {sorted.map((r) => (
-          <Bar key={r.ce_code} r={r} />
-        ))}
+        {areas.map((ar) => {
+          const rows = sortByGap(results.filter((r) => r.area === ar.area));
+          return (
+            <section className="cesection" key={ar.area}>
+              <div className="cehead">
+                <h4>{ar.area}</h4>
+                <span className="cehead-val tnum">
+                  {fmtLevel(ar.actual)} <span className="muted">/ {fmtLevel(ar.target)}</span>
+                </span>
+              </div>
+              {rows.map((r) => (
+                <Bar key={r.ce_code} r={r} label={controlLabel} />
+              ))}
+            </section>
+          );
+        })}
 
         <div className="scaleline">
           <div />
@@ -220,51 +250,10 @@ export default async function ResultsPage({
           </span>
         </div>
 
-        {gapRows.length > 0 && (
-          <>
-            <div className="cap" style={{ margin: "22px 0 6px" }}>
-              DEVELOPMENT PLAN · {gapRows.length} competenc{gapRows.length === 1 ? "y" : "ies"} below target · most serious first
-            </div>
-            <div className="devplan-wrap">
-              <table className="devplan">
-                <thead>
-                  <tr>
-                    <th scope="col">Competency</th>
-                    <th scope="col" className="num">Current</th>
-                    <th scope="col" className="num">Target</th>
-                    <th scope="col" className="num">Gap</th>
-                    <th scope="col">Focus</th>
-                    <th scope="col">Suggested action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {gapRows.map((r) => (
-                    <tr key={r.ce_code}>
-                      <td className="cename">
-                        {r.ce_name}
-                        <small>
-                          {r.ce_code}
-                          {r.health ? ` · ${HEALTH_LABEL[r.health]}` : ""}
-                        </small>
-                      </td>
-                      <td className="num tnum">{fmtLevel(r.actual)}</td>
-                      <td className="num tnum">{fmtLevel(r.target)}</td>
-                      <td className="num tnum">{r.gap !== null && r.gap > 0 ? r.gap.toFixed(1) : "—"}</td>
-                      <td className="focus">{ceNarrative(r)}</td>
-                      <td>{suggestedAction(r)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
         <p className="note" style={{ marginTop: 14 }}>
           Actual is the mean of approved scores across each element’s active controls; the
-          weakest control is shown alongside so a single serious gap is not absorbed by the
-          average. Suggested actions are prompts, not requirements — this report supports a
-          decision, it does not approve, reject or gate one.
+          weakest control is named alongside so a single serious gap is not absorbed by the
+          average. This report supports a decision — it does not approve, reject or gate one.
         </p>
       </div>
     </div>

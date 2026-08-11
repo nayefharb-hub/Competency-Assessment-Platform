@@ -7,7 +7,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { areaNarrative, ceNarrative, suggestedAction, gapsOf } from "../lib/narrative.ts";
+import { areaNarrative, gapsOf } from "../lib/narrative.ts";
 
 function ce(o) {
   return {
@@ -35,7 +35,7 @@ test("area with gaps names the most serious gap and counts the rest", () => {
     ce({ ce_code: "4.4.2", ce_name: "Leadership", health: "minor", actual: 2.6, target: 3, gap: 0.4 }),
   ];
   const s = areaNarrative(area({ actual: 2.0, target: 3.0 }), ces);
-  assert.ok(s.includes("the main gap is Teamwork (4.4.1)"), s); // deficit leads, not the minor
+  assert.ok(s.includes("the main gap is Teamwork,"), s); // deficit leads, not the minor
   assert.ok(s.includes("and 1 other"), s);
   assert.ok(s.includes("below target overall"), s); // gap of a full level is more than half
 });
@@ -45,31 +45,19 @@ test("an unscored area says so rather than inventing a number", () => {
   assert.ok(s.includes("not yet scored"), s);
 });
 
-test("ceNarrative names the escalating control when escalation drove the verdict", () => {
-  const r = ce({
-    health: "deficit", actual: 3.0, target: 3,
-    escalation_drove_health: true,
-    escalated_by: [{ control_code: "4.4.1.2", level: 1, target: 3 }],
-  });
-  assert.ok(
-    ceNarrative(r).includes("The mean is on target, but 4.4.1.2 scored 1 against a target of 3"),
-    ceNarrative(r),
-  );
-});
-
-test("ceNarrative names the weakest control when the mean itself is short", () => {
-  const r = ce({ health: "minor", actual: 2.4, target: 3, gap: 0.6, weakest: { control_code: "4.4.1.3", level: 2 } });
-  assert.ok(ceNarrative(r).includes("Weakest control 4.4.1.3 at 2"), ceNarrative(r));
-});
-
-test("suggested actions are suggestions, never mandates", () => {
-  const esc = ce({
-    health: "deficit", escalation_drove_health: true,
-    escalated_by: [{ control_code: "4.4.1.2", level: 1, target: 3 }],
-  });
-  assert.match(suggestedAction(esc), /^Consider prioritising 4\.4\.1\.2/);
-  const weak = ce({ health: "minor", weakest: { control_code: "4.4.1.3", level: 2 } });
-  assert.match(suggestedAction(weak), /^Consider focused development on 4\.4\.1\.3/);
+test("area narrative names the escalating control by its indicator text, not its code", () => {
+  const ces = [
+    ce({
+      ce_code: "4.4.1", ce_name: "Leadership", health: "deficit",
+      actual: 3.0, target: 3, gap: 0,
+      escalation_drove_health: true,
+      escalated_by: [{ control_code: "4.4.1.2", level: 1, target: 3 }],
+    }),
+  ];
+  const label = (code) => (code === "4.4.1.2" ? "Take ownership and show commitment" : code);
+  const s = areaNarrative(area({ actual: 3.0, target: 3.0, ce_count: 1 }), ces, label);
+  assert.ok(s.includes("Take ownership and show commitment"), s);
+  assert.ok(!s.includes("4.4.1.2"), `must not print the raw control code: ${s}`);
 });
 
 test("gapsOf keeps only gap competencies, deficits before minors, then by gap", () => {
@@ -87,8 +75,9 @@ test("gapsOf keeps only gap competencies, deficits before minors, then by gap", 
 // escalation-driven deficit whose MEAN is at or above target. The old line
 // printed "<actual> against <target>" for it — e.g. "3.4 against 3.0" — labelling
 // a competency whose mean exceeds target as "the main gap", the number
-// contradicting the verdict. It must name the escalating control instead, the
-// same way ceNarrative does, and never print a mean-above-target "X against Y".
+// contradicting the verdict. It must name the escalating control instead, and
+// never print a mean-above-target "X against Y". (Default identity label here,
+// so the control appears by code; the real screen passes indicator text.)
 test("area narrative describes an escalation-driven top gap by its control, not a mean above target", () => {
   const ces = [
     ce({

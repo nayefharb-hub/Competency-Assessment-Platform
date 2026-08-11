@@ -2127,7 +2127,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
    * N21 caught — so it is built rather than hoped for.
    */
   const { data: ceRows } = await db.from("competence_element")
-    .select("id, code, target_level, control(id, code, active, target_level)")
+    .select("id, code, name, target_level, control(id, code, active, target_level, indicator)")
     .limit(200);
   /*
    * ceTarget is the MEAN of the active control targets, which is what the page
@@ -2148,7 +2148,9 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   if (!fat) {
     check("a CE with 5+ active targeted controls exists to test escalation", false);
   } else {
-    const victim = fat.actives[0];
+    // Prefer a victim WITH an indicator, so the "names not codes" assertions
+    // below have text to check; fall back to the first active if none has one.
+    const victim = fat.actives.find((c) => c.indicator) ?? fat.actives[0];
     const low = Math.max(0, victim.target_level - 2);
     const restore = new Map();
     const { data: before } = await db.from("score")
@@ -2171,36 +2173,31 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
       mean >= fat.ceTarget, `mean ${mean.toFixed(2)} vs target ${fat.ceTarget.toFixed(2)}`);
 
     await boss.page.goto(`/results?a=${assessmentId}`);
-    // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of
-    // control 4.4.3.2, so includes() happily returns a DIFFERENT element's row —
-    // which is how the first version of this check reported a failure against a
-    // row that was in fact rendering correctly.
+    // The competency row now leads with the CE NAME (codes are meaningless to a
+    // PM), so locate it by name. CE names are distinct, so includes() is safe
+    // where a bare code substring was not (4.4.3 is a prefix of 4.4.3.2).
     const rows = await boss.page.locator(".barrow").allInnerTexts();
-    const row = rows.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
-    const where = `ce ${fat.code} victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
+    const row = rows.find((t) => t.includes(fat.name));
+    const where = `ce ${fat.code} (${fat.name}) victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
 
     check("escalated CE still reads Capability Deficit",
       !!row && row.includes("Capability Deficit"), where);
     check("the page names the control that forced it, not just the verdict",
-      !!row && row.includes(`deficit driven by ${victim.code}`), where);
+      !!row && row.includes("deficit driven by") && (!victim.indicator || row.includes(victim.indicator)), where);
+    check("it names that control by its indicator text, not its opaque code",
+      !!row && !!victim.indicator && !row.includes(victim.code), where);
     check("and states what that control scored against its own target",
       !!row && row.includes(`scored ${low} against target ${victim.target_level}`), where);
 
     /*
-     * The development-plan table lists gap competencies with a suggested action.
-     * This CE is a deficit, so it must appear; its action is a SUGGESTION, never
-     * a mandate (the tool supports a decision, never gates one). Renders on the
-     * same /results?a= page as the row checks above.
+     * The capability list is grouped by area (Perspective · People · Practice),
+     * each area its own section with a header — replacing the flat, gap-sorted
+     * list and the development-plan table that used to sit below it.
      */
-    const planCount = await boss.page.locator("table.devplan").count();
-    check("the development-plan table renders when there are gap competencies", planCount > 0);
-    if (planCount > 0) {
-      const planText = await boss.page.locator("table.devplan").first().innerText();
-      check("the development plan lists the escalated competency",
-        planText.includes(fat.code), `plan: ${JSON.stringify(planText.slice(0, 240))}`);
-      check("its suggested action reads as a suggestion, not a mandate",
-        /Consider /.test(planText), `plan: ${JSON.stringify(planText.slice(0, 240))}`);
-    }
+    const areaHeads = (await boss.page.locator(".cehead h4").allInnerTexts()).map((t) => t.trim());
+    check("the capability list is grouped into the three areas",
+      ["Perspective", "People", "Practice"].every((a) => areaHeads.includes(a)),
+      `heads: ${JSON.stringify(areaHeads)}`);
 
     // The note must never appear on a row that is not a deficit — otherwise it
     // is explaining a verdict that was never given.
@@ -2227,16 +2224,17 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     const rows2 = await boss.page.locator(".barrow").allInnerTexts();
-    const row2 = rows2.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
-    const where2 = `ce ${fat.code}: ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
+    const row2 = rows2.find((t) => t.includes(fat.name));
+    const where2 = `ce ${fat.code} (${fat.name}): ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
 
     // Named + counted: one control is named, the rest are counted. With two
     // escalating it must say "and 1 more" — not "1 more" of a total of two,
     // and not "2 more" counting the one it already named.
+    const labelOf = (c) => c.indicator ?? c.code;
     check("a second escalating control is counted, not silently dropped",
       !!row2 && row2.includes("and 1 more"), where2);
     check("the named control is still one of the escalating ones",
-      !!row2 && (row2.includes(`driven by ${victim.code}`) || row2.includes(`driven by ${second.code}`)),
+      !!row2 && (row2.includes(labelOf(victim)) || row2.includes(labelOf(second))),
       where2);
 
     await db.from("score").upsert(
