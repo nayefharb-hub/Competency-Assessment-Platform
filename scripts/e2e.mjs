@@ -2083,8 +2083,12 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   const ctrlRows = await boss.page.locator(".ctrlrow").count();
   check("the drill-down lists exactly the 132 active controls (inactive 4.3.2.6 excluded)",
     ctrlRows === 132, `${ctrlRows} control rows`);
+  // Read the indicator from the control-name cells specifically, so this asserts
+  // the DRILL ROW names the control — not a CE meta line that also carries it.
+  const drillNames = (await boss.page.locator(".ctrlrow .ctrlname").allInnerTexts()).join(" | ");
   check("a control is named by its ICB4 indicator in the drill-down",
-    results.includes("Align with organisational mission and vision"));
+    drillNames.includes("Align with organisational mission and vision"),
+    drillNames.slice(0, 160));
   check("Phase 1 shows NO measures (those are the Phase-2 control page)",
     !results.includes("Reflects the mission and vision of the organisation"));
   const gapCtrlRows = await boss.page.locator(".ctrlrow.is-gap").count();
