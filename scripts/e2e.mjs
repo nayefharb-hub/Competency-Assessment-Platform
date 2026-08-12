@@ -1954,8 +1954,10 @@ const assessmentId = (await assessmentOf(PM.email)).id;
      median gets read as a grade and someone acts on it. */
   await boss.page.goto("/analysis");
   await boss.page.waitForLoadState("networkidle");
-  check("the assessor's analysis lists the people who have started",
-    (await boss.page.locator(".section").innerText()).includes(PM.name));
+  const analysisLanding = await boss.page.locator(".section").innerText();
+  check("the assessor's analysis landing is the department overview, listing the team",
+    analysisLanding.includes(PM.name) && /Department capability/i.test(analysisLanding),
+    analysisLanding.slice(0, 200));
   await boss.page.goto(`/analysis?a=${assessmentId}`);
   await boss.page.waitForLoadState("networkidle");
   const paceView = await boss.page.locator(".section").innerText();
@@ -2219,6 +2221,74 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     check("at least one CE target is genuinely fractional, so one decimal is load-bearing",
       fractional > 0, `${fractional} of ${targetByCe.size}`);
   }
+
+  /* ---- PMO department analysis (/analysis), now that one assessment is approved ---- */
+
+  /* Round-trip budget for the department overview — a brand-new per-request DB
+     path, so it is counted rather than estimated (CLAUDE.md). departmentData is
+     listAssessments' 3 (assessment list + app_user + score) plus one batched
+     target_snapshot = 4, and every page also pays the per-request auth allowlist
+     select. The first GET warms the framework memo so the count is the warm
+     steady state. Requires E2E_SERVER_LOG; skips loudly when unset. */
+  {
+    const LOG = process.env.E2E_SERVER_LOG;
+    if (LOG) {
+      const { readFileSync } = await import("node:fs");
+      await boss.page.goto("/analysis");
+      await boss.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 400));
+      const mark = readFileSync(LOG, "utf8").length;
+      await boss.page.goto("/analysis");
+      await boss.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 500));
+      const lines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
+      const snaps = lines.filter((l) => l.includes("/rest/v1/target_snapshot"));
+      check("the department overview costs 5 supabase round trips (auth + departmentData's 4)",
+        lines.length === 5, `${lines.length}: ${lines.join(" | ")}`);
+      check("exactly one of them is the batched snapshot fetch",
+        snaps.length === 1, `${snaps.length}`);
+    } else {
+      skip("the department overview round-trip budget",
+        "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
+    }
+  }
+
+  await boss.page.goto("/analysis");
+  await boss.page.waitForLoadState("networkidle");
+  {
+    const dept = await boss.page.locator(".section").innerText();
+    check("department capability states its assigned base and approved count",
+      /averaged over \d+ of \d+ assigned/i.test(dept) && /\d+ approved/i.test(dept), dept.slice(0, 700));
+    check("the approved person appears in the per-person summary", dept.includes(PM.name));
+
+    // Exclude that person: the URL carries it and their row flips to Excluded,
+    // whatever else is approved in the cycle (robust to pre-existing data).
+    // waitForURL, not networkidle: the header <Link> does a Next soft nav, so
+    // the load event never fires and page.url() lags the click.
+    await boss.page.locator(`.picklist a:has-text("${PM.name}")`).first().click();
+    await boss.page.waitForURL(/exclude=/, { timeout: 15000 });
+    check("excluding a person is reflected in ?exclude",
+      (new URL(boss.page.url()).searchParams.get("exclude") ?? "").length > 0, boss.page.url());
+    check("and their include row shows Excluded",
+      /Excluded/i.test(await boss.page.locator(`.picklist li:has-text("${PM.name}")`).first().innerText()));
+  }
+
+  // The unified per-person view: capability AND pace on one screen, for staff.
+  await boss.page.goto(`/analysis?a=${assessmentId}`);
+  await boss.page.waitForLoadState("networkidle");
+  {
+    const unified = await boss.page.locator(".section").innerText();
+    check("an approved person's analysis shows capability and pace together",
+      /Capability/i.test(unified) && /How they worked/i.test(unified)
+        && /typical time per control/i.test(unified), unified.slice(0, 300));
+    check("the capability section rolls up competence elements", (await boss.page.locator(".barrow").count()) > 0);
+  }
+
+  // A PM never reaches the department overview — /analysis is their own pace only.
+  await pm.page.goto("/analysis");
+  await pm.page.waitForLoadState("networkidle");
+  check("a PM's /analysis is their own, never the department overview",
+    !/Department capability/i.test(await pm.page.locator(".section").innerText()));
 
   /*
    * The escalation case, constructed on purpose (STATUS.md open item 3).

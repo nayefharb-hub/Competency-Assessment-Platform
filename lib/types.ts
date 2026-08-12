@@ -253,3 +253,67 @@ export interface ControlScore {
    */
   below: boolean;
 }
+
+/* ---------- department rollup (PMO analysis) ---------- */
+
+/**
+ * One competency, aggregated across the included people by METHOD A: the
+ * department number is the mean, over people, of each person's OWN CE rollup —
+ * never the roll-up of team-averaged control scores. See
+ * docs/design-pmo-department-analysis.md.
+ */
+export interface DepartmentCe {
+  ce_code: string;
+  ce_name: string;
+  area: AreaName;
+  /** mean over people of each person's CE target (their own snapshot) */
+  target: number | null;
+  /** method A: mean over people of each person's CE actual */
+  actual: number | null;
+  gap: number | null;
+  health: Health | null;
+  /** min-max of the per-person actuals; null when nobody contributed one */
+  spread: { min: number; max: number } | null;
+  /** how many included people are below their OWN target in this competency */
+  below: number;
+  /** people contributing an actual to this competency */
+  n: number;
+}
+
+export interface DepartmentArea {
+  area: AreaName;
+  target: number | null;
+  actual: number | null;
+  n: number;
+}
+
+/** A control where one or more people escalate (2+ levels below their own target). */
+export interface DepartmentEscalation {
+  control_code: string;
+  count: number;
+}
+
+/**
+ * One person's headline for the department summary table. Strongest/weakest are
+ * framed as "resource for the team" vs "development opportunity", never a ranking.
+ */
+export interface PersonSummary {
+  assessment_id: string;
+  assessee_name: string;
+  areas: DepartmentArea[];
+  /** competency furthest ABOVE its own target (margin = actual - target) */
+  strongest: { ce_code: string; ce_name: string; margin: number } | null;
+  /** competency furthest BELOW its own target (gap = target - actual) */
+  weakest: { ce_code: string; ce_name: string; gap: number } | null;
+}
+
+export interface DepartmentResult {
+  areas: DepartmentArea[];
+  /** every competency, biggest department gap first */
+  ces: DepartmentCe[];
+  perPerson: PersonSummary[];
+  /** controls where anyone escalates, most people first */
+  escalations: DepartmentEscalation[];
+  /** included (approved, not excluded) people */
+  included: number;
+}

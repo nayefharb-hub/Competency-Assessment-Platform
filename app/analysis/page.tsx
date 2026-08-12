@@ -2,9 +2,11 @@ import Link from "@/app/link";
 import { requireUser } from "@/lib/auth";
 import { getAssesseeFramework, getFramework } from "@/lib/framework";
 import {
-  currentCycle, findAssessment, listAssessments, loadAssessment, paceFor,
+  currentCycle, findAssessment, loadAssessment, paceFor,
 } from "@/lib/db/assessment";
 import { paceLabel, summarise, summariseByCe, type PaceSummary } from "@/lib/pace";
+import { CapabilityReport } from "@/app/results/capability-report";
+import { DepartmentOverview } from "./department";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +46,9 @@ export const dynamic = "force-dynamic";
 export default async function AnalysisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ a?: string | string[] }>;
+  searchParams: Promise<{ a?: string | string[]; exclude?: string | string[] }>;
 }) {
-  const { a: rawA } = await searchParams;
+  const { a: rawA, exclude: rawExclude } = await searchParams;
   // `?a=x&a=y` arrives as an ARRAY. Casting it to string let it reach
   // `.eq("id", [...])`, which PostgREST renders as `id=eq.x,y` and Postgres
   // rejects as a malformed uuid — a 500 with a database message in it, from a
@@ -55,7 +57,13 @@ export default async function AnalysisPage({
   const user = await requireUser();
   const staff = user.role === "assessor" || user.role === "admin";
 
-  if (staff && !a) return <Picker />;
+  // Staff landing (no ?a=) is the department overview. ?exclude=id,id drops
+  // people from the department figure; parsed here, applied in the rollup.
+  if (staff && !a) {
+    const excludeRaw = Array.isArray(rawExclude) ? rawExclude.join(",") : rawExclude ?? "";
+    const exclude = new Set(excludeRaw.split(",").map((s) => s.trim()).filter(Boolean));
+    return <DepartmentOverview exclude={exclude} cycle={currentCycle()} />;
+  }
 
   // An assessee's own assessment comes from the SESSION. `a` is not consulted.
   //
@@ -96,7 +104,7 @@ export default async function AnalysisPage({
   return (
     <div className="section">
       <div className="sec-head">
-        <h2>{staff ? `How ${who} worked` : "How your assessment is going"}</h2>
+        <h2>{staff ? who : "How your assessment is going"}</h2>
         <span className="rule" />
         <span className="eyebrow">cycle {cycle}</span>
       </div>
@@ -105,6 +113,27 @@ export default async function AnalysisPage({
         <p className="note" style={{ marginTop: -6, marginBottom: 14 }}>
           <Link href="/analysis">← everyone</Link>
         </p>
+      )}
+
+      {/* Capability first, then how they worked — the pace is the "how much do I
+          trust this?" companion to the result (owner, 2026-08-12). Only for an
+          APPROVED record: before approval the authoritative scores do not exist.
+          Assessee capability lives on /results, gated the same way, so this
+          composed view never widens what a PM can see. */}
+      {staff && staffRecord?.state === "approved" && (
+        <>
+          <div className="sec-head">
+            <h2>Capability</h2>
+            <span className="rule" />
+          </div>
+          <div className="card pad" style={{ marginBottom: 22 }}>
+            <CapabilityReport fw={fw} assessment={staffRecord} />
+          </div>
+          <div className="sec-head">
+            <h2>How they worked</h2>
+            <span className="rule" />
+          </div>
+        </>
       )}
 
       {/* Said first, before any number, because it is the frame the numbers
@@ -271,46 +300,6 @@ function NothingToAnalyse({ unknown = false }: { unknown?: boolean }) {
             : <>You have no assessment in the {currentCycle()} cycle. Once you have scored a
                 few controls, this page will show how the work is going.</>}
         </p>
-      </div>
-    </div>
-  );
-}
-
-/** The assessor's way in: everyone in the cycle who has started. */
-async function Picker() {
-  const rows = await listAssessments();
-  const started = rows.filter((r) => r.state !== "draft" || r.started_at);
-
-  return (
-    <div className="section">
-      <div className="sec-head">
-        <h2>Assessment analysis</h2>
-        <span className="rule" />
-        <span className="eyebrow">cycle {currentCycle()}</span>
-      </div>
-
-      <div className="card pad">
-        <p className="note" style={{ marginTop: 0 }}>
-          How each assessment was filled in — pace, and two things pace alone cannot tell you.
-          Pick a person.
-        </p>
-        {started.length === 0
-          ? <p className="note" style={{ margin: 0 }}>Nobody has started scoring yet.</p>
-          : (
-            <ul className="picklist">
-              {started.map((r) => (
-                <li key={r.id}>
-                  <Link className="card pad ce-row" href={`/analysis?a=${r.id}`}>
-                    <div className="ce-main">
-                      <b>{r.assessee_name}</b>
-                      <span className="note">{r.assessee_role ?? ""}</span>
-                    </div>
-                    <span className="pill pill-neutral">{r.state.replace("_", " ")}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
       </div>
     </div>
   );

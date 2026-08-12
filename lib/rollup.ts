@@ -23,7 +23,8 @@
  * carries an epsilon. See healthOf.
  */
 import type {
-  Area, AreaResult, Assessment, CeResult, Control, ControlScore, Framework, Health, Level,
+  Area, AreaResult, Assessment, CeResult, Control, ControlScore, DepartmentArea,
+  DepartmentCe, DepartmentEscalation, DepartmentResult, Framework, Health, Level, PersonSummary,
 } from "./types";
 
 /** Inactive controls contribute nothing, regardless of any stored score. */
@@ -271,8 +272,14 @@ export function rollupAreas(results: CeResult[]): AreaResult[] {
   });
 }
 
-/** Gap-sorted for the results list: biggest gap first, unscored CEs last. */
-export function sortByGap(results: CeResult[]): CeResult[] {
+/**
+ * Gap-sorted for the results list: biggest gap first, unscored CEs last.
+ *
+ * Generic over anything carrying a gap and a ce_code, so the department rollup
+ * sorts its `DepartmentCe[]` through the SAME comparator the per-person results
+ * use — one ordering rule, no second copy to drift (the CE-target lesson).
+ */
+export function sortByGap<T extends { gap: number | null; ce_code: string }>(results: T[]): T[] {
   return [...results].sort((a, b) => {
     if (a.gap === null && b.gap === null) return a.ce_code.localeCompare(b.ce_code);
     if (a.gap === null) return 1;
@@ -312,6 +319,129 @@ export function controlBreakdown(
   const shortfall = (r: ControlScore) =>
     r.level === null || r.target === null ? -Infinity : r.target - r.level;
   return rows.sort((a, b) => shortfall(b) - shortfall(a) || a.code.localeCompare(b.code));
+}
+
+/** Mean of a list, or null when empty — a missing number is absence, not zero. */
+function mean(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  return xs.reduce((s, x) => s + x, 0) / xs.length;
+}
+
+/**
+ * Department rollup — the PMO-level aggregation (docs/design-pmo-department-
+ * analysis.md). Pure: the caller hands in the INCLUDED, approved assessments
+ * (already filtered for exclusions), each carrying its own snapshot_targets.
+ *
+ * METHOD A, uniformly. The department number at every level is the mean, over
+ * the included people, of THAT PERSON's own rolled-up number — never the roll-up
+ * of team-averaged control scores (method B). The two diverge the moment people
+ * have different scored-control sets, and method A is the only one that survives
+ * people sitting on different role profiles (the product horizon). Every
+ * per-person figure comes from `rollupAll`/`rollupAreas`, so a person is always
+ * judged against their OWN snapshot targets, exactly as `/results` judges them.
+ *
+ * Escalation stays a per-person concept: it is reported as a COUNT of people on
+ * each control, and is deliberately NOT passed to `healthOf` for the department
+ * mean — a department average is not a single control.
+ */
+export function departmentRollup(fw: Framework, assessments: Assessment[]): DepartmentResult {
+  // Roll each person up once; reuse for CEs, areas, escalation and summaries.
+  const people = assessments.map((a) => {
+    const ces = rollupAll(fw, a);
+    return { a, ces, areas: rollupAreas(ces) };
+  });
+  const areaOrder: Area["name"][] = ["Perspective", "People", "Practice"];
+
+  const ces: DepartmentCe[] = fw.ce_targets.map((t): DepartmentCe => {
+    const rows = people
+      .map((p) => p.ces.find((c) => c.ce_code === t.ce_code))
+      .filter((c): c is CeResult => c !== undefined);
+    // Method A pairs actual and target PER PERSON. A person who left this whole
+    // competency unscored has no actual, so their target must not count either —
+    // `rollupCe` always computes a target from the active controls, so without
+    // this the department target would average over a wider population than the
+    // actual and the gap would stop being a true per-person figure. Benign while
+    // everyone shares one profile; wrong the moment targets differ per person,
+    // which is the case method A exists to serve.
+    const scoredRows = rows.filter((r) => r.actual !== null);
+    const actuals = scoredRows.map((r) => r.actual as number);
+    const targets = scoredRows.map((r) => r.target).filter((x): x is number => x !== null);
+    const actual = mean(actuals);
+    const target = mean(targets);
+    return {
+      ce_code: t.ce_code,
+      ce_name: t.ce_name,
+      area: t.area,
+      actual,
+      target,
+      gap: actual === null || target === null ? null : target - actual,
+      health: healthOf(actual, target, false),
+      spread: actuals.length === 0 ? null : { min: Math.min(...actuals), max: Math.max(...actuals) },
+      // below THEIR OWN target: reuse each person's health verdict, so the count
+      // and the per-person screen can never disagree about who is short.
+      below: scoredRows.filter((r) => r.health === "minor" || r.health === "deficit").length,
+      n: actuals.length,
+    };
+  });
+
+  const areas: DepartmentArea[] = areaOrder.map((area): DepartmentArea => {
+    const rows = people
+      .map((p) => p.areas.find((ar) => ar.area === area))
+      .filter((ar): ar is AreaResult => ar !== undefined);
+    const actuals = rows.map((r) => r.actual).filter((x): x is number => x !== null);
+    const targets = rows.map((r) => r.target).filter((x): x is number => x !== null);
+    return { area, actual: mean(actuals), target: mean(targets), n: actuals.length };
+  });
+
+  // One person counts once per control they escalate on, however many CEs it
+  // spans (it spans exactly one, but the Set makes that explicit and safe).
+  const escCount = new Map<string, number>();
+  for (const p of people) {
+    const controls = new Set<string>();
+    for (const c of p.ces) for (const e of c.escalated_by) controls.add(e.control_code);
+    for (const code of controls) escCount.set(code, (escCount.get(code) ?? 0) + 1);
+  }
+  const escalations: DepartmentEscalation[] = [...escCount.entries()]
+    .map(([control_code, count]) => ({ control_code, count }))
+    .sort((a, b) => b.count - a.count || a.control_code.localeCompare(b.control_code));
+
+  const perPerson: PersonSummary[] = people.map(({ a, ces: pces, areas: pareas }): PersonSummary => {
+    const areasP: DepartmentArea[] = areaOrder.map((area) => {
+      const ar = pareas.find((x) => x.area === area);
+      return { area, actual: ar?.actual ?? null, target: ar?.target ?? null, n: ar?.actual != null ? 1 : 0 };
+    });
+    const scored = pces.filter((c) => c.gap !== null);
+    // strongest = furthest above its own target (most negative gap); weakest =
+    // furthest below (most positive gap). Both read the SAME gap the rest of the
+    // engine uses, so "strongest" here is the same clear-of-target as elsewhere.
+    const byGapAsc = [...scored].sort((x, y) => (x.gap as number) - (y.gap as number));
+    let strongestRow: CeResult | undefined;
+    let weakestRow: CeResult | undefined;
+    if (byGapAsc.length >= 2) {
+      strongestRow = byGapAsc[0];
+      weakestRow = byGapAsc[byGapAsc.length - 1];
+    } else if (byGapAsc.length === 1) {
+      // With a single scored competency it is one or the other, never both —
+      // labelling the same CE as strength AND development gap would read as a
+      // contradiction. Its gap sign decides which it is.
+      const only = byGapAsc[0];
+      if ((only.gap as number) > 0) weakestRow = only;
+      else strongestRow = only;
+    }
+    return {
+      assessment_id: a.id,
+      assessee_name: a.assessee_name,
+      areas: areasP,
+      strongest: strongestRow
+        ? { ce_code: strongestRow.ce_code, ce_name: strongestRow.ce_name, margin: -(strongestRow.gap as number) }
+        : null,
+      weakest: weakestRow
+        ? { ce_code: weakestRow.ce_code, ce_name: weakestRow.ce_name, gap: weakestRow.gap as number }
+        : null,
+    };
+  });
+
+  return { areas, ces: sortByGap(ces), perPerson, escalations, included: assessments.length };
 }
 
 export const HEALTH_LABEL: Record<Health, string> = {

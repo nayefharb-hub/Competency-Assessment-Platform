@@ -550,6 +550,58 @@ export async function listAssessments(
   });
 }
 
+/**
+ * The department analysis screen's data (docs/eng-plan-pmo-department-analysis.md).
+ *
+ *   everyone  — every live assessment in the cycle, all states, with scores.
+ *               Drives the status board (not started / in progress / completed).
+ *   approved  — the subset in state 'approved', WITH snapshot_targets attached,
+ *               ready to hand to departmentRollup.
+ *
+ * The snapshot is the load-bearing part. `listAssessments` does NOT attach
+ * `snapshot_targets` — only the single-record path does — and `rollupCe` falls
+ * back to LIVE targets when the snapshot is absent, which would judge approved
+ * people against today's benchmark instead of the one frozen at their approval
+ * (rollup-spec §6). So the approved rows get their frozen snapshot here.
+ *
+ * ROUND TRIPS: `listAssessments` is 3 (list + app_user + score); this adds ONE
+ * batched `target_snapshot` fetch for the approved ids, for 4 total — and only 3
+ * when nobody is approved yet, because an `.in(…, [])` is a wasted call the rest
+ * of this layer already avoids. Asserted in scripts/e2e.mjs per CLAUDE.md.
+ */
+export async function departmentData(
+  cycle = currentCycle(),
+): Promise<{ everyone: Assessment[]; approved: Assessment[] }> {
+  const everyone = await listAssessments(cycle);
+  const approvedRows = everyone.filter((a) => a.state === "approved");
+  if (approvedRows.length === 0) return { everyone, approved: [] };
+
+  const fw = await getFramework();
+  const codeById = new Map(fw.controls.map((c) => [c.id as string, c.code]));
+  const snaps = unwrap(
+    "department snapshot fetch",
+    await db().from("target_snapshot")
+      .select("assessment_id, control_id, target_level")
+      .in("assessment_id", approvedRows.map((a) => a.id))
+      .limit(50000),
+  ) as { assessment_id: string; control_id: string; target_level: number | null }[];
+
+  const byAssessment = new Map<string, Record<string, Level | null>>();
+  for (const s of snaps) {
+    const code = codeById.get(s.control_id);
+    if (!code) continue;
+    const m = byAssessment.get(s.assessment_id) ?? {};
+    m[code] = s.target_level as Level | null;
+    byAssessment.set(s.assessment_id, m);
+  }
+
+  const approved = approvedRows.map((a) => ({
+    ...a,
+    snapshot_targets: byAssessment.get(a.id) ?? {},
+  }));
+  return { everyone, approved };
+}
+
 /* ----------------------------------------------------------------- write */
 
 async function assertState(id: string, allowed: AssessmentState[]): Promise<AssessmentRow> {
