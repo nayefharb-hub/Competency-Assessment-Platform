@@ -1,13 +1,30 @@
 # Project status & handoff
 
-Last updated: **2026-08-12** — four PRs merged to `main` (prod). Read this first.
+Last updated: **2026-08-12** — six PRs merged to `main` (prod). Read this first.
 
 ## Live on `main` (prod) as of 2026-08-12
 
-Four PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the
-Vercel preview) and squash-merged to `main`. Merge order was #31, #27, #30, #32
-(#30 was stacked on #27; rebased onto `main` before merge). Production deploys
-from `main`.
+Six PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the
+Vercel preview) and squash-merged to `main`. Merge order was #31, #27, #30, #32,
+#33, #34 (#30 was stacked on #27; rebased onto `main` before merge). Production
+deploys from `main`.
+
+- **#34 — PMO department analysis** (`ec03647`). `/analysis` becomes the
+  analytical hub for the Head of PMO: a **status board** of everyone's state ·
+  **include/exclude** who counts · a **per-person summary** (each person's area
+  scores + strongest / development competency) · **department capability** — the
+  team rolled up by **method A** (mean of each person's own rollup, snapshot-
+  aware) with **spread** and **N-below-target**, area-grouped bar-on-bar + radar,
+  approved-only with the assigned base stated. Clicking a person opens a
+  **unified view**: their capability report AND pace on one screen. New
+  `departmentRollup` (`lib/rollup.ts`), `departmentData` (4 calls + snapshots;
+  the `/analysis` staff GET is 5, asserted). `CapabilityReport` extracted from
+  `/results` and shared. Built through office-hours → plan-eng-review → `/review`
+  (8 findings resolved) → `/design-review`. Gates: 173 unit · e2e 453/0 (5-call
+  budget asserted) · `/design-review`. Docs: `docs/design-pmo-department-analysis.md`,
+  `docs/eng-plan-pmo-department-analysis.md`. **Empty of figures until the first
+  approvals** — validate the numbers against real approvals before trusting them.
+- **#33 — STATUS.md doc sync** (`7cd265d`). Marked #32 shipped.
 
 - **#27 — Results report, Increment 1** (`8e2f126`). The `/results` screen: a
   4th health tier "Above target"; a **3-axis area radar** (People/Practice/
