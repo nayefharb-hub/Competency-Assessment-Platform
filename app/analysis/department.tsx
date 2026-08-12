@@ -21,6 +21,9 @@ import type { Assessment, AreaResult } from "@/lib/types";
 
 const AREA_ORDER = ["Perspective", "People", "Practice"] as const;
 
+const MAX = 5;
+const pct = (v: number) => `${(v / MAX) * 100}%`;
+
 function scoredCount(a: Assessment, active: Set<string>): number {
   return a.scores.filter((s) => s.self_level !== null && active.has(s.control_code)).length;
 }
@@ -141,14 +144,17 @@ export async function DepartmentOverview({
 
       {/* --------------------------------------------------- department capability */}
       <div className="card pad" style={{ marginTop: 20 }}>
+        <div className="cap" style={{ marginBottom: 4 }}>DEPARTMENT CAPABILITY</div>
         {/* Denominator is the ASSIGNED base (design §3), not the approved count:
-            "3 of 9 assigned" makes the coverage gap visible — that the
-            authoritative figure covers only the people whose reviews are in. */}
-        <div className="cap" style={{ marginBottom: 6 }}>
-          DEPARTMENT CAPABILITY · averaged over {included.length} of {everyone.length} assigned
-          {" · "}{approved.length} approved
-          {approved.length - included.length > 0 ? ` · ${approved.length - included.length} excluded` : ""}
-        </div>
+            "2 of 4 assigned" makes the coverage gap visible — the authoritative
+            figure covers only the people whose reviews are in. A readable note,
+            not a small-caps label, because it is the frame the numbers are read
+            in (design-review, 2026-08-12). */}
+        <p className="note" style={{ margin: "0 0 4px" }}>
+          Averaged over <b>{included.length}</b> of {everyone.length} assigned ·{" "}
+          {approved.length} approved
+          {approved.length - included.length > 0 ? ` · ${approved.length - included.length} excluded` : ""}.
+        </p>
 
         {included.length === 0 ? (
           <p className="note" style={{ margin: "8px 0 0" }}>
@@ -169,35 +175,53 @@ export async function DepartmentOverview({
 
             <AreaRadar areas={radarAreas} />
 
+            {/* Grouped by area under navy section headers, with the signature
+                bar-on-bar mark per competency — the same language as /results
+                (DESIGN.md capability list), so the two screens read alike. The
+                department-specific distribution (spread · N below target) rides
+                on the meta line under the name, where /results names its weakest
+                control. `dept.ces` is already sorted most-serious-first, so
+                filtering by area keeps that order within each section. */}
             <div className="cap" style={{ margin: "18px 0 6px" }}>
-              BY COMPETENCE ELEMENT · most serious department gap first · mean · spread · below target
+              BY COMPETENCE ELEMENT · grouped by area · most serious first · department mean vs target
             </div>
-            <div className="tablewrap">
-              <table className="grid">
-                <thead>
-                  <tr>
-                    <th>Competency</th>
-                    <th className="num">Mean</th>
-                    <th className="num">Target</th>
-                    <th className="num">Spread</th>
-                    <th className="num">Below</th>
-                    <th>Health</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dept.ces.map((c) => (
-                    <tr key={c.ce_code}>
-                      <td>{c.ce_code} {c.ce_name}</td>
-                      <td className="num tnum">{fmtLevel(c.actual)}</td>
-                      <td className="num tnum muted">{fmtLevel(c.target)}</td>
-                      <td className="num tnum">{c.spread ? `${fmtLevel(c.spread.min)}–${fmtLevel(c.spread.max)}` : "—"}</td>
-                      <td className="num tnum">{c.below} of {c.n}</td>
-                      <td><HealthPill health={c.health} /></td>
-                    </tr>
+            {AREA_ORDER.map((area) => {
+              const rows = dept.ces.filter((c) => c.area === area);
+              const ar = radarAreas.find((a) => a.area === area);
+              if (rows.length === 0) return null;
+              return (
+                <section className="cesection" key={area}>
+                  <div className="cehead">
+                    <h4>{area}</h4>
+                    <span className="cehead-val tnum">
+                      {fmtLevel(ar?.actual ?? null)} <span className="muted">/ {fmtLevel(ar?.target ?? null)}</span>
+                    </span>
+                  </div>
+                  {rows.map((c) => (
+                    <div className="barrow" key={c.ce_code}>
+                      <div className="name">
+                        {c.ce_name}
+                        <small>
+                          spread {c.spread ? `${fmtLevel(c.spread.min)}–${fmtLevel(c.spread.max)}` : "—"}
+                          {" · "}<b className="tnum">{c.below}</b> of <span className="tnum">{c.n}</span> below target
+                        </small>
+                      </div>
+                      <div className="track">
+                        {c.target !== null && <div className="target" style={{ left: pct(c.target) }} />}
+                        {c.actual !== null && c.health && (
+                          <div className={`actual ${c.health}`} style={{ width: pct(c.actual) }} />
+                        )}
+                      </div>
+                      <div className="val">
+                        <b className="tnum">{fmtLevel(c.actual)}</b>{" "}
+                        <span className="muted tnum">/ {fmtLevel(c.target)}</span>{" "}
+                        <HealthPill health={c.health} />
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </section>
+              );
+            })}
 
             {dept.escalations.length > 0 && (
               <p className="note" style={{ marginTop: 12 }}>
