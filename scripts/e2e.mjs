@@ -929,6 +929,68 @@ for (const hostile of [
   await ctx.close();
 }
 
+/*
+ * Session policy (owner, 2026-08-12): an 8h rolling idle timeout on the session
+ * cookie, a 12h absolute cap enforced by a never-rolled marker cookie, and
+ * logout hardened against cross-site CSRF. Staged on throwaway contexts.
+ */
+{
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+  check("session policy: signed in", !page.url().includes("/login"), page.url());
+
+  const now = Date.now() / 1000;
+  const jar = await ctx.cookies();
+  const authC = jar.find((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+  const markC = jar.find((c) => c.name === "cap.sess_start");
+  // Idle timeout: the session cookie must carry an hours-scale expiry, not the
+  // @supabase/ssr 400-day default (which would be ~9600h out).
+  check("session cookie carries an hours-scale idle expiry, not a 400-day one",
+    !!authC && authC.expires > now + 3600 && authC.expires < now + 25 * 3600,
+    authC ? `${Math.round((authC.expires - now) / 3600)}h` : "no auth cookie");
+  // Absolute-cap marker present and hours-scale (fixed 12h, never rolled).
+  check("absolute-cap marker cookie is set at login",
+    !!markC && markC.expires > now + 3600 && markC.expires < now + 25 * 3600,
+    markC ? `${Math.round((markC.expires - now) / 3600)}h` : "no marker");
+
+  // Enforcement: drop the marker (as the browser does at the cap) and a live
+  // session token is no longer enough — a protected page forces re-login.
+  const keep = (await ctx.cookies()).filter((c) => c.name !== "cap.sess_start");
+  await ctx.clearCookies();
+  await ctx.addCookies(keep);
+  await page.goto("/assess/controls");
+  check("dropping the absolute-cap marker forces re-login even with a live token",
+    page.url().includes("/login"), page.url());
+  await ctx.close();
+}
+
+{
+  // Logout CSRF (/cso LOW-1): a cross-site GET to /logout must NOT sign the user
+  // out; a same-origin one must. context.request shares the context cookie jar,
+  // so the session rides along either way — only the sec-fetch-site header differs.
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const page = await ctx.newPage();
+  await page.goto("/login");
+  await page.fill("#email", PM.email);
+  await page.fill("#password", PM.password);
+  await submitAction(page, () => page.click('form button[type="submit"]:has-text("Sign in")'));
+
+  await ctx.request.get("/logout", { headers: { "sec-fetch-site": "cross-site" } }).catch(() => {});
+  await page.goto("/assess/controls");
+  check("a cross-site GET to /logout does NOT sign the user out (CSRF refused)",
+    !page.url().includes("/login"), page.url());
+
+  await ctx.request.get("/logout", { headers: { "sec-fetch-site": "same-origin" } }).catch(() => {});
+  await page.goto("/assess/controls");
+  check("a same-origin logout DOES sign the user out",
+    page.url().includes("/login"), page.url());
+  await ctx.close();
+}
+
 const boss = await session(BOSS.email, BOSS.password);
 check("assessor/admin signs in", !boss.page.url().includes("/login"), boss.page.url());
 

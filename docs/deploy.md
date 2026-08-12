@@ -234,22 +234,37 @@ appeared. See N21 for how that changes the verification.
   re-reading now that it is real rather than hypothetical, and worth the
   informal IT sign-off that document suggests.
 - **Rotate the secret key when the pilot ends** (`docs/STATUS.md` open items).
-- **Session lifetime is long, deliberately unbounded, and worth a decision.**
-  The session cookie is a *persistent* one: `@supabase/ssr` sets a 400-day
-  max-age, so closing the browser does not sign you out, and the proxy refreshes
-  it on every request. Two knobs, neither of them set today:
-  - **Supabase → Authentication → Sessions** — "time-box user sessions" (an
-    absolute cap) and "inactivity timeout". Both are unset, so a session in
-    regular use renews indefinitely.
-  - `SESSION_COOKIE.maxAge` in `lib/supabase/cookies.ts` — a browser-side bound,
-    independent of the server setting.
-
-  For a bank's internal tool this should probably be bounded rather than left at
-  the library default. It is a policy call, not a code one, which is why it is
-  written down here instead of guessed at.
+- **Session lifetime — BOUNDED in code, 2026-08-12 (owner policy).** The
+  `@supabase/ssr` default was a rolling 400-day cookie — closing the browser did
+  not sign you out and the session renewed indefinitely. Now bounded:
+  - **Idle timeout — 8h (code).** `SESSION_COOKIE.maxAge = 60*60*8` in
+    `lib/supabase/cookies.ts`. The proxy re-issues the cookie on each token
+    rotation, so the 8h clock rolls on activity → an unused session dies after
+    8h. Safe above the 15-min access-token TTL (≥2× with wide headroom).
+  - **Absolute cap — 12h (code).** A separate marker cookie `cap.sess_start`
+    (`SESSION_START_COOKIE`) set once at login with a fixed 12h maxAge, never
+    rolled. `lib/auth.ts` reads "live token, marker gone" as expired and forces
+    re-login. `app/logout` clears the marker.
+  - **Set the server-side twins to match (owner, Supabase dashboard).** The code
+    caps are the browser-side backstop; the *authoritative* controls are
+    **Supabase → Authentication → Sessions → "inactivity timeout" (set 8h)** and
+    **"time-box user sessions" (set 12h)**. Set these so a stolen refresh token is
+    bounded server-side too, not only by the cookie.
+  - `scripts/e2e.mjs` asserts the cookie carries an hours-scale expiry (not the
+    400-day default), the marker is set at login, and dropping the marker forces
+    re-login.
 
   What *is* set in code: the session cookie is `httpOnly` and `Secure` in
   production. `@supabase/ssr` defaults `httpOnly` to `false` so a browser-side
   Supabase client can read the token — this app has none, so that default bought
   nothing and exposed the session to any script on the page. `scripts/e2e.mjs`
   asserts both flags and that page JavaScript cannot see the cookie.
+
+- **Logout is CSRF-hardened, 2026-08-12.** `/logout` is state-changing; with
+  `sameSite=lax` a cross-site top-level GET (a foreign `<img src=/logout>` or
+  link) still sent the session cookie and could sign a user out (a nuisance — no
+  data read or changed). `app/logout/route.ts` now refuses any request whose
+  `sec-fetch-site` is `cross-site`; same-origin navigations (our sign-out link,
+  the internal `requireUser` redirects) and typed URLs are unaffected.
+  `scripts/e2e.mjs` asserts a cross-site GET does NOT log out and a same-origin
+  one does.

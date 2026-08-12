@@ -1,9 +1,11 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authClient } from "@/lib/auth";
 import { ASSESS_HUB, safeNext } from "@/lib/routes";
 import { db } from "@/lib/supabase/server";
+import { SESSION_START_COOKIE, SESSION_START_COOKIE_OPTS } from "@/lib/supabase/cookies";
 
 /** One message for every failure — see the note on the sign-in page. */
 const GENERIC = "Email or password not recognised, or that account has not been invited.";
@@ -171,6 +173,12 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
      cannot stop rendering.
      Only the bare default is overridden. An explicit `next` — the path someone
      was trying to reach before being asked to sign in — always wins. */
+  // Absolute-cap marker (owner, 2026-08-12): stamp the session's start with a
+  // fixed 12h maxAge that is never rolled. When the browser drops it at the cap,
+  // lib/auth.ts reads "live token, no marker" as expired and forces re-login.
+  const jar = await cookies();
+  jar.set(SESSION_START_COOKIE, String(Date.now()), SESSION_START_COOKIE_OPTS);
+
   const landing = safe === "/" && invited.data.role === "assessee" ? ASSESS_HUB : safe;
   redirect(landing);
 }
