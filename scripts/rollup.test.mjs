@@ -297,14 +297,59 @@ test("a gap of exactly half a level is a Minor Gap even when the float says othe
   assert.equal(r.health, "minor", "but half a level is half a level");
 });
 
-test("healthOf still separates the three tiers on unambiguous input", () => {
-  assert.equal(healthOf(3, 2.5, false), "ready");
+test("healthOf separates all four tiers on unambiguous input", () => {
+  assert.equal(healthOf(4, 3, false), "above", "a full level clear of target is Above target");
+  assert.equal(healthOf(3, 2.5, false), "ready", "half a level above is still only Role Ready");
   assert.equal(healthOf(2.5, 2.5, false), "ready");
   assert.equal(healthOf(2.2, 2.6, false), "minor");
   assert.equal(healthOf(2.0, 2.6, false), "deficit");
   assert.equal(healthOf(3.0, 2.5, true), "deficit", "escalation overrides a clear pass");
   assert.equal(healthOf(null, 2.5, false), null);
   assert.equal(healthOf(2.5, null, false), null);
+});
+
+/* -------------------------------------------------- 7b. the Above-target tier */
+
+/**
+ * Added 2026-08-10 with the 4th tier (rollup-spec §4). Role Ready used to be
+ * everything at or above target; it now stops just short of a full level above,
+ * and "Above target" begins at exactly one full level clear.
+ */
+test("Above target begins at a full level clear, and escalation still outranks it", () => {
+  assert.equal(healthOf(4, 3, false), "above", "exactly one level above");
+  assert.equal(healthOf(3.5, 2.5, false), "above");
+  assert.equal(healthOf(5, 3, false), "above", "more than a level above");
+  // just short of a full level is Role Ready, not Above
+  assert.equal(healthOf(3.4, 2.5, false), "ready", "0.9 above is not a full level");
+  assert.equal(healthOf(3, 3, false), "ready", "exactly at target is Role Ready, never Above");
+  // a severe single control is a Capability Deficit even a full level above the mean
+  assert.equal(healthOf(4.5, 3, true), "deficit", "escalation beats a full level above");
+});
+
+/**
+ * The FULL_LEVEL boundary is not float-safe on its own — the mirror of test 7.
+ * Both gap sides are means since §3, so an actual that is EXACTLY one level above
+ * target can compute a hair under 1.0: 13/6 - 7/6 is 0.9999999999999998, and a
+ * bare `>= 1.0` would drop it back to Role Ready. Scores are chosen so no control
+ * sits below its own target, or escalation would decide the verdict instead.
+ */
+test("an actual exactly one level above target reads Above despite float underflow", () => {
+  const fw = frameworkOf([
+    { ce: "4.4.2", area: "People", published: 2, controls: [[1], [1], [1], [1], [1], [2]] },
+  ]);
+  const r = rollupCe(
+    fw,
+    assessmentOf({
+      "4.4.2.1": 2, "4.4.2.2": 2, "4.4.2.3": 2,
+      "4.4.2.4": 2, "4.4.2.5": 2, "4.4.2.6": 3,
+    }),
+    "4.4.2",
+  );
+  assert.equal(r.escalated_by.length, 0, "no control is below its own target");
+  assert.equal(r.target, 7 / 6);
+  assert.equal(r.actual, 13 / 6);
+  assert.ok(r.actual - r.target < 1, `the raw float is a hair under a full level: ${r.actual - r.target}`);
+  assert.equal(r.health, "above", "one full level above is Above target even when the float says 0.999…");
 });
 
 /* ---------------------------------------------------------- 8. escalation */

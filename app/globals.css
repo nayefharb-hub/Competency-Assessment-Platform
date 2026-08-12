@@ -11,6 +11,8 @@
   --on-navy: #eaf1f8;
   --accent: #2e6be6;
   --accent-weak: #e8f0fe;
+  --above: #5b21b6;
+  --above-bg: #ede9fe;
   --ready: #15803d;
   --ready-bg: #e7f6ec;
   --minor: #b45309;
@@ -82,6 +84,8 @@
     --on-navy: #dde9f5;
     --accent: #5b93f5;
     --accent-weak: #182c46;
+    --above: #a78bfa;
+    --above-bg: #241a3d;
     --ready: #4ade80;
     --ready-bg: #12301f;
     --minor: #fbbf24;
@@ -107,6 +111,8 @@
     --on-navy: #dde9f5;
     --accent: #5b93f5;
     --accent-weak: #182c46;
+    --above: #a78bfa;
+    --above-bg: #241a3d;
     --ready: #4ade80;
     --ready-bg: #12301f;
     --minor: #fbbf24;
@@ -131,6 +137,8 @@
     --on-navy: #eaf1f8;
     --accent: #2e6be6;
     --accent-weak: #e8f0fe;
+    --above: #5b21b6;
+    --above-bg: #ede9fe;
     --ready: #15803d;
     --ready-bg: #e7f6ec;
     --minor: #b45309;
@@ -304,6 +312,8 @@ textarea.input {
   font-weight: 600; padding: 3px 10px; border-radius: var(--radius-pill);
 }
 .pill .dot { width: 7px; height: 7px; border-radius: 50%; }
+.pill-above { background: var(--above-bg); color: var(--above); }
+.pill-above .dot { background: var(--above); }
 .pill-ready { background: var(--ready-bg); color: var(--ready); }
 .pill-ready .dot { background: var(--ready); }
 .pill-minor { background: var(--minor-bg); color: var(--minor); }
@@ -642,12 +652,18 @@ textarea.input {
 }
 .barrow:last-of-type { border-bottom: 0; }
 .barrow .name { font-size: var(--fs-ui); }
-.barrow .name small { display: block; color: var(--ink-muted); font-size: var(--fs-label); }
+/* Indicator text can be long; clip() bounds each label and this clamps the
+   composed line to 3 lines so the meta never towers over its own bar row. */
+.barrow .name small {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--ink-muted); font-size: var(--fs-label); line-height: 1.35;
+}
 .track { position: relative; height: 14px; background: var(--track); border-radius: var(--radius-pill); }
 .actual {
   position: absolute; left: 0; top: 0; height: 100%;
   border-radius: var(--radius-pill); box-shadow: 0 0 0 2px var(--surface);
 }
+.actual.above { background: var(--above); }
 .actual.ready { background: var(--ready); }
 .actual.minor { background: var(--minor); }
 .actual.deficit { background: var(--deficit); }
@@ -658,6 +674,48 @@ textarea.input {
 .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--fs-sm); color: var(--ink-muted); margin-top: 14px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* ---------- results: narrative lines, area radar, capability-by-area ---------- */
+.narrative { margin: 4px 0 20px; display: grid; gap: 8px; }
+.narrative p { font-size: var(--fs-ui); line-height: 1.5; color: var(--ink); max-width: var(--measure); margin: 0; }
+.narrative p b { font-weight: 650; }
+
+/* The radar is the centrepiece: a large triangle centred in its panel, with the
+   per-area figures read directly beneath it and a compact actual/target key. */
+.radarwrap {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  margin: 4px 0 22px; padding: 20px 18px 18px;
+  border: 1px solid var(--border); border-radius: var(--radius-in); background: var(--surface-2);
+}
+.radarwrap .arearadar { width: 100%; max-width: 340px; height: auto; }
+.radarwrap .rvalues { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 28px; }
+.radarwrap .rvalues .arow {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: var(--fs-sm); color: var(--ink-muted);
+}
+.radarwrap .rvalues .arow b { color: var(--ink); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
+.radarwrap .rvalues .arow b .muted { font-weight: 500; }
+.radarwrap .rkey { display: flex; gap: 20px; font-size: var(--fs-sm); color: var(--ink-muted); }
+.radarwrap .rkey .k { display: inline-flex; align-items: center; gap: 8px; }
+.radarwrap .rkey .sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
+.radarwrap .rkey .sw.act { background: var(--accent); }
+.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ink-muted); }
+svg.arearadar .grid { fill: none; stroke: var(--border); stroke-width: 1; }
+svg.arearadar .spoke { stroke: var(--border); stroke-width: 1; }
+svg.arearadar .tgt { fill: var(--ink-muted); fill-opacity: 0.10; stroke: var(--ink-muted); stroke-width: 1.75; stroke-dasharray: 4 3; }
+svg.arearadar .act { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 2.5; }
+svg.arearadar .dot { fill: var(--accent); stroke: var(--surface-2); stroke-width: 1.5; }
+svg.arearadar .lab { fill: var(--ink); font-size: 12px; font-weight: 640; }
+svg.arearadar .tick { fill: var(--ink-muted); font-size: 9px; }
+
+/* Capability list, grouped by area (Perspective · People · Practice). */
+.cesection { margin-bottom: 6px; }
+.cehead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin: 20px 0 2px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+}
+.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; }
+.cehead .cehead-val { font-size: var(--fs-sm); color: var(--ink); }
 
 /* ---------- review + admin ---------- */
 .rrow { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }

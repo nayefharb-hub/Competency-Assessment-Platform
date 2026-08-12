@@ -2059,8 +2059,16 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   const results = await boss.page.content();
   check("results render the gap list", results.includes("CAPABILITY BY COMPETENCE ELEMENT"));
   check("health tiers carry a label, never colour alone",
-    results.includes("Role Ready") || results.includes("Minor Gap") || results.includes("Capability Deficit"));
+    results.includes("Above target") || results.includes("Role Ready") ||
+    results.includes("Minor Gap") || results.includes("Capability Deficit"));
+  // The 4th tier (Above target, 2026-08-10) reaches the page unconditionally via
+  // the legend — the arithmetic is unit-tested; this proves the label ships.
+  check("the legend names the 4th tier, Above target", results.includes("Above target"));
+  check("the 3-axis area radar renders",
+    results.includes('class="arearadar"') || results.includes("Area radar"));
+  check("per-area narrative lines render", results.includes('class="narrative"'));
   check("weakest control shown beside the mean", results.includes("weakest"));
+  // The radar plots 0–5 levels, never percentages — the no-percentage rule holds.
   check("no percentage-of-target anywhere", !/%\s*of\s*target/i.test(results));
 
   await pm.page.goto("/results");
@@ -2102,14 +2110,15 @@ console.log("\n[8] Locked record and cross-user access");
 console.log("\n[9] Rollup arithmetic recomputed from the database");
 {
   const { data: rows } = await db.from("score")
-    .select("assessor_level, control:control_id(code, active, competence_element:ce_id(code, target_level))")
+    .select("assessor_level, control:control_id(code, active, competence_element:ce_id(code, name, target_level))")
     .eq("assessment_id", assessmentId).limit(5000);
 
   const byCe = new Map();
   for (const r of rows) {
     const c = r.control;
     if (!c.active || r.assessor_level === null) continue;
-    const g = byCe.get(c.competence_element.code) ?? { levels: [], target: c.competence_element.target_level };
+    const g = byCe.get(c.competence_element.code)
+      ?? { levels: [], name: c.competence_element.name, target: c.competence_element.target_level };
     g.levels.push(r.assessor_level);
     byCe.set(c.competence_element.code, g);
   }
@@ -2118,11 +2127,13 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     byCe.get("4.3.2").levels.length === 6, `${byCe.get("4.3.2").levels.length}`);
 
   await boss.page.goto(`/results?a=${assessmentId}`);
+  // Rows now lead with the CE NAME (the code was dropped), so match the row's
+  // first line to the name exactly, then assert the mean appears in that row.
   const shown = await boss.page.locator(".barrow").allInnerTexts();
   let matched = 0;
-  for (const [code, g] of byCe) {
+  for (const [, g] of byCe) {
     const mean = (g.levels.reduce((s, n) => s + n, 0) / g.levels.length).toFixed(1);
-    if (shown.some((row) => row.includes(code) && row.includes(mean))) matched++;
+    if (shown.some((row) => row.split("\n")[0].trim() === g.name && row.includes(mean))) matched++;
   }
   check("every CE mean on the page equals mean(assessor_level over active controls)",
     matched === byCe.size, `${matched}/${byCe.size}`);
@@ -2145,25 +2156,27 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
    */
   {
     const { data: snapRows } = await db.from("target_snapshot")
-      .select("target_level, control:control_id(code, active, competence_element:ce_id(code))")
+      .select("target_level, control:control_id(code, active, competence_element:ce_id(code, name))")
       .eq("assessment_id", assessmentId).limit(5000);
     const targetByCe = new Map();
     for (const s of snapRows ?? []) {
       const c = s.control;
       if (!c?.active || s.target_level === null) continue;
-      const list = targetByCe.get(c.competence_element.code) ?? [];
-      list.push(s.target_level);
-      targetByCe.set(c.competence_element.code, list);
+      const g = targetByCe.get(c.competence_element.code)
+        ?? { levels: [], name: c.competence_element.name };
+      g.levels.push(s.target_level);
+      targetByCe.set(c.competence_element.code, g);
     }
     check("snapshot covers all 28 competence elements", targetByCe.size === 28, `${targetByCe.size}`);
 
     let tMatched = 0;
     const misses = [];
-    for (const [code, levels] of targetByCe) {
-      const target = (levels.reduce((s, n) => s + n, 0) / levels.length).toFixed(1);
-      const row = shown.find((t) => t.includes(`${code} ·`) || t.includes(`${code}\n`));
+    for (const [code, g] of targetByCe) {
+      const target = (g.levels.reduce((s, n) => s + n, 0) / g.levels.length).toFixed(1);
+      // Match the row by its CE name (first line), then assert the target reads "/ <target>".
+      const row = shown.find((t) => t.split("\n")[0].trim() === g.name);
       if (row && row.includes(`/ ${target}`)) tMatched++;
-      else misses.push(`${code} wanted / ${target}`);
+      else misses.push(`${code} (${g.name}) wanted / ${target}`);
     }
     check("every CE target on the page equals mean(SNAPSHOT target over active controls)",
       tMatched === targetByCe.size, `${tMatched}/${targetByCe.size} ${JSON.stringify(misses.slice(0, 3))}`);
@@ -2171,7 +2184,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
     // A fraction must actually reach the screen, or the whole change is invisible:
     // 6 of 28 competencies have a mean their old published integer never equalled.
     const fractional = [...targetByCe.values()]
-      .filter((ls) => (ls.reduce((s, n) => s + n, 0) / ls.length) % 1 !== 0).length;
+      .filter((g) => (g.levels.reduce((s, n) => s + n, 0) / g.levels.length) % 1 !== 0).length;
     check("at least one CE target is genuinely fractional, so one decimal is load-bearing",
       fractional > 0, `${fractional} of ${targetByCe.size}`);
   }
@@ -2187,7 +2200,7 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
    * N21 caught — so it is built rather than hoped for.
    */
   const { data: ceRows } = await db.from("competence_element")
-    .select("id, code, target_level, control(id, code, active, target_level)")
+    .select("id, code, name, target_level, control(id, code, active, target_level, indicator)")
     .limit(200);
   /*
    * ceTarget is the MEAN of the active control targets, which is what the page
@@ -2208,7 +2221,9 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   if (!fat) {
     check("a CE with 5+ active targeted controls exists to test escalation", false);
   } else {
-    const victim = fat.actives[0];
+    // Prefer a victim WITH an indicator, so the "names not codes" assertions
+    // below have text to check; fall back to the first active if none has one.
+    const victim = fat.actives.find((c) => c.indicator) ?? fat.actives[0];
     const low = Math.max(0, victim.target_level - 2);
     const restore = new Map();
     const { data: before } = await db.from("score")
@@ -2231,20 +2246,46 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
       mean >= fat.ceTarget, `mean ${mean.toFixed(2)} vs target ${fat.ceTarget.toFixed(2)}`);
 
     await boss.page.goto(`/results?a=${assessmentId}`);
-    // Anchor on "<code> ·" rather than a bare substring: CE 4.4.3 is a prefix of
-    // control 4.4.3.2, so includes() happily returns a DIFFERENT element's row —
-    // which is how the first version of this check reported a failure against a
-    // row that was in fact rendering correctly.
+    // The competency row now leads with the CE NAME (codes are meaningless to a
+    // PM), so locate it by name. Match the FIRST LINE exactly, not a substring:
+    // the name is the row's first text node, and an exact match avoids the
+    // prefix trap the old `${code} ·` anchor existed to dodge (one CE name being
+    // a substring of another would otherwise grab the wrong row).
     const rows = await boss.page.locator(".barrow").allInnerTexts();
-    const row = rows.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
-    const where = `ce ${fat.code} victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
+    const row = rows.find((t) => t.split("\n")[0].trim() === fat.name);
+    const where = `ce ${fat.code} (${fat.name}) victim ${victim.code}: ${JSON.stringify(row ?? rows.slice(0, 2))}`;
 
+    // The screen shows the indicator TIDIED (trailing OCR junk stripped) and
+    // CLIPPED (long ones truncated with …). Both only ever touch the tail, so a
+    // 30-char leading prefix of the raw indicator always survives to the row —
+    // a robust, non-vacuous anchor that a control code could never satisfy.
+    const vicPrefix = (victim.indicator ?? "").slice(0, 30);
     check("escalated CE still reads Capability Deficit",
       !!row && row.includes("Capability Deficit"), where);
     check("the page names the control that forced it, not just the verdict",
-      !!row && row.includes(`deficit driven by ${victim.code}`), where);
+      !!row && row.includes("deficit driven by") && (!vicPrefix || row.includes(vicPrefix)), where);
+    check("it names that control by its indicator text, not its opaque code",
+      !!row && !!victim.indicator && !row.includes(victim.code), where);
     check("and states what that control scored against its own target",
       !!row && row.includes(`scored ${low} against target ${victim.target_level}`), where);
+
+    /*
+     * The capability list is grouped by area (Perspective · People · Practice),
+     * each area its own section with a header — replacing the flat, gap-sorted
+     * list and the development-plan table that used to sit below it.
+     */
+    const areaHeads = (await boss.page.locator(".cehead h4").allInnerTexts()).map((t) => t.trim());
+    check("the capability list is grouped into exactly the three areas",
+      areaHeads.length === 3 && ["Perspective", "People", "Practice"].every((a) => areaHeads.includes(a)),
+      `heads: ${JSON.stringify(areaHeads)}`);
+    // Each section must actually hold competency rows — a header with no bars
+    // under it would mean the grouping dropped a whole area's results.
+    const sectionCounts = await boss.page.locator(".cesection").evaluateAll(
+      (secs) => secs.map((s) => s.querySelectorAll(".barrow").length),
+    );
+    check("every area section contains at least one competency row",
+      sectionCounts.length === 3 && sectionCounts.every((n) => n > 0),
+      `per-section barrow counts: ${JSON.stringify(sectionCounts)}`);
 
     // The note must never appear on a row that is not a deficit — otherwise it
     // is explaining a verdict that was never given.
@@ -2271,16 +2312,18 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
 
     await boss.page.goto(`/results?a=${assessmentId}`);
     const rows2 = await boss.page.locator(".barrow").allInnerTexts();
-    const row2 = rows2.find((t) => t.includes(`${fat.code} ·`) || t.includes(`${fat.code}\n`));
-    const where2 = `ce ${fat.code}: ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
+    const row2 = rows2.find((t) => t.split("\n")[0].trim() === fat.name);
+    const where2 = `ce ${fat.code} (${fat.name}): ${JSON.stringify(row2 ?? rows2.slice(0, 2))}`;
 
     // Named + counted: one control is named, the rest are counted. With two
     // escalating it must say "and 1 more" — not "1 more" of a total of two,
     // and not "2 more" counting the one it already named.
+    // 30-char leading prefix, same reasoning as above (tidy/clip touch only the tail).
+    const prefixOf = (c) => (c.indicator ?? c.code).slice(0, 30);
     check("a second escalating control is counted, not silently dropped",
       !!row2 && row2.includes("and 1 more"), where2);
     check("the named control is still one of the escalating ones",
-      !!row2 && (row2.includes(`driven by ${victim.code}`) || row2.includes(`driven by ${second.code}`)),
+      !!row2 && (row2.includes(prefixOf(victim)) || row2.includes(prefixOf(second))),
       where2);
 
     await db.from("score").upsert(

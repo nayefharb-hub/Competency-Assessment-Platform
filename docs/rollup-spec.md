@@ -74,19 +74,59 @@ honest.
 It stays as the APM published reference, so the anchor is recoverable if this
 decision is ever revisited.
 
-### 4. Health status (3-tier)
+### 4. Health status (4-tier)
 Let `gap = target(CE) - actual(CE)`. **Both sides are fractional** since §3 —
 the actual has always been a mean, and the target is now one too. Compare before
 rounding; rounding first would move a boundary case across a tier.
 
 | Status | Condition |
 |---|---|
-| **Role Ready** | `actual >= target` |
+| **Above target** | `actual >= target + 1.0` (a full level or more clear of target) |
+| **Role Ready** | `target <= actual < target + 1.0` (at target, up to just under a full level above) |
 | **Minor Gap** | `0 < gap <= 0.5` |
 | **Capability Deficit** | `gap > 0.5` **OR** any single active control scores **2+ levels below its own target** |
 
 The single-control escalation is deliberate: one severe gap makes the CE a
-deficit even when the mean looks acceptable.
+deficit even when the mean looks acceptable. **Escalation outranks every other
+tier, including Above target** — a competency whose mean is a full level clear of
+target is still a Capability Deficit if one active control sits 2+ levels below
+its own target. The severe-control test is checked first, so the tier table above
+only decides the verdict once escalation has not.
+
+**CHANGED 2026-08-10, owner's decision, for the pilot — a 3-tier model became
+four.** This section previously read *"Health status (3-tier)"* with exactly
+three rows: **Role Ready** at `actual >= target`, then Minor Gap and Capability
+Deficit as above. The whole of "at or above target" was one tier.
+
+**Why it changed.** "Role Ready" collapsed *at target* and *comfortably past it*
+into a single verdict, so a PM sitting exactly on the bar and a PM a level and a
+half above it read identically on the results screen — the report could not
+recognise strength, only adequacy and shortfall. The pro reports this screen was
+measured against (Provek PMA, Comaea) all distinguish *meets* from *exceeds*. The
+split rewards genuine over-performance and gives the assessor a truer shape to
+read. Role Ready now means precisely *at target, up to just under a full level
+above*; **Above target** is a full level or more clear.
+
+**Why a full level, not a half.** A half-level band would have made "Above
+target" common and "Role Ready" a knife-edge — most at-or-above competencies sit
+within half a level of target, so the split would have moved the bulk of them into
+"Above" and left Role Ready meaning almost exactly-on-target-only. A full level is
+a deliberate, visible margin: the PM is clearly operating a rung above what the
+role asks. (Owner's call between half, full and any-amount-above; a full level was
+chosen so "Above target" reads as a real distinction rather than routine.)
+
+**The `1.0` boundary is inclusive and carries the same float tolerance as the
+half-level one.** Since §3 both sides are means, an actual that is *exactly* one
+level above target — `10/3` against `7/3`, say — can render a hair under `1.0` in
+IEEE754, and a bare `>= 1.0` would drop it back to Role Ready. So the engine tests
+`actual - target >= 1 - 1e-9` (`FULL_LEVEL` in `lib/rollup.ts`), the mirror of
+`HALF_LEVEL`. As with the half-level threshold this is a *comparison* tolerance,
+never rounding, and it must **not** leak into the exact `gap <= 0` Role Ready
+floor — the same rule the `HALF_LEVEL` comment states for its own boundary.
+
+**What is unchanged.** Minor Gap and Capability Deficit are untouched, the
+escalation rule is untouched, and the "compare before rounding" discipline is
+untouched. Only the top of the scale gained a rung.
 
 **Escalation must be explained where it changed the verdict.** "Even when the
 mean looks acceptable" is the whole point of the rule, and it is also what makes
@@ -184,8 +224,14 @@ flag alongside the target; that is a schema change and deserves its own review.
 - Numbers on results charts use the **0–5 scale — never percentages**. Converting a
   6-point label scale to a percentage implies equal intervals that don't exist.
 - The scoring interface uses **labels**; results charts show numbers.
-- **No radar chart** — a gap-sorted bar list answers "where are the gaps" better
-  than 28 axes.
+- **No 28-competency radar** — a gap-sorted bar list answers "where are the gaps"
+  better than 28 axes, which render as an unreadable hairball. A **3-axis area
+  radar** (People · Practice · Perspective, actual vs target) **is allowed and is
+  shipped**, because three axes are legible and give the summary a recognisable
+  shape at a glance. **CHANGED 2026-08-10** — this line read "No radar chart" flat;
+  the reversal is scoped to the three areas and the 28-axis objection stands
+  unchanged for competencies. The area radar is hand-drawn inline SVG (no charting
+  dependency), and it plots the 0–5 levels, never percentages.
 - Target provenance (APM-published vs KIB-derived) is **not** shown in results; it
   lives on the framework data only.
 - **CE targets display to one decimal** (`2.6`), because since §3 they are means

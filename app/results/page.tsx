@@ -6,6 +6,8 @@ import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
 import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
+import { areaNarrative, gapsOf, tidyIndicator } from "@/lib/narrative";
+import { AreaRadar } from "./area-radar";
 import type { Assessment, CeResult, Health } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -34,23 +36,71 @@ function HealthPill({ health }: { health: Health | null }) {
  * more than half a level short the badge needs no defence, and explaining it
  * anyway would train people to skim past the line in the case that matters.
  */
-function escalationNote(r: CeResult): string | null {
+/**
+ * Some ICB4 indicators run long (41 of 132 active exceed 80 chars even after
+ * `tidyIndicator` strips extraction junk), and the meta line sits in a fixed
+ * 190px column. Clip the DISPLAYED label so one competency's weakest control
+ * cannot become a wall of text under its name; the full text rides in the row's
+ * `title` for hover. Clip on a word boundary where one is near the end.
+ */
+function clip(s: string, n = 66): string {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n - 1);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > n - 18 ? cut.slice(0, sp) : cut).trimEnd() + "…";
+}
+
+function escalationNote(
+  r: CeResult,
+  label: (code: string) => string,
+): { display: string; full: string } | null {
   if (!r.escalation_drove_health || r.escalated_by.length === 0) return null;
   const [first, ...rest] = r.escalated_by;
   const more = rest.length === 0 ? "" : ` and ${rest.length} more`;
-  return ` · deficit driven by ${first.control_code}, scored ${first.level} against target ${first.target}${more}`;
+  const t = label(first.control_code);
+  const tail = `”, scored ${first.level} against target ${first.target}${more}`;
+  return {
+    display: `deficit driven by “${clip(t)}${tail}`,
+    full: `deficit driven by “${t}${tail}`,
+  };
 }
 
-function Bar({ r }: { r: CeResult }) {
+/**
+ * The line under a competency name, naming the control(s) that drive its verdict
+ * BY INDICATOR TEXT rather than by code (4.4.10.1 means nothing to a PM — the
+ * indicator it stands for does). `label` resolves a control code to its ICB4
+ * indicator, falling back to the code if the framework has no text for it.
+ * Returns a clipped `display` string and the untruncated `full` string (row title).
+ */
+function metaLine(
+  r: CeResult,
+  label: (code: string) => string,
+): { display: string; full: string } | null {
+  const display: string[] = [];
+  const full: string[] = [];
+  if (r.weakest) {
+    const t = label(r.weakest.control_code);
+    display.push(`weakest: “${clip(t)}” (${r.weakest.level})`);
+    full.push(`weakest: “${t}” (${r.weakest.level})`);
+  }
+  const esc = escalationNote(r, label);
+  if (esc) {
+    display.push(esc.display);
+    full.push(esc.full);
+  }
+  if (!display.length) return null;
+  return { display: display.join(" · "), full: full.join(" · ") };
+}
+
+function Bar({ r, label }: { r: CeResult; label: (code: string) => string }) {
+  const meta = metaLine(r, label);
   return (
     <div className="barrow">
       <div className="name">
         {r.ce_name}
-        <small>
-          {r.ce_code}
-          {r.weakest && ` · weakest ${r.weakest.control_code} (${r.weakest.level})`}
-          {escalationNote(r)}
-        </small>
+        {meta && (
+          <small title={meta.full !== meta.display ? meta.full : undefined}>{meta.display}</small>
+        )}
       </div>
       <div className="track">
         {r.target !== null && <div className="target" style={{ left: pct(r.target) }} />}
@@ -99,10 +149,16 @@ export default async function ResultsPage({
 
   const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
-  const sorted = sortByGap(results);
+  const gapRows = gapsOf(results);
   const initials = assessment.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
-  const gaps = results.filter((r) => r.health === "minor" || r.health === "deficit").length;
+  const gaps = gapRows.length;
   const revised = assessment.scores.filter((s) => s.assessor_touched).length;
+
+  // Resolve a control code to its ICB4 indicator text, so the report names
+  // controls by what they mean, not by "4.4.10.1". tidyIndicator strips the
+  // extraction junk a few indicators carry; falls back to the code if absent.
+  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
 
   return (
     <div className="section">
@@ -169,12 +225,35 @@ export default async function ResultsPage({
           })}
         </div>
 
-        <div className="cap" style={{ marginBottom: 6 }}>
-          CAPABILITY BY COMPETENCE ELEMENT · sorted by gap · actual vs target on 0–5
+        <AreaRadar areas={areas} />
+
+        <div className="narrative">
+          {areas.map((ar) => (
+            <p key={ar.area}>
+              {areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel)}
+            </p>
+          ))}
         </div>
-        {sorted.map((r) => (
-          <Bar key={r.ce_code} r={r} />
-        ))}
+
+        <div className="cap" style={{ marginBottom: 6 }}>
+          CAPABILITY BY COMPETENCE ELEMENT · grouped by area · most serious first · actual vs target on 0–5
+        </div>
+        {areas.map((ar) => {
+          const rows = sortByGap(results.filter((r) => r.area === ar.area));
+          return (
+            <section className="cesection" key={ar.area}>
+              <div className="cehead">
+                <h4>{ar.area}</h4>
+                <span className="cehead-val tnum">
+                  {fmtLevel(ar.actual)} <span className="muted">/ {fmtLevel(ar.target)}</span>
+                </span>
+              </div>
+              {rows.map((r) => (
+                <Bar key={r.ce_code} r={r} label={controlLabel} />
+              ))}
+            </section>
+          );
+        })}
 
         <div className="scaleline">
           <div />
@@ -187,6 +266,10 @@ export default async function ResultsPage({
         </div>
 
         <div className="legend">
+          <span>
+            <i style={{ background: "var(--above)" }} />
+            Above target
+          </span>
           <span>
             <i style={{ background: "var(--ready)" }} />
             Role Ready
@@ -207,7 +290,7 @@ export default async function ResultsPage({
 
         <p className="note" style={{ marginTop: 14 }}>
           Actual is the mean of approved scores across each element’s active controls; the
-          weakest control is shown alongside so a single serious gap is not absorbed by the
+          weakest control is named alongside so a single serious gap is not absorbed by the
           average. This report supports a decision — it does not approve, reject or gate one.
         </p>
       </div>

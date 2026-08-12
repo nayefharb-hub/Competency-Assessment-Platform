@@ -191,7 +191,7 @@ export interface CompletionStats {
 
 /* ---------- rollup output ---------- */
 
-export type Health = "ready" | "minor" | "deficit";
+export type Health = "above" | "ready" | "minor" | "deficit";
 
 export interface CeResult {
   ce_code: string;
