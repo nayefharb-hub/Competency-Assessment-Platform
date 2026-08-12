@@ -245,11 +245,17 @@ appeared. See N21 for how that changes the verification.
     (`SESSION_START_COOKIE`) set once at login with a fixed 12h maxAge, never
     rolled. `lib/auth.ts` reads "live token, marker gone" as expired and forces
     re-login. `app/logout` clears the marker.
-  - **Set the server-side twins to match (owner, Supabase dashboard).** The code
-    caps are the browser-side backstop; the *authoritative* controls are
-    **Supabase → Authentication → Sessions → "inactivity timeout" (set 8h)** and
-    **"time-box user sessions" (set 12h)**. Set these so a stolen refresh token is
-    bounded server-side too, not only by the cookie.
+  - **Server-side twins — PRO-PLAN ONLY, deferred for the pilot (owner,
+    2026-08-12).** Supabase gates "inactivity timeout" and "time-box user
+    sessions" (Authentication → Sessions) behind the Pro plan, and the pilot
+    stays on Free. So the **code caps above are the mechanism, not a backstop**,
+    for the pilot — they enforce 8h/12h for any session used through this app.
+    The one thing the server-side twins would add: bounding a raw refresh token
+    replayed *directly against Supabase's token endpoint*, bypassing our app.
+    That needs the `httpOnly` session cookie stolen off the device (no XSS path —
+    the cookie is `httpOnly`), and the access token is already 15 min, so the
+    residual is a broader-rollout concern, not a 9-person-pilot one. Revisit
+    (upgrade + set 8h/12h) if this ever faces more than known KIB staff.
   - `scripts/e2e.mjs` asserts the cookie carries an hours-scale expiry (not the
     400-day default), the marker is set at login, and dropping the marker forces
     re-login.

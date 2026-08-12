@@ -984,6 +984,12 @@ for (const hostile of [
   check("a cross-site GET to /logout does NOT sign the user out (CSRF refused)",
     !page.url().includes("/login"), page.url());
 
+  // same-site too: a sibling subdomain on a future custom apex must not forge it.
+  await ctx.request.get("/logout", { headers: { "sec-fetch-site": "same-site" } }).catch(() => {});
+  await page.goto("/assess/controls");
+  check("a same-site GET to /logout does NOT sign the user out (sibling-subdomain CSRF refused)",
+    !page.url().includes("/login"), page.url());
+
   await ctx.request.get("/logout", { headers: { "sec-fetch-site": "same-origin" } }).catch(() => {});
   await page.goto("/assess/controls");
   check("a same-origin logout DOES sign the user out",
