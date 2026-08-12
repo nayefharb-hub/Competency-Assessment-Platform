@@ -142,6 +142,81 @@ export async function DepartmentOverview({
         </div>
       </div>
 
+      {/* --------------------------------------------------- include / exclude */}
+      {/* Above the capability, not below it (owner, 2026-08-12): you choose who
+          counts BEFORE you read the figure, so the number you see is already the
+          one you meant. */}
+      {approved.length > 0 && (
+        <div className="card pad" style={{ marginTop: 20 }}>
+          <div className="cap" style={{ marginBottom: 8 }}>INCLUDE IN THE DEPARTMENT FIGURE</div>
+          <p className="note" style={{ marginTop: 0 }}>
+            Choose who counts before you read the figure below — exclude anyone who would skew it,
+            a leaver, a brand-new joiner, or your own self-assessment. The capability recomputes
+            from who is included.
+          </p>
+          <ul className="picklist">
+            {approved.map((a) => {
+              const on = !exclude.has(a.id);
+              return (
+                <li key={a.id}>
+                  <Link className="card pad ce-row" href={toggleHref(a.id)}>
+                    <div className="ce-main">
+                      <b style={{ textDecoration: on ? "none" : "line-through", opacity: on ? 1 : 0.55 }}>
+                        {a.assessee_name}
+                      </b>
+                    </div>
+                    <span className={`pill pill-${on ? "ready" : "neutral"}`}>
+                      <span className="dot" />{on ? "Included" : "Excluded"}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* --------------------------------------------------- per-person summary */}
+      {/* At the top with the include/exclude control (owner, 2026-08-12): review
+          each person and choose who counts, THEN read the department aggregate
+          below. */}
+      {dept.perPerson.length > 0 && (
+        <div className="card pad" style={{ marginTop: 20 }}>
+          <div className="cap" style={{ marginBottom: 6 }}>
+            EACH PERSON · resource for the team vs. where development would help
+          </div>
+          <div className="tablewrap">
+            <table className="grid stacked">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  {AREA_ORDER.map((a) => <th className="num" key={a}>{a.slice(0, 4)}</th>)}
+                  <th>Strongest</th>
+                  <th>Development</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {dept.perPerson.map((p) => {
+                  const areaVal = (name: string) => p.areas.find((a) => a.area === name)?.actual ?? null;
+                  return (
+                    <tr key={p.assessment_id}>
+                      <td data-label="Name"><Link href={`/analysis?a=${p.assessment_id}`}>{p.assessee_name}</Link></td>
+                      {AREA_ORDER.map((a) => (
+                        <td className="num tnum" data-label={a.slice(0, 4)} key={a}>{fmtLevel(areaVal(a))}</td>
+                      ))}
+                      <td data-label="Strongest">{p.strongest ? p.strongest.ce_name : "—"}</td>
+                      <td data-label="Development">{p.weakest ? p.weakest.ce_name : "—"}</td>
+                      <td data-label=""><Link href={`/analysis?a=${p.assessment_id}`}>Open</Link></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* --------------------------------------------------- department capability */}
       <div className="card pad" style={{ marginTop: 20 }}>
         <div className="cap" style={{ marginBottom: 4 }}>DEPARTMENT CAPABILITY</div>
@@ -239,73 +314,6 @@ export async function DepartmentOverview({
         )}
       </div>
 
-      {/* --------------------------------------------------- per-person summary */}
-      {dept.perPerson.length > 0 && (
-        <div className="card pad" style={{ marginTop: 20 }}>
-          <div className="cap" style={{ marginBottom: 6 }}>
-            EACH PERSON · resource for the team vs. where development would help
-          </div>
-          <div className="tablewrap">
-            <table className="grid stacked">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  {AREA_ORDER.map((a) => <th className="num" key={a}>{a.slice(0, 4)}</th>)}
-                  <th>Strongest</th>
-                  <th>Development</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {dept.perPerson.map((p) => {
-                  const areaVal = (name: string) => p.areas.find((a) => a.area === name)?.actual ?? null;
-                  return (
-                    <tr key={p.assessment_id}>
-                      <td data-label="Name"><Link href={`/analysis?a=${p.assessment_id}`}>{p.assessee_name}</Link></td>
-                      {AREA_ORDER.map((a) => (
-                        <td className="num tnum" data-label={a.slice(0, 4)} key={a}>{fmtLevel(areaVal(a))}</td>
-                      ))}
-                      <td data-label="Strongest">{p.strongest ? p.strongest.ce_name : "—"}</td>
-                      <td data-label="Development">{p.weakest ? p.weakest.ce_name : "—"}</td>
-                      <td data-label=""><Link href={`/analysis?a=${p.assessment_id}`}>Open</Link></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* --------------------------------------------------- include / exclude */}
-      {approved.length > 0 && (
-        <div className="card pad" style={{ marginTop: 20 }}>
-          <div className="cap" style={{ marginBottom: 8 }}>INCLUDE IN THE DEPARTMENT FIGURE</div>
-          <p className="note" style={{ marginTop: 0 }}>
-            Exclude anyone who would skew the picture — a leaver, a brand-new joiner, or your own
-            self-assessment. The figures above recompute from who is included.
-          </p>
-          <ul className="picklist">
-            {approved.map((a) => {
-              const on = !exclude.has(a.id);
-              return (
-                <li key={a.id}>
-                  <Link className="card pad ce-row" href={toggleHref(a.id)}>
-                    <div className="ce-main">
-                      <b style={{ textDecoration: on ? "none" : "line-through", opacity: on ? 1 : 0.55 }}>
-                        {a.assessee_name}
-                      </b>
-                    </div>
-                    <span className={`pill pill-${on ? "ready" : "neutral"}`}>
-                      <span className="dot" />{on ? "Included" : "Excluded"}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
