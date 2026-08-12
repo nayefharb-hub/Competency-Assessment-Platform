@@ -49,6 +49,19 @@ by construction.
 **This plan builds the measures-based drill-down (item 4 + item 6's reflective
 intent). CE-level ICB4 text stays parked behind D1.**
 
+### Phased delivery (D3/D4, decided by owner 2026-08-12)
+- **Phase 1 (this build):** expanding a competency reveals its controls, each as
+  a compact row — **indicator + per-control score bar + score/target label**.
+  **No measures in Phase 1.** Styling is **"exceptions only" (owner's pick,
+  "Quiet 2")**: on/above-target controls render with a **neutral** bar and no
+  colour; **colour appears only on below-target controls** (deficit/minor), so
+  the eye lands on what needs attention. No per-control health pill — the CE row
+  keeps the verdict pill; the controls stay calm.
+- **Phase 2 (logged, built later):** a control row is a link; clicking it opens
+  **that control's own page** with the full control text and its **measures**.
+  This is where the measures (and eventually the parked CE-level ICB4 text) live.
+  Phase 2 is NOT in this build.
+
 ## The change
 
 ### Data (no new queries, no schema change)
@@ -73,9 +86,11 @@ above it (the exact §6 leak the warning at `rollup.ts:140–153` describes).
   `rollupCe` already uses, so the drill-down and the CE bar can never disagree.
   Worst-first ordering matches `escalated_by`.
 - **Presentation (join in the page, not in rollup):** each `ControlScore` is
-  joined with `control.indicator` (through the existing `tidyIndicator`) and
-  `measuresFor(code)` — both already in memory, **zero** added network. Rollup
-  stays arithmetic-only; presentation stays in the page.
+  joined with `control.indicator` (through the existing `tidyIndicator`) for the
+  row header. **Phase 1 does not render measures** — `measuresFor(code)` is a
+  Phase-2 concern (the control page). Rollup stays arithmetic-only; presentation
+  stays in the page. Both indicator and measures are already in memory, so
+  neither phase adds network.
 - **Score shown as a LABEL, not a bare number** (`labelOf`) — "the PM picks a
   label, never a number" applies to display too; the number stays underneath.
 
@@ -94,10 +109,16 @@ assumed.
 - **Gap competencies (minor/deficit) render open by default**; role-ready and
   above-target render closed (nothing to action, but still inspectable).
 - Expanded content, per active control (from `controlBreakdown`),
-  weakest/escalating first:
-  - indicator (the control name we already show, un-clamped here),
-  - its score **label** vs its own target label, with the health mark,
-  - its **measures** as a short list — the reflective substance.
+  weakest/escalating first — **Phase 1**:
+  - indicator (the control name we already show, un-clamped here), as a **link**
+    to the control's page (the Phase-2 target; the link exists in Phase 1 but its
+    destination page is Phase 2),
+  - a compact per-control **score bar** (target tick + fill),
+  - its score **label** vs its own target label.
+  - **Exceptions-only colour:** the bar is neutral for on/above-target controls;
+    colour (deficit/minor) shows only when the control is below target. No
+    per-control pill.
+  - **No measures** (Phase 2).
 - The inactive control (`4.3.2.6`) never appears. **Guarded invariant, not
   incidental:** `4.3.2.6` *does* carry 4 measures in the seed, so `measuresFor`
   would return them; the drill-down stays clean only because `controlBreakdown`
@@ -113,9 +134,11 @@ assumed.
 ### DESIGN.md
 - New "Capability drill-down" entry + decision-log row (docs in the same diff).
   `<details>` styling: summary is the existing bar row; the panel is indented,
-  measures as a tight list at `--fs-sm`, muted. Theme-aware, both modes.
+  control rows with hairline separators. **Exceptions-only colour** (owner's
+  "Quiet 2"): on/above-target control bars are neutral (`--ink` at low opacity),
+  colour only on below-target rows; no per-control pill. Theme-aware, both modes.
 
-## Tests
+## Tests (Phase 1)
 - **unit (shown failing first, ground rule 0) — the one that matters:**
   `controlBreakdown` on an APPROVED assessment whose `snapshot_targets` DIFFER
   from the live `control.target_level` must return the **snapshot** target. Build
@@ -125,35 +148,33 @@ assumed.
 - **unit:** `controlBreakdown` iterates active controls only (inactive `4.3.2.6`
   absent), worst-shortfall-first ordering, score/target as stored levels.
 - **e2e (walked):** open `/results` for an approved assessment; a gap
-  competency's drill-down is open and lists its weakest control's measures text;
-  a role-ready one is closed; the inactive control is absent.
+  competency's drill-down is open and lists its weakest control's **indicator**
+  and **score/target label** (NOT measures — those are Phase 2); a role-ready one
+  is closed; the inactive control is absent; an on-target control row carries no
+  health-colour class while a below-target one does (the exceptions-only rule).
 - **e2e (new baseline):** the approved-`/results` GET makes exactly N Supabase
   calls (N measured from the server log first) — establishing the count the
   round-trip rule needs, which the drill-down must not move.
 
 ## Open decisions
-Engineering decisions are now closed (the assembly seam is named: `controlBreakdown`
-in `rollup.ts`, snapshot-aware via the existing `controlTarget`/`scoreMap`). What
-remains is **owner-only** (product taste / sourcing), which a plan is allowed to
-carry:
-- **D1 (owner):** source + IPMA licensing for CE-level ICB4 text. Until closed,
-  item 6's literal form is out; the measures drill-down stands on its own.
-- **D3 (owner taste, engineering-trivial):** all competencies expandable, or gaps
-  only? `<details open>` is static either way. Recommend: all expandable, gaps
-  auto-open.
-- **D4 (owner taste, no engineering cost):** measures for a role-ready control —
-  show on demand for all (recommend), only gaps auto-open so no default clutter.
+Engineering decisions are closed (assembly seam: `controlBreakdown` in
+`rollup.ts`, snapshot-aware via the existing `controlTarget`/`scoreMap`).
+- **D3/D4 — RESOLVED (owner, 2026-08-12):** two-phase. **Phase 1** = indicator +
+  score bar + result, no measures, "Quiet 2" exceptions-only colour, gaps
+  auto-open, all expandable. **Phase 2 (logged)** = click a control → its own
+  page with full text + measures.
+- **D1 (owner, parked):** source + IPMA licensing for CE-level ICB4 text. The
+  ICB4 file is now attached for that workstream; measures/CE-text remain a
+  Phase-2+ concern. Phase 1 does not depend on it.
 
 Resolved by the architecture review: **D2** (redaction holds — `/results` is
 approval-gated + full-framework; per-control target is the snapshot) and **D5**
-(native `<details>`, server-rendered open state — no keyboard/AT e2e needed
-beyond "open renders the measures").
+(native `<details>`, server-rendered open state — no keyboard/AT e2e needed).
 
 ## Verdict
-Architecture review: **plan-ready** once the two fixes above are in the plan
-(assembly seam named + snapshot regression test; the round-trip baseline made
-real rather than assumed) — both now folded in. No open engineering decisions;
-D1/D3/D4 are the owner's.
+Architecture review: **plan-ready**; owner has resolved D3/D4 (two-phase, Quiet
+2). Phase 1 is buildable now with no open engineering decisions. D1 (CE-level
+ICB4 text) stays parked for a later phase.
 
 ## Not in scope
 - The CE-target rollup, health tiers, radar, area grouping — all shipped.
