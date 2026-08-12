@@ -566,7 +566,7 @@ const idOf = async (email) =>
  */
 const assessmentOf = async (email) =>
   (await db.from("assessment").select("*").eq("assessee_id", await idOf(email))
-    .is("deleted_at", null).maybeSingle()).data;
+    .is("archived_at", null).maybeSingle()).data;
 
 const { data: activeControls } = await db
   /* ce_id is needed by [16] to find the largest competence element and to skip
@@ -2695,7 +2695,7 @@ console.log("\n[13] Archive instead of destroy (PR B)");
   check("archiving without a reason is refused",
     (await boss.page.content()).includes("the reason is the audit trail"), boss.page.url());
   check("nothing was archived by the refused attempt",
-    (await assessmentOf(PM.email))?.deleted_at == null);
+    (await assessmentOf(PM.email))?.archived_at == null);
 
   await boss.page.goto("/admin/people");
   await boss.page.locator("tr", { hasText: PM.name })
@@ -2705,9 +2705,9 @@ console.log("\n[13] Archive instead of destroy (PR B)");
   await boss.page.waitForURL(/[?&](error|archived)=/);
 
   const gone = (await db.from("assessment").select("*").eq("id", before.id).single()).data;
-  check("deleted_at stamped", gone.deleted_at !== null);
-  check("deleted_by records who archived it", gone.deleted_by === (await idOf(BOSS.email)));
-  check("the reason is stored", gone.deleted_reason === "QA archive test");
+  check("archived_at stamped", gone.archived_at !== null);
+  check("archived_by records who archived it", gone.archived_by === (await idOf(BOSS.email)));
+  check("the reason is stored", gone.archived_reason === "QA archive test");
   check("the scores survive the archive",
     ((await db.from("score").select("*", { count: "exact", head: true })
       .eq("assessment_id", before.id)).count ?? 0) > 0);
@@ -2786,10 +2786,10 @@ console.log("\n[13] Archive instead of destroy (PR B)");
   // accounts on the live allowlist.
   if (reassignWorked) {
     check("the replacement is a fresh draft, not the archived record",
-      reassigned.state === "draft" && reassigned.deleted_at === null);
+      reassigned.state === "draft" && reassigned.archived_at === null);
     check("the archived record is still there beside its replacement",
       ((await db.from("assessment").select("*", { count: "exact", head: true })
-        .eq("assessee_id", pmId).not("deleted_at", "is", null)).count ?? 0) === 1);
+        .eq("assessee_id", pmId).not("archived_at", "is", null)).count ?? 0) === 1);
 
     // restoring while a live one exists would produce two; say so in a sentence
     await boss.page.goto("/admin/people");
@@ -2810,7 +2810,7 @@ console.log("\n[13] Archive instead of destroy (PR B)");
 
   // restore puts it back exactly as it was
   const stillArchived = (await db.from("assessment").select("id")
-    .eq("id", before.id).not("deleted_at", "is", null).maybeSingle()).data;
+    .eq("id", before.id).not("archived_at", "is", null).maybeSingle()).data;
   if (stillArchived) {
     await boss.page.goto("/admin/people");
     await boss.page.locator("tr", { hasText: PM.name })
@@ -2818,7 +2818,7 @@ console.log("\n[13] Archive instead of destroy (PR B)");
     await boss.page.waitForURL(/[?&](error|restored)=/);
   }
   const backAgain = await assessmentOf(PM.email);
-  check("restore clears the archive", backAgain?.deleted_at === null);
+  check("restore clears the archive", backAgain?.archived_at === null);
   check("restore keeps the state it was archived in", backAgain?.state === "approved");
   await boss.page.goto("/review");
   check("a restored assessment is counted again",

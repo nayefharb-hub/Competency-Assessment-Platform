@@ -13,7 +13,7 @@ export default function NotAssigned({
   archived,
 }: {
   cycle: string;
-  archived?: { deleted_at?: string | null; deleted_reason?: string | null } | null;
+  archived?: { archived_at?: string | null; archived_reason?: string | null } | null;
 }) {
   return (
     <div className="section reading">
@@ -25,8 +25,8 @@ export default function NotAssigned({
             </h2>
             <p className="note">
               The Head of PMO archived it
-              {archived.deleted_at ? ` on ${archived.deleted_at.slice(0, 10)}` : ""}
-              {archived.deleted_reason ? `: “${archived.deleted_reason}”` : "."} Nothing
+              {archived.archived_at ? ` on ${archived.archived_at.slice(0, 10)}` : ""}
+              {archived.archived_reason ? `: “${archived.archived_reason}”` : "."} Nothing
               you entered was destroyed — it is kept on the record — but it no longer
               counts toward this cycle and cannot be edited. Speak to the Head of PMO
               if that looks wrong.

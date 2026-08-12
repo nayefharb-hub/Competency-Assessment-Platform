@@ -54,10 +54,15 @@ apply one and forget the other (N1b: nothing records what has been applied).
 app_user.must_change_password  boolean not null default false
 assessment.assigned_at         timestamptz
 assessment.assigned_by         uuid references app_user(id)
-assessment.deleted_at          timestamptz          -- PR B uses these,
-assessment.deleted_by          uuid references app_user(id)   -- added now so
-assessment.deleted_reason      text                 -- there is one migration
+assessment.archived_at          timestamptz          -- PR B uses these,
+assessment.archived_by          uuid references app_user(id)   -- added now so
+assessment.archived_reason      text                 -- there is one migration
 ```
+
+> These three were originally added as `deleted_at`/`deleted_by`/`deleted_reason`
+> by migration 0003 and renamed to `archived_*` in **0006** (2026-08-12): the
+> feature never deletes — it archives, keeping the row, its scores and its
+> timings — so the schema was made to say so.
 
 Also, per the decision above:
 
@@ -170,8 +175,8 @@ it to them. Migration `0004` replaces it with a partial unique index over live
 rows. Verified against the live database, not reasoned about: the insert is
 refused with `duplicate key value violates unique constraint`.
 
-- `archiveAssessment(admin, id, reason)` sets `deleted_at`/`deleted_by`/
-  `deleted_reason`; every read path filters `deleted_at is null`.
+- `archiveAssessment(admin, id, reason)` sets `archived_at`/`archived_by`/
+  `archived_reason`; every read path filters `archived_at is null`.
 - `completionStats` states its rule on screen — "5 finished · 1 archived,
   excluded" — so the number explains itself rather than silently moving (N6).
 - Hard delete stays a deliberate script run for a data-protection request.

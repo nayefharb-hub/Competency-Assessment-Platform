@@ -37,7 +37,7 @@ export default async function ReviewPage({
   // Archived records stay readable — that is the point of archiving rather than
   // deleting — but nothing on them may be changed, and the screen has to say so
   // or an assessor will wonder why the buttons vanished.
-  const isArchived = assessment.deleted_at != null;
+  const isArchived = assessment.archived_at != null;
   const open = assessment.state === "self_submitted" && !isArchived;
 
   const byCe = fw.data.competence_elements
@@ -58,8 +58,8 @@ export default async function ReviewPage({
       {isArchived && (
         <div className="banner banner-warn" role="status">
           This assessment is <b>archived</b>
-          {assessment.deleted_at ? ` (${assessment.deleted_at.slice(0, 10)})` : ""}
-          {assessment.deleted_reason ? ` — “${assessment.deleted_reason}”` : ""}. It is
+          {assessment.archived_at ? ` (${assessment.archived_at.slice(0, 10)})` : ""}
+          {assessment.archived_reason ? ` — “${assessment.archived_reason}”` : ""}. It is
           excluded from the overview and from every completion figure, and nothing on it
           can be changed. Its scores and timings are kept, so the numbers reported for
           this cycle can still be reconciled. Restore it from{" "}
