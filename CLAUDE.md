@@ -1,5 +1,14 @@
 # Competency Assessment Platform
 
+## Working agreement — decision prompts (owner, 2026-08-12)
+When a decision is put to the owner via a question prompt (`AskUserQuestion`),
+**do not proceed on the default if the prompt is unanswered.** A missing answer
+is a **timeout, not a wave-past** — the owner may not have seen or clicked it,
+and treating "no answer" as "proceed with the recommendation" already made a call
+the owner never made. Wait for an explicit selection. If genuinely blocked and
+waiting is not viable, ask again in plain text and hold; never infer consent from
+silence, a timeout, or a "continue" that did not name the choice.
+
 **Two horizons — hold both.**
 
 **Now (the prototype):** an internal web tool for KIB's PMO. Project managers
