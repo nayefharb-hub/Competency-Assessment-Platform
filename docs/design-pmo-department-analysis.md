@@ -87,10 +87,26 @@ Head-of-PMO / admin + assessor only (`requireRole`).
    **weakest** (biggest gap / any escalation), framed as resource vs.
    development. Row links to that person's `/results`.
 
-### Drill — reuse `/results?a=<assessmentId>`
+### Drill — a unified per-person view: "How &lt;person&gt; did" (owner, 2026-08-12)
 
-The per-person area/competency/control view already exists (radar, area headers,
-control drill-down). "Click a person" opens it. No new per-person screen.
+Not just results. One screen shows a person's **capability AND how they worked**,
+together, because pace is the "how much do I trust this result?" context for the
+numbers — reading them side by side is how a reviewer actually thinks. Two
+clicks apart (today: `/results` + `/analysis`) forces you to hold one in your
+head while you fetch the other.
+
+**Composed, not rewritten** — the pilot starts Monday and both `/results` and
+`/analysis` are live. The unified view STACKS the existing engines:
+- **Capability** — the `/results` rollup (radar, area headers, competency +
+  control drill-down), reused as-is.
+- **How they worked** — the `/analysis` pace panel (`summarise` / `summariseByCe`
+  headline + by-competency), reused as-is.
+
+For **staff** both sections show (staff see everything). The existing redaction
+boundary is preserved: an assessee viewing their **own** sees pace always (D21)
+and capability only once approved — the merge is a staff-side consolidation and
+must not widen what a PM can see. Whether `/analysis` is later retired into this
+view is a fast-follow, not a blocker; for now it composes the same components.
 
 ## What is actually new (build is small; risk is concentrated)
 

@@ -13,17 +13,20 @@ aggregation** and **one page**; the per-person view is `/results`, unchanged.
 | Sub-problem | Already exists | New |
 |---|---|---|
 | Per-person rollup (CE/area/control, snapshot-aware) | `rollupAll`, `rollupAreas`, `sortByGap`, `healthOf` | — |
-| Per-person screen (radar, drill-down) | `/results?a=` | — |
+| Capability rollup (radar, drill-down) | `/results` components + `rollupAll` | — |
+| Pace panel (how they worked) | `/analysis` `Headline` + `summarise`/`summariseByCe` | — |
+| Unified per-person view | both of the above | compose them in `/analysis?a=` staff branch |
 | Status board data (everyone + states + scores) | `listAssessments(cycle)` | — |
 | Department aggregate (method A + spread + N-below) | — | `departmentRollup()` in `lib/rollup.ts` |
 | Approved set **with frozen snapshots** | `assembleAssessment` (single only) | `departmentData()` in `lib/db/assessment.ts` |
-| The page | — | `app/department/page.tsx` |
+| The page | `app/analysis/page.tsx` (extend) | department overview + unified drill |
 
 Files touched: `lib/rollup.ts`, `lib/types.ts`, `lib/db/assessment.ts`,
-`app/department/page.tsx` (new), `app/layout.tsx` (nav link),
-`scripts/department.test.mjs` (new), `scripts/e2e.mjs` (assertions), docs. No new
-classes/services — pure functions + one server component. Under the complexity
-smell; no scope reduction needed.
+`app/analysis/page.tsx` (extend: department overview + compose the capability
+section into the staff `?a=` drill), `scripts/department.test.mjs` (new),
+`scripts/e2e.mjs` (assertions), docs. No new classes/services and no new route —
+pure functions + composition into the existing analysis page. Under the
+complexity smell; no scope reduction needed.
 
 ## The architecture trap this plan exists to avoid
 
@@ -38,15 +41,32 @@ frozen at their approval — a rollup-spec §6 violation with no crash and no
 failing test. **`departmentData` MUST attach each approved assessment's
 snapshot**, and a unit test asserts a snapshot target overrides the live one.
 
-## D1 — Route (the one interpretation call; see review report)
+## D1 — Route: `/analysis` becomes the analytical hub (owner, 2026-08-12)
 
-New top-level route **`/department`** ("Department capability"), staff-only, with
-a new **"Department"** nav link beside Review (assessor/admin). NOT folded into
-`/analysis`: `/analysis` is **pace** (how an assessment was filled in, and
-assessee-accessible for their own); this is **capability** (aggregate results,
-admin-only). Different question, different audience — conflating them makes both
-screens busier. Folding it under `/analysis` as a tab is a ~10-min change if you
-prefer; flagged in the review report as the single decision to confirm.
+Resolved by the owner: this is "the analysis screen", and the per-person drill is
+a **unified results + pace** view. So `/analysis` becomes the analytical home
+rather than a new `/department` route:
+
+- **`/analysis` (staff, no `?a=`)** → the **department overview**: status board +
+  department capability rollup + include/exclude + per-person summary table. This
+  REPLACES the current staff pace-picker (`Picker`), which only listed people to
+  drill into — the department overview lists the same people plus the aggregate.
+- **`/analysis?a=<id>` (staff)** → the **unified per-person view**: capability
+  (`/results` rollup, composed) + how they worked (the existing pace panel).
+  Today this route shows pace only; it gains the capability section above it.
+- **`/analysis` (assessee)** → unchanged in spirit: their own pace (D21), and
+  their own capability only if approved. Redaction boundary preserved; the merge
+  never widens what a PM sees.
+
+Nav: the existing "Analysis" link is kept (no new link). `/results` stays as the
+PM's own results destination from the assess flow; the staff unified view
+composes the same rollup, so there is no duplicate logic.
+
+Blast radius (named, accepted): this touches the live `/analysis` staff branch
+right before the pilot. Mitigated by composition — the department overview and
+the capability section reuse `departmentRollup`, `rollupAll` and the `/results`
+components unchanged; the risky part is only the `/analysis` page wiring, covered
+by the e2e render + PM-denied + budget assertions.
 
 ## D2 — Data layer: `departmentData(cycle)` — 4 Supabase calls, team-size-independent
 
@@ -136,8 +156,10 @@ round-trip budget is asserted from the server log (the existing e2e pattern).
 
 ## D6 — Access
 
-`requireRole("assessor", "admin")` at the top of `app/department/page.tsx`
-(same gate as `/review`). Reads everyone's authoritative scores in aggregate —
+`requireRole("assessor", "admin")` for the department overview and the staff
+unified drill (the `/analysis` staff branch already distinguishes staff from
+assessee — the department overview is staff-only, the assessee branch is
+untouched). Reads everyone's authoritative scores in aggregate —
 the first screen to do so — but that is the Head of PMO's job and no different in
 kind from `/review`. No new storage, no auth/session/allowlist change, so no
 `/cso` trigger; the role gate is the only door and the e2e denial test is the
@@ -154,10 +176,13 @@ distribution strip is deferred (not worth the pixels at n≈9).
 1. Types + `departmentRollup` stub + `scripts/department.test.mjs` (RED).
 2. Implement `departmentRollup` → tests green.
 3. `departmentData` data layer (+ snapshot attach).
-4. `app/department/page.tsx` (status board · department capability · per-person
-   summary · include/exclude) reusing the `/results` radar + area headers.
-5. Nav link (`app/layout.tsx`), gated.
-6. e2e assertions (render, PM-denied, toggle, 4-call budget).
+4. `/analysis` staff landing → department overview (status board · department
+   capability · per-person summary · include/exclude), replacing `Picker`.
+5. `/analysis?a=` staff drill → compose the `/results` capability section above
+   the existing pace panel (the unified per-person view). Assessee branch and
+   redaction unchanged.
+6. e2e assertions (department overview renders for boss, PM-denied, toggle
+   changes denominator, unified drill shows both sections, 4-call budget).
 7. `/review` + `/qa` (preview) + `/design-review` (built UI vs DESIGN.md), then `/ship`.
 
 ## Timing
@@ -178,11 +203,9 @@ Runs: architecture self-review (Claude), grounded in `lib/rollup.ts`,
 | Round trips | ✓ | 4 calls, team-size-independent; asserted in e2e per CLAUDE.md. |
 | Tests | ✓ | Method-A-not-B test shown RED first (ground rule 0); snapshot, spread, escalation, empty covered. |
 | Security | ✓ | `requireRole` gate; PM-denied e2e; no new storage. |
-| Scope | ✓ | ~8 files, all additive; no new services; under the complexity smell. |
+| Scope | ✓ | Extends `/analysis` + `lib/rollup` + one data-layer fn; no new route, no new services; under the complexity smell. |
+| IA | ✓ | Owner resolved: `/analysis` is the analytical hub; per-person drill is a unified capability + pace view, composed from existing engines. |
 
 VERDICT: plan is buildable as written.
 
-**UNRESOLVED DECISIONS:**
-- **D1 route** — `/department` (new, recommended) vs folding into `/analysis` as
-  a tab. Resolved to `/department` with a default; confirm before build since
-  "the analysis screen" was your wording.
+NO UNRESOLVED DECISIONS
