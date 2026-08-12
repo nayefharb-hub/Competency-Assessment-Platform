@@ -693,16 +693,17 @@ textarea.input {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   font-size: var(--fs-sm); color: var(--ink-muted);
 }
-.radarwrap .rvalues .arow b { color: var(--ink); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
-.radarwrap .rvalues .arow b .muted { font-weight: 500; }
+/* Actual reads in the accent (blue), target in green — matching the radar polygons. */
+.radarwrap .rvalues .arow b { color: var(--accent); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
+.radarwrap .rvalues .arow b .muted { font-weight: 550; color: var(--ready); }
 .radarwrap .rkey { display: flex; gap: 20px; font-size: var(--fs-sm); color: var(--ink-muted); }
 .radarwrap .rkey .k { display: inline-flex; align-items: center; gap: 8px; }
 .radarwrap .rkey .sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
 .radarwrap .rkey .sw.act { background: var(--accent); }
-.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ink-muted); }
+.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ready); }
 svg.arearadar .grid { fill: none; stroke: var(--border); stroke-width: 1; }
 svg.arearadar .spoke { stroke: var(--border); stroke-width: 1; }
-svg.arearadar .tgt { fill: var(--ink-muted); fill-opacity: 0.10; stroke: var(--ink-muted); stroke-width: 1.75; stroke-dasharray: 4 3; }
+svg.arearadar .tgt { fill: var(--ready); fill-opacity: 0.08; stroke: var(--ready); stroke-width: 1.75; stroke-dasharray: 4 3; }
 svg.arearadar .act { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 2.5; }
 svg.arearadar .dot { fill: var(--accent); stroke: var(--surface-2); stroke-width: 1.5; }
 svg.arearadar .lab { fill: var(--ink); font-size: 12px; font-weight: 640; }
@@ -711,11 +712,56 @@ svg.arearadar .tick { fill: var(--ink-muted); font-size: 9px; }
 /* Capability list, grouped by area (Perspective · People · Practice). */
 .cesection { margin-bottom: 6px; }
 .cehead {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  margin: 20px 0 2px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 22px 0 8px; padding: 9px 14px; border-radius: var(--radius-in); background: var(--navy);
 }
-.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; }
-.cehead .cehead-val { font-size: var(--fs-sm); color: var(--ink); }
+.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; color: var(--on-navy); }
+.cehead .cehead-val { font-size: var(--fs-sm); color: var(--on-navy); font-variant-numeric: tabular-nums; }
+.cehead .cehead-val .muted { color: var(--on-navy); opacity: 0.72; }
+
+/* Capability drill-down (Phase 1): expand a competency to its controls.
+   Native <details>, so /results stays server-rendered with no client JS.
+   "Exceptions only" colour: on/above-target control bars are neutral; colour
+   appears only on controls below their own target. */
+details.dd { border-bottom: 1px solid var(--border); }
+.cesection details.dd:last-of-type { border-bottom: 0; }
+details.dd > summary { list-style: none; cursor: pointer; }
+details.dd > summary::-webkit-details-marker { display: none; }
+details.dd > summary .barrow { border-bottom: 0; }
+details.dd > summary .name { position: relative; padding-left: 16px; }
+details.dd > summary .name::before {
+  content: "▸"; position: absolute; left: 0; top: 2px; color: var(--ink-muted); font-size: 0.8em;
+}
+details.dd[open] > summary .name::before { content: "▾"; }
+details.dd > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+details.dd > summary:hover .name { color: var(--accent); }
+
+.dd-body { display: flex; flex-direction: column; padding: 2px 0 14px 16px; }
+.ctrlrow {
+  display: grid; grid-template-columns: 1fr 100px 210px; gap: 16px; align-items: center;
+  padding: 10px 8px;
+}
+.ctrlrow + .ctrlrow { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.ctrlname { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+.track-sm { height: 7px; }
+.track-sm .target { top: -3px; height: 13px; }
+.ctrlval {
+  text-align: right; font-size: var(--fs-sm); white-space: nowrap;
+  display: flex; justify-content: flex-end; align-items: center; gap: 7px;
+}
+.dot-h { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.dot-h.minor { background: var(--minor); }
+.dot-h.deficit { background: var(--deficit); }
+/* the exceptions-only rule: neutral bar by default, colour only when below target */
+.ctrlrow .track-sm .actual { background: var(--ink); opacity: 0.32; box-shadow: none; }
+.ctrlrow.is-gap .track-sm .actual { opacity: 1; }
+.ctrlrow.is-gap .track-sm .actual.minor { background: var(--minor); }
+.ctrlrow.is-gap .track-sm .actual.deficit { background: var(--deficit); }
+.ctrlrow:not(.is-gap) .ctrlval b { font-weight: 600; color: var(--ink-muted); }
+@media (max-width: 760px) {
+  .ctrlrow { grid-template-columns: 1fr; gap: 6px; }
+  .ctrlval { text-align: left; justify-content: flex-start; }
+}
 
 /* ---------- review + admin ---------- */
 .rrow { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }

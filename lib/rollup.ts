@@ -23,7 +23,7 @@
  * carries an epsilon. See healthOf.
  */
 import type {
-  Area, AreaResult, Assessment, CeResult, Control, Framework, Health, Level,
+  Area, AreaResult, Assessment, CeResult, Control, ControlScore, Framework, Health, Level,
 } from "./types";
 
 /** Inactive controls contribute nothing, regardless of any stored score. */
@@ -279,6 +279,39 @@ export function sortByGap(results: CeResult[]): CeResult[] {
     if (b.gap === null) return -1;
     return b.gap - a.gap;
   });
+}
+
+/**
+ * Per-control scores for a competency's drill-down (results Phase 1).
+ *
+ * ARITHMETIC ONLY — it returns codes and levels, never indicator text or
+ * measures; the page joins those for display. It reuses the SAME `scoreMap` and
+ * `controlTarget(c, snapshot)` that `rollupCe` uses, so a control row's target
+ * is snapshot-sensitive (rollup-spec §6) and can never contradict the frozen CE
+ * bar above it. Only ACTIVE controls (the inactive one carries measures too, so
+ * this is the seam that keeps it out of the UI). Worst shortfall first, unscored
+ * last, ties by code.
+ */
+export function controlBreakdown(
+  fw: Framework,
+  assessment: Assessment,
+  ceCode: string,
+): ControlScore[] {
+  const scores = scoreMap(assessment);
+  const snapshot =
+    assessment.snapshot_targets && Object.keys(assessment.snapshot_targets).length > 0
+      ? assessment.snapshot_targets
+      : undefined;
+  const rows = activeControlsOf(fw, ceCode).map((c): ControlScore => {
+    const level = scores.get(c.code) ?? null;
+    const target = controlTarget(c, snapshot);
+    const health = healthOf(level, target, false);
+    return { code: c.code, level, target, health, below: health === "minor" || health === "deficit" };
+  });
+  // shortfall = how far below its own target; unscored/untargeted sort last.
+  const shortfall = (r: ControlScore) =>
+    r.level === null || r.target === null ? -Infinity : r.target - r.level;
+  return rows.sort((a, b) => shortfall(b) - shortfall(a) || a.code.localeCompare(b.code));
 }
 
 export const HEALTH_LABEL: Record<Health, string> = {

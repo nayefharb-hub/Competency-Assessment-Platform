@@ -5,10 +5,12 @@ import { getFramework } from "@/lib/framework";
 import {
   findAssessment, listAssessments, loadAssessment, loadForAssessee,
 } from "@/lib/db/assessment";
-import { fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap } from "@/lib/rollup";
+import {
+  controlBreakdown, fmtLevel, healthOf, HEALTH_LABEL, rollupAll, rollupAreas, sortByGap,
+} from "@/lib/rollup";
 import { areaNarrative, gapsOf, tidyIndicator } from "@/lib/narrative";
 import { AreaRadar } from "./area-radar";
-import type { Assessment, CeResult, Health } from "@/lib/types";
+import type { Assessment, CeResult, ControlScore, Health, Level } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -92,28 +94,83 @@ function metaLine(
   return { display: display.join(" · "), full: full.join(" · ") };
 }
 
-function Bar({ r, label }: { r: CeResult; label: (code: string) => string }) {
-  const meta = metaLine(r, label);
+/**
+ * One control inside a competency's drill-down (Phase 1). Indicator + a compact
+ * score bar + score/target LABEL. "Exceptions only" colour (owner's Quiet 2):
+ * on/above-target rows render neutral via CSS; colour and the state dot appear
+ * only when the control is below its own target (`cs.below`). No measures here —
+ * the full control text and its measures are Phase 2 (a control page).
+ */
+function DrillRow({
+  cs, indicator, labelOf,
+}: {
+  cs: ControlScore;
+  indicator: string;
+  labelOf: (n: Level | null) => string;
+}) {
   return (
-    <div className="barrow">
-      <div className="name">
-        {r.ce_name}
-        {meta && (
-          <small title={meta.full !== meta.display ? meta.full : undefined}>{meta.display}</small>
+    <div className={`ctrlrow${cs.below ? " is-gap" : ""}`} title={indicator}>
+      <div className="ctrlname">{clip(indicator, 92)}</div>
+      <div className="track track-sm">
+        {cs.target !== null && <div className="target" style={{ left: pct(cs.target) }} />}
+        {cs.level !== null && cs.health && (
+          <div className={`actual ${cs.health}`} style={{ width: pct(cs.level) }} />
         )}
       </div>
-      <div className="track">
-        {r.target !== null && <div className="target" style={{ left: pct(r.target) }} />}
-        {r.actual !== null && r.health && (
-          <div className={`actual ${r.health}`} style={{ width: pct(r.actual) }} />
-        )}
-      </div>
-      <div className="val">
-        <b className="tnum">{fmtLevel(r.actual)}</b>{" "}
-        <span className="muted tnum">/ {fmtLevel(r.target)}</span>{" "}
-        <HealthPill health={r.health} />
+      <div className="ctrlval">
+        {cs.below && cs.health && <span className={`dot-h ${cs.health}`} aria-hidden="true" />}
+        <b className="tnum">{labelOf(cs.level)}</b>{" "}
+        <span className="muted tnum">/ {labelOf(cs.target)}</span>
       </div>
     </div>
+  );
+}
+
+/**
+ * A competency row that expands to its controls (Phase 1 drill-down). The
+ * summary IS the existing bar row; the body is the per-control breakdown. Every
+ * competency is COLLAPSED by default (owner, 2026-08-12) — the summary rows are
+ * the scannable report; a PM opens a competency to see its controls.
+ * Native `<details>`, so `/results` stays fully server-rendered with no client JS.
+ */
+function Bar({
+  r, label, breakdown, labelOf,
+}: {
+  r: CeResult;
+  label: (code: string) => string;
+  breakdown: ControlScore[];
+  labelOf: (n: Level | null) => string;
+}) {
+  const meta = metaLine(r, label);
+  return (
+    <details className="dd">
+      <summary>
+        <div className="barrow">
+          <div className="name">
+            {r.ce_name}
+            {meta && (
+              <small title={meta.full !== meta.display ? meta.full : undefined}>{meta.display}</small>
+            )}
+          </div>
+          <div className="track">
+            {r.target !== null && <div className="target" style={{ left: pct(r.target) }} />}
+            {r.actual !== null && r.health && (
+              <div className={`actual ${r.health}`} style={{ width: pct(r.actual) }} />
+            )}
+          </div>
+          <div className="val">
+            <b className="tnum">{fmtLevel(r.actual)}</b>{" "}
+            <span className="muted tnum">/ {fmtLevel(r.target)}</span>{" "}
+            <HealthPill health={r.health} />
+          </div>
+        </div>
+      </summary>
+      <div className="dd-body">
+        {breakdown.map((cs) => (
+          <DrillRow key={cs.code} cs={cs} indicator={label(cs.code)} labelOf={labelOf} />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -249,7 +306,13 @@ export default async function ResultsPage({
                 </span>
               </div>
               {rows.map((r) => (
-                <Bar key={r.ce_code} r={r} label={controlLabel} />
+                <Bar
+                  key={r.ce_code}
+                  r={r}
+                  label={controlLabel}
+                  breakdown={controlBreakdown(fw.data, assessment, r.ce_code)}
+                  labelOf={fw.labelOf}
+                />
               ))}
             </section>
           );
