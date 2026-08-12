@@ -137,9 +137,13 @@ export async function DepartmentOverview({
 
       {/* --------------------------------------------------- department capability */}
       <div className="card pad" style={{ marginTop: 20 }}>
+        {/* Denominator is the ASSIGNED base (design §3), not the approved count:
+            "3 of 9 assigned" makes the coverage gap visible — that the
+            authoritative figure covers only the people whose reviews are in. */}
         <div className="cap" style={{ marginBottom: 6 }}>
-          DEPARTMENT CAPABILITY · averaged over {included.length} of {approved.length} approved
-          {exclude.size > 0 ? ` · ${[...exclude].filter((id) => approved.some((a) => a.id === id)).length} excluded` : ""}
+          DEPARTMENT CAPABILITY · averaged over {included.length} of {everyone.length} assigned
+          {" · "}{approved.length} approved
+          {approved.length - included.length > 0 ? ` · ${approved.length - included.length} excluded` : ""}
         </div>
 
         {included.length === 0 ? (

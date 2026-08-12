@@ -54,9 +54,12 @@ rather than a new `/department` route:
 - **`/analysis?a=<id>` (staff)** → the **unified per-person view**: capability
   (`/results` rollup, composed) + how they worked (the existing pace panel).
   Today this route shows pace only; it gains the capability section above it.
-- **`/analysis` (assessee)** → unchanged in spirit: their own pace (D21), and
-  their own capability only if approved. Redaction boundary preserved; the merge
-  never widens what a PM sees.
+- **`/analysis` (assessee)** → unchanged: their own pace (D21). The **capability
+  section is staff-only** — a PM's own results already live on `/results`, gated
+  identically, so adding them to `/analysis` too would be redundant. This is
+  strictly less exposure than "capability if approved here" and never widens what
+  a PM sees (ratified after /review, 2026-08-12; the e2e `PM's /analysis is their
+  own, never the department overview` pins it).
 
 Nav: the existing "Analysis" link is kept (no new link). `/results` stays as the
 PM's own results destination from the assess flow; the staff unified view
@@ -83,9 +86,13 @@ departmentData(cycle) ->
 
 This mirrors `listAssessments`'s existing 3-call batch (list + app_user + score)
 and adds **one** batched `target_snapshot` fetch for the approved subset. **Total
-= 4 calls regardless of team size**, the number pinned and asserted in
-`scripts/e2e.mjs` per the round-trip rule (CLAUDE.md). Kept OUT of
-`listAssessments`/`completionStats` so the hot completion path adds no call.
+= 4 `departmentData` calls regardless of team size** (3 when nobody is approved —
+the `.in([])` early-return). The whole `/analysis` staff GET therefore costs
+**5 Supabase round trips: the per-request auth allowlist select every page pays,
+plus these 4** — MEASURED and asserted in `scripts/e2e.mjs` (the department
+budget block, gated on `E2E_SERVER_LOG`), per the round-trip rule (CLAUDE.md).
+Kept OUT of `listAssessments`/`completionStats` so the hot completion path adds
+no call.
 `snapshot_targets` is attached the same way `assembleAssessment` does it
 (`codeById` map over `target_snapshot` rows).
 
@@ -151,8 +158,9 @@ and shown failing against a stub `departmentRollup` before the real one lands:
 6. **Per-person strongest/weakest** picks the right CEs by gap.
 
 Plus `scripts/e2e.mjs`: `/department` renders for the boss, is **denied to a
-PM**, the include/exclude toggle changes the denominator, and the **4-call**
-round-trip budget is asserted from the server log (the existing e2e pattern).
+PM**, the include/exclude toggle changes the denominator, and the **5-call**
+`/analysis` staff GET budget (auth + departmentData's 4) is asserted from the
+server log (the existing e2e pattern, gated on `E2E_SERVER_LOG`).
 
 ## D6 — Access
 
@@ -182,7 +190,7 @@ distribution strip is deferred (not worth the pixels at n≈9).
    the existing pace panel (the unified per-person view). Assessee branch and
    redaction unchanged.
 6. e2e assertions (department overview renders for boss, PM-denied, toggle
-   changes denominator, unified drill shows both sections, 4-call budget).
+   changes denominator, unified drill shows both sections, 5-call GET budget).
 7. `/review` + `/qa` (preview) + `/design-review` (built UI vs DESIGN.md), then `/ship`.
 
 ## Timing
@@ -200,7 +208,7 @@ Runs: architecture self-review (Claude), grounded in `lib/rollup.ts`,
 |---|---|---|
 | Architecture | ✓ | Reuses the rollup engine + `/results`; new surface is one page + pure aggregation. Method A stated uniformly at every level. |
 | Correctness | ⚠→resolved | `listAssessments` omits `snapshot_targets`; department rollup would use live targets. Resolved: `departmentData` attaches snapshots; test #2 guards it. |
-| Round trips | ✓ | 4 calls, team-size-independent; asserted in e2e per CLAUDE.md. |
+| Round trips | ✓ | departmentData = 4 (team-size-independent); the /analysis staff GET = 5 with the per-request auth select. Measured + asserted in e2e per CLAUDE.md. |
 | Tests | ✓ | Method-A-not-B test shown RED first (ground rule 0); snapshot, spread, escalation, empty covered. |
 | Security | ✓ | `requireRole` gate; PM-denied e2e; no new storage. |
 | Scope | ✓ | Extends `/analysis` + `lib/rollup` + one data-layer fn; no new route, no new services; under the complexity smell. |

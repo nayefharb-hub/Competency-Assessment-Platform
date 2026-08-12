@@ -2223,12 +2223,42 @@ console.log("\n[9] Rollup arithmetic recomputed from the database");
   }
 
   /* ---- PMO department analysis (/analysis), now that one assessment is approved ---- */
+
+  /* Round-trip budget for the department overview — a brand-new per-request DB
+     path, so it is counted rather than estimated (CLAUDE.md). departmentData is
+     listAssessments' 3 (assessment list + app_user + score) plus one batched
+     target_snapshot = 4, and every page also pays the per-request auth allowlist
+     select. The first GET warms the framework memo so the count is the warm
+     steady state. Requires E2E_SERVER_LOG; skips loudly when unset. */
+  {
+    const LOG = process.env.E2E_SERVER_LOG;
+    if (LOG) {
+      const { readFileSync } = await import("node:fs");
+      await boss.page.goto("/analysis");
+      await boss.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 400));
+      const mark = readFileSync(LOG, "utf8").length;
+      await boss.page.goto("/analysis");
+      await boss.page.waitForLoadState("networkidle");
+      await new Promise((r) => setTimeout(r, 500));
+      const lines = supabaseCalls(readFileSync(LOG, "utf8").slice(mark));
+      const snaps = lines.filter((l) => l.includes("/rest/v1/target_snapshot"));
+      check("the department overview costs 5 supabase round trips (auth + departmentData's 4)",
+        lines.length === 5, `${lines.length}: ${lines.join(" | ")}`);
+      check("exactly one of them is the batched snapshot fetch",
+        snaps.length === 1, `${snaps.length}`);
+    } else {
+      skip("the department overview round-trip budget",
+        "E2E_SERVER_LOG is unset — point it at the next-start log to assert it");
+    }
+  }
+
   await boss.page.goto("/analysis");
   await boss.page.waitForLoadState("networkidle");
   {
     const dept = await boss.page.locator(".section").innerText();
-    check("department capability is computed over the approved set",
-      /averaged over \d+ of \d+ approved/i.test(dept), dept.slice(0, 700));
+    check("department capability states its assigned base and approved count",
+      /averaged over \d+ of \d+ assigned/i.test(dept) && /\d+ approved/i.test(dept), dept.slice(0, 700));
     check("the approved person appears in the per-person summary", dept.includes(PM.name));
 
     // Exclude that person: the URL carries it and their row flips to Excluded,

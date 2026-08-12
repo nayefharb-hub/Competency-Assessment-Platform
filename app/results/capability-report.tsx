@@ -181,6 +181,18 @@ export function CapabilityReport({
     <>
       <div className="tiles">
         {areas.map((ar) => {
+          /*
+           * The SAME healthOf the CE rows use (rollup-spec §4: the thresholds are
+           * defined in exactly one place). This was once an inlined copy of the
+           * three tiers with a bare `<= 0.5`, and it survived the 2026-08-08
+           * change that put an epsilon on the real one — leaving the copy MORE
+           * exposed than the original, because an area figure is a mean of means
+           * over 5/10/13 competencies whose own denominators are 3-6. Five CEs at
+           * target 14/6 against actual 11/6 gives 0.5000000000000002 and painted
+           * the deficit colour on an area exactly half a level short. Areas have
+           * no health of their own (§5) — this only picks a bar colour, so a null
+           * rolls up to "minor" exactly as before. Do not re-inline it.
+           */
           const health: Health = healthOf(ar.actual, ar.target, false) ?? "minor";
           const width =
             ar.actual === null || ar.target === null || ar.target === 0

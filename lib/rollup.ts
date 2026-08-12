@@ -356,8 +356,16 @@ export function departmentRollup(fw: Framework, assessments: Assessment[]): Depa
     const rows = people
       .map((p) => p.ces.find((c) => c.ce_code === t.ce_code))
       .filter((c): c is CeResult => c !== undefined);
-    const actuals = rows.map((r) => r.actual).filter((x): x is number => x !== null);
-    const targets = rows.map((r) => r.target).filter((x): x is number => x !== null);
+    // Method A pairs actual and target PER PERSON. A person who left this whole
+    // competency unscored has no actual, so their target must not count either —
+    // `rollupCe` always computes a target from the active controls, so without
+    // this the department target would average over a wider population than the
+    // actual and the gap would stop being a true per-person figure. Benign while
+    // everyone shares one profile; wrong the moment targets differ per person,
+    // which is the case method A exists to serve.
+    const scoredRows = rows.filter((r) => r.actual !== null);
+    const actuals = scoredRows.map((r) => r.actual as number);
+    const targets = scoredRows.map((r) => r.target).filter((x): x is number => x !== null);
     const actual = mean(actuals);
     const target = mean(targets);
     return {
@@ -371,7 +379,7 @@ export function departmentRollup(fw: Framework, assessments: Assessment[]): Depa
       spread: actuals.length === 0 ? null : { min: Math.min(...actuals), max: Math.max(...actuals) },
       // below THEIR OWN target: reuse each person's health verdict, so the count
       // and the per-person screen can never disagree about who is short.
-      below: rows.filter((r) => r.health === "minor" || r.health === "deficit").length,
+      below: scoredRows.filter((r) => r.health === "minor" || r.health === "deficit").length,
       n: actuals.length,
     };
   });
@@ -407,8 +415,19 @@ export function departmentRollup(fw: Framework, assessments: Assessment[]): Depa
     // furthest below (most positive gap). Both read the SAME gap the rest of the
     // engine uses, so "strongest" here is the same clear-of-target as elsewhere.
     const byGapAsc = [...scored].sort((x, y) => (x.gap as number) - (y.gap as number));
-    const strongestRow = byGapAsc[0];
-    const weakestRow = byGapAsc[byGapAsc.length - 1];
+    let strongestRow: CeResult | undefined;
+    let weakestRow: CeResult | undefined;
+    if (byGapAsc.length >= 2) {
+      strongestRow = byGapAsc[0];
+      weakestRow = byGapAsc[byGapAsc.length - 1];
+    } else if (byGapAsc.length === 1) {
+      // With a single scored competency it is one or the other, never both —
+      // labelling the same CE as strength AND development gap would read as a
+      // contradiction. Its gap sign decides which it is.
+      const only = byGapAsc[0];
+      if ((only.gap as number) > 0) weakestRow = only;
+      else strongestRow = only;
+    }
     return {
       assessment_id: a.id,
       assessee_name: a.assessee_name,

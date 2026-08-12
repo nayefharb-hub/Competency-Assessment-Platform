@@ -102,11 +102,13 @@ head while you fetch the other.
 - **How they worked** — the `/analysis` pace panel (`summarise` / `summariseByCe`
   headline + by-competency), reused as-is.
 
-For **staff** both sections show (staff see everything). The existing redaction
-boundary is preserved: an assessee viewing their **own** sees pace always (D21)
-and capability only once approved — the merge is a staff-side consolidation and
-must not widen what a PM can see. Whether `/analysis` is later retired into this
-view is a fast-follow, not a blocker; for now it composes the same components.
+For **staff** both sections show (staff see everything). The **capability section
+is staff-only** (ratified after /review, 2026-08-12): an assessee's `/analysis`
+stays their own pace (D21), and their capability already lives on `/results`,
+gated identically — so composing it onto `/analysis` too would be redundant. The
+merge is a staff-side consolidation and must not widen what a PM sees. Whether
+`/analysis` is later retired into this view is a fast-follow, not a blocker; for
+now it composes the same components.
 
 ## What is actually new (build is small; risk is concentrated)
 

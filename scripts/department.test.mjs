@@ -11,8 +11,9 @@
  *
  * Written RED before `departmentRollup` existed (ground rule 0): with no export
  * the import is `undefined` and every test throws "not a function". Test 1 stays
- * discriminating after that — a method-B implementation returns 3.5 where method
- * A returns 3.0, so the test would be RED against the plausible wrong engine too.
+ * discriminating after that — on its fixture a method-B implementation returns
+ * 3.25 where method A returns 2.5, so the test would be RED against the plausible
+ * wrong engine too.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -186,4 +187,41 @@ test("per-person summary names the strongest and weakest competency by margin to
   approx(p.strongest.margin, 2, "strength margin is actual - target");
   assert.equal(p.weakest.ce_code, "4.4.1", "weakest is furthest below its own target");
   approx(p.weakest.gap, 2, "weakness gap is target - actual");
+});
+
+/* ------------------------------ 7. a single scored CE is one thing, not both */
+
+test("a person with one scored competency is not labelled strongest AND weakest", () => {
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[3]] },
+    { ce: "4.4.1", area: "People", published: 3, controls: [[3]] },
+  ]);
+  // Only 4.3.1 scored, and it is below target -> a development gap, not a strength.
+  const r = departmentRollup(fw, [personOf({ "4.3.1.1": 1 })]);
+  const p = r.perPerson[0];
+  assert.equal(p.weakest?.ce_code, "4.3.1", "the one below-target CE is the development gap");
+  assert.equal(p.strongest, null, "and it is not also reported as the strongest");
+});
+
+/* ------------------ 8. method A pairs actual and target over the SAME people */
+
+/*
+ * A fully-unscored competency contributes no actual, so it must contribute no
+ * target either — otherwise the department target averages over more people than
+ * the actual and the gap is not a true per-person figure. With differing snapshot
+ * targets the mistake is visible: person A scores 4 against snapshot target 4
+ * (on the money); person B has snapshot target 2 but scored NOTHING in the CE.
+ * Method A: target = mean over scorers = 4 (B excluded). The wrong version would
+ * average targets 4 and 2 -> 3, inventing a gap where the only scorer has none.
+ */
+test("department target averages over the people who contributed an actual, not all", () => {
+  const fw = frameworkOf([{ ce: "4.5.1", area: "Practice", published: 3, controls: [[3]] }]);
+  const r = departmentRollup(fw, [
+    personOf({ "4.5.1.1": 4 }, { "4.5.1.1": 4 }, "Scorer"),
+    personOf({}, { "4.5.1.1": 2 }, "Unscored"),
+  ]);
+  approx(ceOf(r, "4.5.1").actual, 4, "actual is the only scorer's");
+  approx(ceOf(r, "4.5.1").target, 4, "target excludes the unscored person's target");
+  approx(ceOf(r, "4.5.1").gap, 0, "no invented gap");
+  assert.equal(ceOf(r, "4.5.1").n, 1, "one person contributed");
 });
