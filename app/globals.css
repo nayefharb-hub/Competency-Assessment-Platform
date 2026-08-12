@@ -693,16 +693,17 @@ textarea.input {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   font-size: var(--fs-sm); color: var(--ink-muted);
 }
-.radarwrap .rvalues .arow b { color: var(--ink); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
-.radarwrap .rvalues .arow b .muted { font-weight: 500; }
+/* Actual reads in the accent (blue), target in green — matching the radar polygons. */
+.radarwrap .rvalues .arow b { color: var(--accent); font-weight: 650; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
+.radarwrap .rvalues .arow b .muted { font-weight: 550; color: var(--ready); }
 .radarwrap .rkey { display: flex; gap: 20px; font-size: var(--fs-sm); color: var(--ink-muted); }
 .radarwrap .rkey .k { display: inline-flex; align-items: center; gap: 8px; }
 .radarwrap .rkey .sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
 .radarwrap .rkey .sw.act { background: var(--accent); }
-.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ink-muted); }
+.radarwrap .rkey .sw.tgt { height: 0; width: 16px; border-top: 2px dashed var(--ready); }
 svg.arearadar .grid { fill: none; stroke: var(--border); stroke-width: 1; }
 svg.arearadar .spoke { stroke: var(--border); stroke-width: 1; }
-svg.arearadar .tgt { fill: var(--ink-muted); fill-opacity: 0.10; stroke: var(--ink-muted); stroke-width: 1.75; stroke-dasharray: 4 3; }
+svg.arearadar .tgt { fill: var(--ready); fill-opacity: 0.08; stroke: var(--ready); stroke-width: 1.75; stroke-dasharray: 4 3; }
 svg.arearadar .act { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 2.5; }
 svg.arearadar .dot { fill: var(--accent); stroke: var(--surface-2); stroke-width: 1.5; }
 svg.arearadar .lab { fill: var(--ink); font-size: 12px; font-weight: 640; }
@@ -711,11 +712,12 @@ svg.arearadar .tick { fill: var(--ink-muted); font-size: 9px; }
 /* Capability list, grouped by area (Perspective · People · Practice). */
 .cesection { margin-bottom: 6px; }
 .cehead {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  margin: 20px 0 2px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 22px 0 8px; padding: 9px 14px; border-radius: var(--radius-in); background: var(--navy);
 }
-.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; }
-.cehead .cehead-val { font-size: var(--fs-sm); color: var(--ink); }
+.cehead h4 { font-size: var(--fs-ui); font-weight: 680; margin: 0; letter-spacing: -0.01em; color: var(--on-navy); }
+.cehead .cehead-val { font-size: var(--fs-sm); color: var(--on-navy); font-variant-numeric: tabular-nums; }
+.cehead .cehead-val .muted { color: var(--on-navy); opacity: 0.72; }
 
 /* Capability drill-down (Phase 1): expand a competency to its controls.
    Native <details>, so /results stays server-rendered with no client JS.
@@ -736,7 +738,7 @@ details.dd > summary:hover .name { color: var(--accent); }
 
 .dd-body { display: flex; flex-direction: column; padding: 2px 0 14px 16px; }
 .ctrlrow {
-  display: grid; grid-template-columns: 1fr 120px 150px; gap: 16px; align-items: center;
+  display: grid; grid-template-columns: 1fr 100px 210px; gap: 16px; align-items: center;
   padding: 10px 8px;
 }
 .ctrlrow + .ctrlrow { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }

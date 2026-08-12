@@ -2080,11 +2080,18 @@ console.log("\n[7] Approval snapshots targets and locks the record");
    * too). Measures themselves are Phase 2 (a control page), so a known measure
    * string must be ABSENT while the control's indicator is present.
    */
+  // Every competency is collapsed by default (owner, 2026-08-12) — even gaps.
+  const openByDefault = await boss.page.locator("details.dd[open]").count();
+  check("every competency is collapsed by default (no drill-down auto-opens)",
+    openByDefault === 0, `${openByDefault} open by default`);
+  // The rows are in the DOM even while collapsed, so the count holds regardless.
   const ctrlRows = await boss.page.locator(".ctrlrow").count();
   check("the drill-down lists exactly the 132 active controls (inactive 4.3.2.6 excluded)",
     ctrlRows === 132, `${ctrlRows} control rows`);
-  // Read the indicator from the control-name cells specifically, so this asserts
-  // the DRILL ROW names the control — not a CE meta line that also carries it.
+  // Open the disclosures so innerText is readable, then read the indicator from
+  // the control-name cells specifically — this asserts the DRILL ROW names the
+  // control, not a CE meta line that also carries it.
+  await boss.page.locator("details.dd").evaluateAll((els) => els.forEach((d) => (d.open = true)));
   const drillNames = (await boss.page.locator(".ctrlrow .ctrlname").allInnerTexts()).join(" | ");
   check("a control is named by its ICB4 indicator in the drill-down",
     drillNames.includes("Align with organisational mission and vision"),

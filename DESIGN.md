@@ -140,22 +140,26 @@ decision; do not deviate without explicit approval.
   **actual** bar filled by health tier; rounded ends, 2px surface ring, tabular-nums
   values. **Numbers, not percentages.**
 - **Area radar (3 axes):** a hand-drawn inline-SVG triangle over People · Practice ·
-  Perspective, actual (azure fill+stroke) against a dashed ink-muted target polygon,
+  Perspective, actual (azure/accent fill+stroke, figures in **blue**) against a
+  dashed **green** target polygon (figures in **green**),
   faint 0–5 grid rings, the **area name at each vertex** and the **actual/target
   figures read beneath the chart**. It is the centrepiece of the results screen —
   large and centred in its panel, not a side-panel thumbnail. Server-rendered, no
   charting dependency, themed through the same tokens as everything else. **A
   28-competency radar is still excluded** (an unreadable hairball, per the decision
   log); three axes are legible and give the summary a shape at a glance (rollup-spec §7).
-- **Capability list (results):** grouped into the three areas, each a section with
-  its own header (area name + actual/target); within a section, most serious first.
+- **Capability list (results):** grouped into the three areas, each a section under
+  a **navy header bar** (white area name + actual/target); within a section, most
+  serious first.
   Each competency row leads with its **name**, and any control it references (the
   weakest, or the control that escalated a deficit) is named by its **ICB4 indicator
   text**, never by an opaque code like `4.4.10.1`.
 - **Capability drill-down (results, Phase 1):** each competency row expands
   (native `<details>`, so the screen stays server-rendered) to its **active**
   controls — indicator + a compact score bar + score/target label, weakest first.
-  **Gaps open by default.** Colour is **exceptions-only**: on/above-target control
+  **Collapsed by default** (every competency, even gaps) — the summary rows are
+  the scannable report; a PM opens one to see its controls. Colour is
+  **exceptions-only**: on/above-target control
   bars are neutral (ink at low opacity), colour and a state dot appear **only** on
   controls below their own target — the eye lands on what needs work. No
   per-control health pill (the competency row owns the verdict). Measures and the
@@ -186,4 +190,5 @@ decision; do not deviate without explicit approval.
 | 2026-08-10 | 4th health tier **Above target** (actual ≥ target + 1.0), coloured **indigo** | The 3-tier model collapsed *at target* and *comfortably past it* into one "Role Ready" verdict, so the report could recognise adequacy and shortfall but never strength — unlike the Provek/Comaea reports it was measured against. A full-level margin (not a half) makes "Above" a real distinction rather than routine. Indigo chosen over teal and a deeper green: distinct from the Role Ready green and the azure accent, and the two-greens pair was the hardest to separate at a glance (owner reviewed all three in a prototype). rollup-spec §4 |
 | 2026-08-10 | 3-axis **area radar** added; 28-competency radar still excluded | Reversal of the 2026-08-03 "no radar" decision, scoped to three axes only. The original objection was legibility over a 28-axis radar and it stands unchanged for competencies; three axes (People/Practice/Perspective) are legible and give the summary a shape. Built hand-rolled inline SVG rather than a charting library — a triangle needs no dependency, keeps /results fully server-rendered with zero client JS, and fits the perf discipline. Recharts (the aspirational stack line) earns its place only when 28-CE views are actually specced. rollup-spec §7 |
 | 2026-08-11 | Results Increment 1: radar **enlarged + centred** with figures beneath it; capability list **grouped by area**; controls named by **indicator text**, not code; development-plan table **removed** | Owner walkthrough of the built screen. The radar reads as the centrepiece rather than a side-panel thumbnail, so it is enlarged and centred with the per-area figures beneath. The flat gap-sorted list is grouped into the three areas so the shape the radar shows has a matching structure below it. Control codes (`4.4.10.1`) are meaningless to a PM, so weakest/escalation references now show the ICB4 indicator text. The dev-plan table's auto-suggested "Consider …" actions were rejected as noise; a reflective, ICB4-grounded replacement is a separate workstream, so the table is removed rather than kept as filler. |
+| 2026-08-12 | Results polish: radar **actual=blue / target=green** (values + dashed target line); area headers become **navy section bars** (white text); drill-down **collapsed by default** (even gaps); control-row value column widened so the score label clears its bar | Owner feedback on the built preview. Blue/green splits actual-vs-target at a glance and matches the two radar polygons. Navy header bars (the KIB anchor colour) read as real section dividers rather than a thin rule. Collapsing every competency by default keeps the summary list scannable — the drill-down is opt-in per competency, not a wall of controls. The value column was overlapping the score bar for the longer scale labels ("Proficient / Competent"); widened it. |
 | 2026-08-12 | Results drill-down **Phase 1**: competency expands to its controls (indicator + score bar + result); **exceptions-only** colour; **no measures** (Phase 2) | Owner picked "Quiet 2" from two prototypes. The first pass coloured every control and stacked a health pill on each — a wall of red under a gap competency, a wall of green under a healthy one. Exceptions-only makes colour a signal: on-target controls go neutral, colour appears only where a control is below its own target, so the PM's eye goes to what needs work. Measures were pulled out of the drill-down entirely — they belong on a per-control page (Phase 2, logged) where there is room for them, keeping the results screen scannable. Native `<details>` keeps `/results` fully server-rendered. |

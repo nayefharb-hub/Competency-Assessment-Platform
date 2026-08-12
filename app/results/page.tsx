@@ -128,8 +128,9 @@ function DrillRow({
 
 /**
  * A competency row that expands to its controls (Phase 1 drill-down). The
- * summary IS the existing bar row; the body is the per-control breakdown. Gaps
- * (minor/deficit) open by default — that is where a PM has something to act on.
+ * summary IS the existing bar row; the body is the per-control breakdown. Every
+ * competency is COLLAPSED by default (owner, 2026-08-12) — the summary rows are
+ * the scannable report; a PM opens a competency to see its controls.
  * Native `<details>`, so `/results` stays fully server-rendered with no client JS.
  */
 function Bar({
@@ -141,9 +142,8 @@ function Bar({
   labelOf: (n: Level | null) => string;
 }) {
   const meta = metaLine(r, label);
-  const open = r.health === "minor" || r.health === "deficit";
   return (
-    <details className="dd" open={open}>
+    <details className="dd">
       <summary>
         <div className="barrow">
           <div className="name">
