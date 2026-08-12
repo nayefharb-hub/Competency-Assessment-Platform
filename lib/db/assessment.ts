@@ -33,13 +33,13 @@ interface AssessmentRow {
   approved_at: string | null;
   started_at: string | null;
   completed_at: string | null;
-  deleted_at: string | null;
-  deleted_by: string | null;
-  deleted_reason: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
+  archived_reason: string | null;
 }
 
 const ASSESSMENT_COLUMNS =
-  "id, framework_id, profile_id, assessee_id, assessor_id, cycle, state, submitted_at, approved_at, started_at, completed_at, deleted_at, deleted_by, deleted_reason";
+  "id, framework_id, profile_id, assessee_id, assessor_id, cycle, state, submitted_at, approved_at, started_at, completed_at, archived_at, archived_by, archived_reason";
 
 async function rowById(id: string): Promise<AssessmentRow> {
   return unwrap(
@@ -67,7 +67,7 @@ export async function findAssessment(
     .select(ASSESSMENT_COLUMNS)
     .eq("assessee_id", assesseeId)
     .eq("cycle", cycle)
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .maybeSingle();
   if (found.error) throw new Error(`Supabase assessment lookup failed: ${found.error.message}`);
   return (found.data as AssessmentRow) ?? null;
@@ -88,8 +88,8 @@ export async function findArchivedAssessment(
     .select(ASSESSMENT_COLUMNS)
     .eq("assessee_id", assesseeId)
     .eq("cycle", cycle)
-    .not("deleted_at", "is", null)
-    .order("deleted_at", { ascending: false })
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false })
     .limit(1);
   if (found.error) throw new Error(`Supabase archive lookup failed: ${found.error.message}`);
   return ((found.data ?? [])[0] as AssessmentRow) ?? null;
@@ -127,7 +127,7 @@ export async function assignAssessment(
   const existing = unwrap(
     "assignment lookup",
     await sb.from("assessment").select("assessee_id")
-      .eq("cycle", cycle).is("deleted_at", null).in("assessee_id", assesseeIds),
+      .eq("cycle", cycle).is("archived_at", null).in("assessee_id", assesseeIds),
   ) as { assessee_id: string }[];
   const already = new Set(existing.map((e) => e.assessee_id));
   const fresh = assesseeIds.filter((id) => !already.has(id));
@@ -208,14 +208,14 @@ export async function archiveAssessment(
   const gone = await db()
     .from("assessment")
     .update({
-      deleted_at: new Date().toISOString(),
-      deleted_by: admin.id,
-      deleted_reason: trimmed,
+      archived_at: new Date().toISOString(),
+      archived_by: admin.id,
+      archived_reason: trimmed,
     })
     .eq("id", assessmentId)
     // guard in the WHERE clause: archiving an archived row would overwrite the
     // original reason and the original timestamp with a second, later one
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .select("id");
   if (gone.error) throw new Error(`Archiving failed: ${gone.error.message}`);
   if ((gone.data ?? []).length === 0) {
@@ -234,7 +234,7 @@ export async function archiveAssessment(
  */
 export async function restoreAssessment(assessmentId: string): Promise<void> {
   const row = await rowById(assessmentId);
-  if (!row.deleted_at) throw new Error("That assessment is not archived.");
+  if (!row.archived_at) throw new Error("That assessment is not archived.");
 
   const live = await findAssessment(row.assessee_id, row.cycle);
   if (live) {
@@ -245,9 +245,9 @@ export async function restoreAssessment(assessmentId: string): Promise<void> {
 
   const back = await db()
     .from("assessment")
-    .update({ deleted_at: null, deleted_by: null, deleted_reason: null })
+    .update({ archived_at: null, archived_by: null, archived_reason: null })
     .eq("id", assessmentId)
-    .not("deleted_at", "is", null)
+    .not("archived_at", "is", null)
     .select("id");
   if (back.error) throw new Error(`Restoring failed: ${back.error.message}`);
   if ((back.data ?? []).length === 0) {
@@ -332,8 +332,8 @@ async function assembleAssessment(
     // Carried on the single-record path too, not just the list path — the
     // review screen is the one place an archived record is still opened, so
     // this is exactly where it must be able to say so.
-    deleted_at: row.deleted_at,
-    deleted_reason: row.deleted_reason,
+    archived_at: row.archived_at,
+    archived_reason: row.archived_reason,
   };
 }
 
@@ -401,7 +401,7 @@ export async function findAssessmentWithScores(
     .select(`${ASSESSMENT_COLUMNS}, score(control_id, self_level, assessor_level, assessor_touched, evidence)`)
     .eq("assessee_id", user.id)
     .eq("cycle", cycle)
-    .is("deleted_at", null)
+    .is("archived_at", null)
     .maybeSingle();
   if (found.error) throw new Error(`Supabase assessment lookup failed: ${found.error.message}`);
   if (!found.data) return null;
@@ -496,8 +496,8 @@ export async function listAssessments(
   const rows = unwrap(
     "assessment list",
     await (opts.archived
-      ? query.not("deleted_at", "is", null).order("deleted_at", { ascending: false })
-      : query.is("deleted_at", null).order("created_at")),
+      ? query.not("archived_at", "is", null).order("archived_at", { ascending: false })
+      : query.is("archived_at", null).order("created_at")),
   ) as AssessmentRow[];
   if (rows.length === 0) return [];
 
@@ -544,8 +544,8 @@ export async function listAssessments(
       submitted_at: row.submitted_at,
       approved_at: row.approved_at,
       completed_at: row.completed_at,
-      deleted_at: row.deleted_at,
-      deleted_reason: row.deleted_reason,
+      archived_at: row.archived_at,
+      archived_reason: row.archived_reason,
     } satisfies Assessment;
   });
 }
@@ -574,7 +574,7 @@ function assertRowState(row: AssessmentRow, allowed: AssessmentState[]): Assessm
   // through: an archived assessment is out of the cycle, so scoring, submitting
   // or approving it would put data into a record the metrics deliberately
   // ignore.
-  if (row.deleted_at) {
+  if (row.archived_at) {
     throw new Error("This assessment has been archived — it can no longer be changed.");
   }
   if (!allowed.includes(row.state)) {

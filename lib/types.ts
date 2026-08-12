@@ -150,8 +150,8 @@ export interface Assessment {
   /** per-control targets frozen at approval; empty until approved */
   snapshot_targets?: Record<string, Level | null>;
   /** archived (N6): out of the cycle, excluded from every rollup and figure */
-  deleted_at?: string | null;
-  deleted_reason?: string | null;
+  archived_at?: string | null;
+  archived_reason?: string | null;
 }
 
 /** Completion instrumentation — the prototype's whole thesis (T9). */

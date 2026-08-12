@@ -60,17 +60,17 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
     sb.from("assessment")
       .select("id, assessee_id, state")
       .eq("cycle", cycle)
-      .is("deleted_at", null)
+      .is("archived_at", null)
       .in("assessee_id", people.map((p) => p.id))
       .then((r) => unwrap("assignment lookup", r) as { id: string; assessee_id: string; state: string }[]),
     sb.from("assessment")
-      .select("id, assessee_id, deleted_at, deleted_reason")
+      .select("id, assessee_id, archived_at, archived_reason")
       .eq("cycle", cycle)
-      .not("deleted_at", "is", null)
-      .order("deleted_at", { ascending: false })
+      .not("archived_at", "is", null)
+      .order("archived_at", { ascending: false })
       .in("assessee_id", people.map((p) => p.id))
       .then((r) => unwrap("archive lookup", r) as {
-        id: string; assessee_id: string; deleted_at: string; deleted_reason: string | null;
+        id: string; assessee_id: string; archived_at: string; archived_reason: string | null;
       }[]),
   ]);
 
@@ -123,8 +123,8 @@ export async function listPeople(cycle: string): Promise<PersonRow[]> {
       scored: a ? scoredCount.get(a.id) ?? 0 : 0,
       last_scored: a ? lastScored.get(a.id) ?? null : null,
       archived_id: gone?.id ?? null,
-      archived_reason: gone?.deleted_reason ?? null,
-      archived_at: gone?.deleted_at ?? null,
+      archived_reason: gone?.archived_reason ?? null,
+      archived_at: gone?.archived_at ?? null,
     };
   });
 }
@@ -277,6 +277,6 @@ export async function assessmentCount(userId: string): Promise<number> {
     .from("assessment")
     .select("*", { count: "exact", head: true })
     .eq("assessee_id", userId)
-    .is("deleted_at", null);
+    .is("archived_at", null);
   return count ?? 0;
 }
