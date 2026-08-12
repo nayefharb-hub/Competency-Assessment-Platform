@@ -2,6 +2,7 @@ import Link from "@/app/link";
 import { getFramework } from "@/lib/framework";
 import { departmentData } from "@/lib/db/assessment";
 import { departmentRollup, fmtLevel } from "@/lib/rollup";
+import { tidyIndicator } from "@/lib/narrative";
 import { AreaRadar } from "@/app/results/area-radar";
 import { HealthPill } from "@/app/results/capability-report";
 import type { Assessment, AreaResult } from "@/lib/types";
@@ -77,7 +78,10 @@ export async function DepartmentOverview({
     area: ar.area, actual: ar.actual, target: ar.target, ce_count: ceCountByArea.get(ar.area) ?? 0,
   }));
 
+  // Name controls by their ICB4 indicator text, tidied of extraction junk —
+  // never by an opaque code (DESIGN.md), the same rule and helper /results uses.
   const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  const ctrlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
 
   return (
     <div className="section">
@@ -201,7 +205,7 @@ export async function DepartmentOverview({
                 {dept.escalations.slice(0, 6).map((e, i) => (
                   <span key={e.control_code}>
                     {i > 0 ? " · " : ""}
-                    “{ctrlText.get(e.control_code) ?? e.control_code}” ({e.count} {e.count === 1 ? "person" : "people"})
+                    “{ctrlLabel(e.control_code)}” ({e.count} {e.count === 1 ? "person" : "people"})
                   </span>
                 ))}
                 . These sit inside a person, not the department mean — open the person to see them.
