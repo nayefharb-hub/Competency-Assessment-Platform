@@ -18,7 +18,7 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 import { db, supabaseAnonKey, supabaseUrl, timedSupabaseFetch } from "./supabase/server";
 import { phase } from "./perf";
-import { SESSION_COOKIE } from "./supabase/cookies";
+import { SESSION_COOKIE, SESSION_START_COOKIE } from "./supabase/cookies";
 import { TTLMap } from "./ttl-map";
 import type { AppUser, UserRole } from "./types";
 
@@ -86,6 +86,14 @@ type Viewer =
    * cold-start load a transient failure is an ordinary event.
    */
   | { status: "unavailable"; message: string }
+  /**
+   * A live session token whose absolute-cap marker cookie is gone (owner policy,
+   * 2026-08-12). The marker is set once at login with a fixed 12h maxAge and is
+   * never rolled, so the browser drops it at the cap even while the token is
+   * still being refreshed. Treated like "anon" for access, but named separately
+   * so the redirect can be to /login rather than looking like a fresh visit.
+   */
+  | { status: "expired" }
   | { status: "ok"; user: AppUser };
 
 /**
@@ -119,6 +127,14 @@ const viewer = cache(async function viewer(): Promise<Viewer> {
   const { data: sess } = await auth.auth.getSession();
   const token = sess.session?.access_token;
   if (!token) return { status: "anon" };
+
+  // Absolute session cap (owner, 2026-08-12). The marker cookie is set once at
+  // login with a fixed 12h maxAge and is never re-issued, so the browser drops
+  // it at the cap even while the token keeps refreshing. A live token with no
+  // marker means the ceiling was reached → force re-login. Checked BEFORE the
+  // memo so an expired session cannot be answered from a 2s-old "ok".
+  const store = await cookies();
+  if (!store.get(SESSION_START_COOKIE)) return { status: "expired" };
 
   const memoized = viewerMemo.get(token);
   if (memoized) return memoized;
@@ -197,6 +213,10 @@ export async function requireUser(
 ): Promise<AppUser> {
   const v = await viewer();
   if (v.status === "anon") redirect("/login");
+  // Absolute cap reached: the session token may still be live, so bounce to
+  // /login rather than /logout (a page load, not a mutation) — a fresh sign-in
+  // mints a new session and marker. The stale token cookie idles out on its own.
+  if (v.status === "expired") redirect("/login");
   if (v.status === "uninvited") redirect("/logout?denied=1");
   // Throws rather than redirecting: every redirect target here either signs the
   // user out or is itself a page that must resolve the viewer, so redirecting
