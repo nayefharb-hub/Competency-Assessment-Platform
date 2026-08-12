@@ -1,11 +1,11 @@
 # Project status & handoff
 
-Last updated: **2026-08-12** — three PRs merged to `main` (prod). Read this first.
+Last updated: **2026-08-12** — four PRs merged to `main` (prod). Read this first.
 
 ## Live on `main` (prod) as of 2026-08-12
 
-Three PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the
-Vercel preview) and squash-merged to `main`. Merge order was #31, #27, #30
+Four PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the
+Vercel preview) and squash-merged to `main`. Merge order was #31, #27, #30, #32
 (#30 was stacked on #27; rebased onto `main` before merge). Production deploys
 from `main`.
 
@@ -40,21 +40,18 @@ from `main`.
   - Other `/cso` findings (pilot-safe, recorded): assessor-can-open-any-assessment
     (add an ownership check when a 2nd assessor exists); Supabase-side revocation
     waits for the 15-min access-token TTL (app_user removal is already immediate).
-
-## In flight — archive-column rename (branch `claude/cap-supabase-integration-ubitap`)
-Renames `assessment.deleted_at`/`deleted_by`/`deleted_reason` →
-`archived_at`/`archived_by`/`archived_reason`: the feature archives (keeps the
-row, its scores and timings, out of live lists/rollups), it never deletes, and
-the `deleted_` prefix was the one place the schema still disagreed. Code, types,
-e2e and the admin eng-plan are renamed; `lib/db/people.ts`'s app-facing
-`archived_*` fields already used the right word. Migration **0006** does the
-`alter … rename column`; Postgres carries the two dependent index predicates
-(`assessment_one_live_per_cycle`, `assessment_live_idx`) and the column comment
-across automatically. Historical migrations 0003/0004 are left as-applied.
-**Coordination note:** unlike `add column`, `rename column` is NOT backward-
-compatible — the moment 0006 runs, any still-live build selecting `deleted_*`
-500s. Run 0006 **together with** the deploy that ships this branch, not before.
-Gates pending: `/review`, `/cso` (storage), `/qa`.
+- **#32 — Archive columns renamed** (`62dd360`). `assessment.deleted_at`/
+  `deleted_by`/`deleted_reason` → `archived_at`/`archived_by`/`archived_reason`:
+  the feature archives (keeps the row, its scores and timings, out of live
+  lists/rollups), it never deletes, and the `deleted_` prefix was the one place
+  the schema still disagreed. `lib/db/people.ts`'s app-facing `archived_*` fields
+  already used the right word. Migration **0006** does the `alter … rename
+  column`; Postgres carried the two dependent index predicates
+  (`assessment_one_live_per_cycle`, `assessment_live_idx`) and the column comment
+  across automatically; historical 0003/0004 left as-applied. `rename column` is
+  NOT backward-compatible, so 0006 was applied in the same window as the merge
+  (harmless — no PMs live until the pilot). Gates: `/review` (full dependency
+  sweep) · `/qa` preview archive-flow green + local **438/0**.
 
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
