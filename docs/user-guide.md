@@ -261,10 +261,33 @@ exists, withdrawal is refused — the work is theirs, not yours to erase.
 
 ## Watching progress
 
-**People** shows who has started and how far they are. **Analysis** shows *how*
-each assessment was filled in rather than what it said: median time per control,
-how long an assessment took, and which ones have stalled. A project manager can
-see this for their own assessment and only their own.
+**People** shows who has started and how far they are.
+
+## Seeing the whole team — Analysis
+
+**Analysis** is the department view — the team seen as one picture. It opens on:
+
+- **A status board** — everyone assigned this cycle and where they are: not
+  started, in progress, submitted, or approved.
+- **Choose who counts** — exclude anyone who would skew the picture (a leaver, a
+  brand-new joiner, or your own self-assessment) before you read the figure;
+  every number recomputes from who is included.
+- **Each person** — a one-line summary per person: their score in each area, and
+  where they are the team's strongest and where development would help.
+- **Department capability** — the team rolled up against ICB4. Each competency
+  shows the **team mean**, the **spread** (lowest to highest score) and **how
+  many people are below target**, grouped by area with the same bar-on-bar mark
+  as the results screen. Only **approved** assessments count toward it, and the
+  figure states its base ("averaged over 6 of 9 assigned") so you can see how
+  much of the team it covers.
+
+Click a person to open **their own page**: their full results *and* how they
+worked — pace: median time per control, whether one level was repeated, whether
+evidence was written — side by side, so you read the numbers together with how
+much to trust them.
+
+The team view is for the Head of PMO and assessors. A project manager who opens
+Analysis sees only their **own** pace, never the team.
 
 ## Reviewing and revising
 
