@@ -1,8 +1,67 @@
 # Project status & handoff
 
+Last updated: **2026-08-12** — three PRs merged to `main` (prod). Read this first.
+
+## Live on `main` (prod) as of 2026-08-12
+
+Three PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the
+Vercel preview) and squash-merged to `main`. Merge order was #31, #27, #30
+(#30 was stacked on #27; rebased onto `main` before merge). Production deploys
+from `main`.
+
+- **#27 — Results report, Increment 1** (`8e2f126`). The `/results` screen: a
+  4th health tier "Above target"; a **3-axis area radar** (People/Practice/
+  Perspective, hand-rolled inline SVG) now **enlarged + centred**, actual in
+  **blue**, target in **green** (figures + dashed target polygon); per-area
+  narrative lines; the capability list **grouped by area** under **navy section
+  headers**; controls named by **ICB4 indicator text**, not codes; the old
+  development-plan table **removed** (its auto-suggested actions were rejected).
+  Gates: `/review` (adversarial, fixed the long/corrupt-indicator regression) ·
+  `/qa` preview 426/0/3 · `/design-review`.
+- **#30 — Results drill-down, Phase 1 + polish** (`2712cfc`). Each competency row
+  expands (native `<details>`, server-rendered, zero client JS) to its **active
+  controls** — indicator + score bar + score/target label, weakest first,
+  **collapsed by default**. Colour is **exceptions-only** (owner's "Quiet 2"):
+  on/above-target controls neutral, colour only below target. New exported
+  `controlBreakdown` in `lib/rollup.ts` reuses `controlTarget`/`scoreMap`, so a
+  control's target is snapshot-safe (§6). **No measures** here — those are Phase
+  2. Gates: `/review` SHIP · `/qa` 431/0/3.
+- **#31 — Session hardening** (`9d948fc`). `@supabase/ssr`'s rolling 400-day
+  session cookie is now bounded: **8h idle** (`SESSION_COOKIE.maxAge`) + **12h
+  absolute cap** (a never-rolled `cap.sess_start` marker; `lib/auth.ts` reads
+  "live token, marker gone" as expired). **Logout CSRF** closed (rejects
+  cross-site AND same-site `sec-fetch-site`, redirects refusals to `/login` so
+  the uninvited flow can't loop). Gates: `/cso` adversarial (found + fixed a
+  redirect-loop regression) · `/qa` 427/0/3.
+  - **Supabase dashboard session twins are Pro-only and DEFERRED** — the pilot
+    stays on Free, so the code caps ARE the mechanism (not a backstop). Only lost
+    control: bounding a stolen `httpOnly` cookie replayed directly against
+    Supabase — a broader-rollout concern. See `docs/deploy.md`.
+  - Other `/cso` findings (pilot-safe, recorded): assessor-can-open-any-assessment
+    (add an ownership check when a 2nd assessor exists); Supabase-side revocation
+    waits for the 15-min access-token TTL (app_user removal is already immediate).
+
+## Next
+- **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
+  scheduled by the owner for **Monday next week**. `npm run invite` + the
+  admin/People screen.
+- **Parked — item 6, CE-level ICB4 reflective text / Phase 2 control page.** The
+  drill-down's Phase 2 (click a control → its own page with full text + measures)
+  is logged. CE-level ICB4 definition/purpose/KSA needs a source + IPMA licensing
+  decision (the ICB4 file is attached in the project context); measures are the
+  unblocked substrate. Route through `/plan-eng-review` when picked up.
+- **Working agreement added (`CLAUDE.md`):** never proceed on an unanswered
+  `AskUserQuestion` — a missing answer is a timeout, not consent.
+
+---
+
+_Historical record below (how the pre-merge state was built; retained for the
+reasoning trail). The three sections immediately following describe the
+results-enhancements arc as it stood on its branch before the 2026-08-12 merges._
+
 Last updated: 2026-08-08 (PR #26 — the continuous assessment run, the owner's
 walk-through items N44 and N38/N39/N40, N45–N50, and the CE-target rollup change
-at `419c56e`; NOT yet merged). Read this first — it says where the build is and
+at `419c56e`). Read this first — it says where the build is and
 what the next step is. Everything referenced here is committed.
 
 **Also on this branch (2026-08-08): N54 fixed** — an unsaved edit in the framework
