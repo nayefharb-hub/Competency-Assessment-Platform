@@ -2071,6 +2071,26 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   // The radar plots 0–5 levels, never percentages — the no-percentage rule holds.
   check("no percentage-of-target anywhere", !/%\s*of\s*target/i.test(results));
 
+  /*
+   * Capability drill-down, Phase 1. Each competency expands to its ACTIVE
+   * controls (indicator + score bar + result), so the DOM carries one .ctrlrow
+   * per active control whether the <details> is open or not. That count is
+   * exactly 132 — the single inactive control (4.3.2.6) must never appear, and
+   * "iterate active only" is the seam that keeps it out (it carries measures
+   * too). Measures themselves are Phase 2 (a control page), so a known measure
+   * string must be ABSENT while the control's indicator is present.
+   */
+  const ctrlRows = await boss.page.locator(".ctrlrow").count();
+  check("the drill-down lists exactly the 132 active controls (inactive 4.3.2.6 excluded)",
+    ctrlRows === 132, `${ctrlRows} control rows`);
+  check("a control is named by its ICB4 indicator in the drill-down",
+    results.includes("Align with organisational mission and vision"));
+  check("Phase 1 shows NO measures (those are the Phase-2 control page)",
+    !results.includes("Reflects the mission and vision of the organisation"));
+  const gapCtrlRows = await boss.page.locator(".ctrlrow.is-gap").count();
+  check("some controls are below target (gap-marked) and some are not — exceptions-only",
+    gapCtrlRows > 0 && gapCtrlRows < ctrlRows, `${gapCtrlRows} of ${ctrlRows} below target`);
+
   await pm.page.goto("/results");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
 

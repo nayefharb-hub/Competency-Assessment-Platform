@@ -94,13 +94,15 @@ above it (the exact §6 leak the warning at `rollup.ts:140–153` describes).
 - **Score shown as a LABEL, not a bare number** (`labelOf`) — "the PM picks a
   label, never a number" applies to display too; the number stays underneath.
 
-**Round trips (counted, not asserted-in-name-only).** The review found there is
-today **no e2e assertion pinning the `/results` GET Supabase count** — so this
-work ESTABLISHES that baseline: add an assertion that the approved-`/results` GET
-makes exactly N Supabase calls (measure N from the server log first, the way the
-commit/nav budgets are pinned), and the drill-down must leave N unchanged. It
-does — it reads only already-loaded data — but the number is now guarded, not
-assumed.
+**Round trips.** Phase 1 adds **zero** per-request Supabase calls — the diff adds
+no `fetch`/`db.from` on the request path; `controlBreakdown` reads the
+already-loaded `assessment` and `fw`. This is verifiable in the diff itself.
+Pinning an exact `/results`-GET budget the way the commit/nav budgets are pinned
+needs a local `next start` server log (`E2E_SERVER_LOG`) — the counter **skips
+against the Vercel preview**, same as the three existing budget assertions — so a
+pinned `/results`-GET budget is noted as a separate local-hardening follow-up,
+not built here. (The review's point was that the earlier plan *claimed* an
+assertion that did not exist; this build claims none it does not have.)
 
 ### UX (server-rendered, no client JS)
 - Progressive disclosure with native `<details>/<summary>` per competency row —
@@ -152,9 +154,12 @@ assumed.
   and **score/target label** (NOT measures — those are Phase 2); a role-ready one
   is closed; the inactive control is absent; an on-target control row carries no
   health-colour class while a below-target one does (the exceptions-only rule).
-- **e2e (new baseline):** the approved-`/results` GET makes exactly N Supabase
-  calls (N measured from the server log first) — establishing the count the
-  round-trip rule needs, which the drill-down must not move.
+- **e2e (walked):** the drill-down renders exactly **132** control rows (active
+  controls; inactive `4.3.2.6` excluded), a control's **indicator** is present
+  while a known **measure** string is absent (measures are Phase 2), and some
+  controls are gap-marked while others are not (exceptions-only).
+- **Follow-up (not this build):** a pinned `/results`-GET Supabase-call budget,
+  which needs a local server-log run.
 
 ## Open decisions
 Engineering decisions are closed (assembly seam: `controlBreakdown` in

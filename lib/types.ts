@@ -233,3 +233,23 @@ export interface AreaResult {
   actual: number | null;
   ce_count: number;
 }
+
+/**
+ * One ACTIVE control's score within a competency, for the results drill-down
+ * (Phase 1). `target` is snapshot-sensitive (rollup-spec §6), read through the
+ * same `controlTarget` the CE rollup uses, so a control row can never disagree
+ * with the frozen CE bar above it. `health` is the control's OWN gap (escalation
+ * is a CE concept, not a control one).
+ */
+export interface ControlScore {
+  code: string;
+  level: Level | null;
+  target: Level | null;
+  health: Health | null;
+  /**
+   * True when the control is below its own target (minor/deficit). Drives the
+   * "exceptions only" colouring: on/above-target controls render neutral, colour
+   * appears only on the ones below target.
+   */
+  below: boolean;
+}

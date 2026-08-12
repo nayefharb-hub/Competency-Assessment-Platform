@@ -31,7 +31,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ceTargetOf, healthOf, rollupCe, rollupAll, rollupAreas, sortByGap, fmtLevel,
-  activeControlsOf,
+  activeControlsOf, controlBreakdown,
 } from "../lib/rollup.ts";
 
 /* ------------------------------------------------------------------ fixtures */
@@ -550,4 +550,61 @@ test("the half-level threshold is half a level, not a knob", () => {
   // of a level and nothing noticed; the nearest assertion sat 0.1 away.
   assert.equal(healthOf(2.44, 2.95, false), "deficit", "0.51 short is a deficit");
   assert.equal(healthOf(2.45, 2.95, false), "minor", "0.50 short is a Minor Gap");
+});
+
+/* ---------------------------------------------- controlBreakdown (drill-down) */
+
+/*
+ * THE ONE THAT MATTERS (rollup-spec §6). The results drill-down judges each
+ * control against its OWN target, and once approved that target is the frozen
+ * snapshot — not the live framework value. A page-level reimplementation reading
+ * `control.target_level` would show per-control targets that contradict the
+ * frozen CE bar above them. This was RED on a controlBreakdown that read the live
+ * target: control .1 scored 2 against a live target of 2 reads Role Ready, but
+ * against the snapshot of 4 it is a Capability Deficit.
+ */
+test("controlBreakdown reads each control's target from the snapshot, not the live value", () => {
+  const fw = frameworkOf([
+    { ce: "4.3.1", area: "Perspective", published: 3, controls: [[2], [3]] },
+  ]);
+  const a = assessmentOf(
+    { "4.3.1.1": 2, "4.3.1.2": 3 },
+    { "4.3.1.1": 4, "4.3.1.2": 3 }, // frozen targets differ from the live 2/3
+  );
+  const c1 = controlBreakdown(fw, a, "4.3.1").find((r) => r.code === "4.3.1.1");
+  assert.equal(c1.target, 4, "target must be the snapshot (4), not the live 2");
+  assert.equal(c1.health, "deficit", "2 against a frozen target of 4 is a deficit, not Role Ready");
+  assert.equal(c1.below, true);
+});
+
+test("controlBreakdown covers active controls only, worst shortfall first", () => {
+  const fw = frameworkOf([
+    // third control inactive — it carries a target (and, in the real seed,
+    // measures) but must never appear in the drill-down.
+    { ce: "4.4.1", area: "People", published: 3, controls: [[3], [3], [3, false]] },
+  ]);
+  const rows = controlBreakdown(
+    fw,
+    assessmentOf({ "4.4.1.1": 3, "4.4.1.2": 1, "4.4.1.3": 0 }),
+    "4.4.1",
+  );
+  assert.deepEqual(
+    rows.map((r) => r.code),
+    ["4.4.1.2", "4.4.1.1"],
+    "inactive .3 absent; biggest shortfall (.2) first",
+  );
+  assert.equal(rows[0].below, true, ".2 is two levels below its target");
+  assert.equal(rows[1].below, false, ".1 sits at target");
+});
+
+test("controlBreakdown puts an unscored control last and marks it not-below", () => {
+  const fw = frameworkOf([
+    { ce: "4.4.1", area: "People", published: 3, controls: [[3], [3]] },
+  ]);
+  const rows = controlBreakdown(fw, assessmentOf({ "4.4.1.1": 1 }), "4.4.1"); // .2 unscored
+  assert.equal(rows[0].code, "4.4.1.1", "the scored gap sorts before the unscored control");
+  const c2 = rows.find((r) => r.code === "4.4.1.2");
+  assert.equal(c2.level, null);
+  assert.equal(c2.health, null);
+  assert.equal(c2.below, false, "unknown is not a gap — no colour");
 });
