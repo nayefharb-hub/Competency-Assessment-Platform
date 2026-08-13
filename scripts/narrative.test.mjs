@@ -190,6 +190,17 @@ test("strengthSummary omits the margin clause when nothing is strictly above tar
   assert.equal(strengthSummary(controls), "all 2 controls at or above target");
 });
 
+// The total===0 branch: nothing scored+targeted. Not reachable through the app
+// today (a strength always has at least one scored control), but the helper must
+// not divide by zero or claim "all 0 controls" — it says so plainly instead.
+test("strengthSummary says 'no scored controls' when the scored+targeted set is empty", () => {
+  const controls = [
+    { code: "x.1", level: null, target: 3, health: null, below: false },   // unscored
+    { code: "x.2", level: 4, target: null, health: null, below: false },   // untargeted
+  ];
+  assert.equal(strengthSummary(controls), "no scored controls");
+});
+
 // Regression (/review 2026-08-10): the top gap in an area can be an
 // escalation-driven deficit whose MEAN is at or above target. The old line
 // printed "<actual> against <target>" for it — e.g. "3.4 against 3.0" — labelling

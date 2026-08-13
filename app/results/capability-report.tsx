@@ -26,6 +26,17 @@ import type { Assessment, CeResult, ControlScore, Framework, Health, Level } fro
 export const MAX = 5;
 export const pct = (v: number) => `${(v / MAX) * 100}%`;
 
+/**
+ * Resolve a control code to its ICB4 indicator text, tidied. The one definition
+ * of the `c.indicator ?? c.code` fallback — shared by the summary, the by-area
+ * body and the strengths & gaps view so the fallback rule cannot drift between
+ * three copies (a `??` is exactly the kind of small rule that does).
+ */
+export function indicatorLookup(fw: { data: Framework }): (code: string) => string {
+  const text = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  return (code) => tidyIndicator(text.get(code) ?? code);
+}
+
 export function HealthPill({ health }: { health: Health | null }) {
   if (!health) return <span className="muted">—</span>;
   return (
@@ -185,8 +196,7 @@ export function CapabilitySummary({
 }) {
   const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
-  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
+  const controlLabel = indicatorLookup(fw);
   return (
     <>
       <div className="tiles">
@@ -262,8 +272,7 @@ export function CapabilityByArea({
 
   // Resolve a control code to its ICB4 indicator text, so the report names
   // controls by what they mean, not by "4.4.10.1".
-  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
+  const controlLabel = indicatorLookup(fw);
 
   return (
     <>

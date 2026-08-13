@@ -50,3 +50,19 @@ export function subscribePending(cb: () => void): () => void {
 export function isNavPending(): boolean {
   return pending > 0;
 }
+
+/**
+ * Force the count to zero. The safety net for a navigation that COMPLETES without
+ * its `<Link>` ever releasing — a header link lives in the persistent layout and
+ * never unmounts, so if Next left its `useLinkStatus` pending on a superseded
+ * transition the count could otherwise stick above zero and pin the bar on.
+ * `<NavProgress>` calls this on every committed route change: once the new route
+ * is on screen nothing should still be pending. A straggler release firing after
+ * this is harmless — `pushPending`'s decrement is floored at zero.
+ */
+export function resetPending(): void {
+  if (pending !== 0) {
+    pending = 0;
+    emit();
+  }
+}

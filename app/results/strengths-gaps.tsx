@@ -1,6 +1,6 @@
 import { controlBreakdown, fmtLevel, rollupAll } from "@/lib/rollup";
-import { gapSummary, gapsOf, strengthSummary, strengthsOf, tidyIndicator } from "@/lib/narrative";
-import { HealthPill, clip, pct } from "./capability-report";
+import { gapSummary, gapsOf, strengthSummary, strengthsOf } from "@/lib/narrative";
+import { HealthPill, clip, indicatorLookup, pct } from "./capability-report";
 import type { Assessment, CeResult, ControlScore, Framework, Level } from "@/lib/types";
 
 /**
@@ -14,11 +14,15 @@ import type { Assessment, CeResult, ControlScore, Framework, Level } from "@/lib
  * below target, weakest first, with a ⚑ on any that escalates; a strength block
  * shows its controls strongest first, celebrating what is clear.
  *
- * It computes NOTHING new. `rollupAll` and `controlBreakdown` are the same
+ * It derives NO new arithmetic. `rollupAll` and `controlBreakdown` are the same
  * functions the by-area report calls; `gapsOf`/`strengthsOf`/`gapSummary`/
  * `strengthSummary` are ordering and text over their output. So the two views can
- * never disagree about a number — there is one rollup, read two ways. Fully
- * server-rendered (native <details> for the overflow), no client JS.
+ * never disagree about a number — the same rollup logic, read two ways. (Each
+ * view calls `rollupAll` itself rather than sharing one result object; that is a
+ * few extra pure-CPU passes over already-fetched data, NOT extra Supabase round
+ * trips — the round-trip budget is unmoved. Hoisting the call to the page is a
+ * possible tidy-up, not a correctness fix, since the passes are deterministic and
+ * agree by construction.) Fully server-rendered (native <details>), no client JS.
  */
 
 /**
@@ -43,9 +47,20 @@ function strongestFirst(controls: ControlScore[]): ControlScore[] {
   return [...controls].sort((a, b) => margin(b) - margin(a) || a.code.localeCompare(b.code));
 }
 
-/** One control inside a competency block: indicator + bar-on-bar + level/target.
- *  The state dot appears only when the control is below its own target
- *  (exceptions-only, the drill-down's rule); ⚑ marks an escalating control. */
+/**
+ * One control inside a competency block: indicator + bar-on-bar + level/target.
+ * The state DOT appears only when the control is below its own target
+ * (exceptions-only, the drill-down's rule); ⚑ marks an escalating control.
+ *
+ * The BAR, however, is coloured by the control's health here — unlike the by-area
+ * drill-down (`.ctrlrow`), which neutralises on/above-target bars. That is
+ * deliberate and NOT the same context: each column is pre-filtered to one kind
+ * (gaps show only below-target controls, strengths only at/or-above), so every
+ * bar in a block is the same story and colour reinforces it. Exceptions-only
+ * exists for the drill-down's MIXED list, where on-target rows must recede; the
+ * omission does that job here. Owner endorsed the coloured bars in the Option-3
+ * prototypes (DESIGN.md 2026-08-13).
+ */
 function ControlRow({
   cs, indicator, escalated, labelOf,
 }: {
@@ -133,14 +148,16 @@ function CompetencyBlock({
 
 /** A column: heading, a summary line, the first VISIBLE blocks, then the rest
  *  behind a native <details> disclosure. `blocks` are pre-rendered so the column
- *  is agnostic to which side it shows. */
+ *  is agnostic to which side it shows. When empty, the `summary` already states
+ *  the empty case ("No competency is below target."), so there is no separate
+ *  empty note — a second copy of that sentence is exactly the duplicate a review
+ *  pass caught. */
 function BlockColumn({
-  heading, summary, blocks, empty,
+  heading, summary, blocks,
 }: {
   heading: string;
   summary: string;
   blocks: React.ReactNode[];
-  empty: string;
 }) {
   const shown = blocks.slice(0, VISIBLE);
   const rest = blocks.slice(VISIBLE);
@@ -148,18 +165,12 @@ function BlockColumn({
     <section className="sgcol">
       <div className="cap">{heading}</div>
       <p className="sgsummary">{summary}</p>
-      {blocks.length === 0 ? (
-        <p className="note">{empty}</p>
-      ) : (
-        <>
-          {shown}
-          {rest.length > 0 && (
-            <details className="ce-more">
-              <summary>Show {rest.length} more competenc{rest.length === 1 ? "y" : "ies"}</summary>
-              <div className="ce-more-body">{rest}</div>
-            </details>
-          )}
-        </>
+      {shown}
+      {rest.length > 0 && (
+        <details className="ce-more">
+          <summary>Show {rest.length} more competenc{rest.length === 1 ? "y" : "ies"}</summary>
+          <div className="ce-more-body">{rest}</div>
+        </details>
       )}
     </section>
   );
@@ -176,8 +187,7 @@ export function StrengthsGaps({
   const gaps = gapsOf(results);
   const strengths = strengthsOf(results);
 
-  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const indicatorOf = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
+  const indicatorOf = indicatorLookup(fw);
 
   const gapBlock = (r: CeResult) => {
     const controls = controlBreakdown(fw.data, assessment, r.ce_code);
@@ -198,9 +208,15 @@ export function StrengthsGaps({
   };
 
   const strengthBlock = (r: CeResult) => {
-    const controls = strongestFirst(controlBreakdown(fw.data, assessment, r.ce_code));
-    // Strengths show every control, strongest first — the "here is what is clear"
-    // detail the by-competency form is for. No escalation on a strength.
+    // Scored controls only, strongest first — the "here is what is clear" detail
+    // the by-competency form is for. Filtering out unscored active controls keeps
+    // the rendered rows and strengthSummary's "M of N" over the SAME population,
+    // so the count can never disagree with what is listed below it (a review
+    // pass caught the mismatch when an active control was left unscored). No
+    // escalation on a strength.
+    const controls = strongestFirst(
+      controlBreakdown(fw.data, assessment, r.ce_code).filter((c) => c.level !== null),
+    );
     return (
       <CompetencyBlock
         key={r.ce_code}
@@ -250,13 +266,11 @@ export function StrengthsGaps({
         heading="STRENGTHS · most clear of target first"
         summary={strengthsHeadline}
         blocks={strengths.map(strengthBlock)}
-        empty="No competency is at or above target yet."
       />
       <BlockColumn
         heading="DEVELOPMENT AREAS · most serious first"
         summary={gapsHeadline}
         blocks={gaps.map(gapBlock)}
-        empty="No competency is below target."
       />
     </div>
   );

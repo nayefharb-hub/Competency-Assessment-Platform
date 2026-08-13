@@ -21,9 +21,11 @@ export const dynamic = "force-dynamic";
  * with ?a=. Targets shown here are the ones frozen at approval (rollup-spec §6),
  * so a later change of benchmark profile cannot move a historic gap.
  *
- * The analytical body (tiles · radar · narrative · competency drill-down) is the
- * shared `CapabilityReport`, so the PMO analysis screen shows the identical
- * report beside a person's pace without a second copy of the rollup-to-markup.
+ * The analytical body is a shared frame — `CapabilitySummary` (tiles · radar ·
+ * narrative) — plus a swappable body under the toggle: `CapabilityByArea` (the
+ * competency drill-down) or `StrengthsGaps`. The PMO analysis screen composes the
+ * same halves via `CapabilityReport`, so there is no second copy of the
+ * rollup-to-markup mapping to drift.
  */
 export default async function ResultsPage({
   searchParams,

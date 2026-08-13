@@ -45,6 +45,21 @@ a data field set + validated in framework-authoring by the tenant — never an a
 default (the app cannot ship a safe default palette). Routed through `/office-hours`
 (area context is worth it) then the dataviz palette method (colour is not viable).
 
+**Final pre-merge gates ran on the whole accumulated branch.** `/qa` on the Vercel
+preview (`84e7d53`): **457 passed / 0 failed / 4 SKIPPED** (round-trip budgets + JWKS,
+server-log only; green locally), clean on retry after the documented proxy-TLS
+`page.goto` flake. `/review` (3 specialists + adversarial red-team) found **no
+correctness-breaking bug**; the real items were fixed: an empty column printed its
+headline twice (removed the redundant note); the nav bar's stuck-on backstop was only
+a comment claiming "the link unmounts" (false for the persistent header links) — added
+a real route-change **drain** (`resetPending`, `NavProgress` on `usePathname`); a
+strength block's "M of N" could disagree with its rendered rows when an active control
+was unscored (now filtered to scored controls); the tripled `indicatorLookup` copy
+extracted; the coloured strength bars documented as deliberate; a stale docstring and
+the "one rollup" overclaim corrected (the extra passes are pure CPU, not round trips).
+Re-verified: unit **182**, e2e **465/0**, nav-progress verify 4/0, typecheck + build
+clean. No `/cso` — no auth/session/storage/allowlist code. Ready for the owner's merge.
+
 **No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
 `strengthsOf` + `gapsOf` + `gapSummary` (ordering and text over their output,
 all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,

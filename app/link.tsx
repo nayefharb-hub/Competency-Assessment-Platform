@@ -68,9 +68,15 @@ export default function Link({ children, onClick, ...props }: ComponentProps<typ
  *
  * `useLinkStatus` goes pending the moment the click starts a navigation and
  * clears when the destination has fully rendered — exactly the window with no
- * on-screen feedback today. The effect's cleanup releases the count on settle OR
- * on unmount (the clicked in-page link unmounts when its page is replaced), so a
- * navigation can never leave the bar stuck on.
+ * on-screen feedback today. The effect's cleanup releases the count when pending
+ * flips back to false, or on unmount.
+ *
+ * That release is NOT sufficient on its own: the header nav links live in the
+ * persistent layout and never unmount, so a superseded navigation (click A, then
+ * B before A lands) could leave A's `useLinkStatus` pending and its count never
+ * released. The backstop is `<NavProgress>`, which drains the count to zero on
+ * every committed route change (see nav-progress.tsx / nav-progress-store.ts) —
+ * so the bar can never stay stuck on past the next navigation.
  */
 function NavPending() {
   const { pending } = useLinkStatus();
