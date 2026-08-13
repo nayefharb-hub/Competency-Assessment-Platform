@@ -113,6 +113,35 @@ export function gapSummary(
 }
 
 /**
+ * The one-line summary under a STRENGTH competency's name — the mirror of
+ * gapSummary. How many of its controls sit at or above their own target, and how
+ * far up the strongest is. A strength is judged on its MEAN, so it can still hold
+ * a control or two below target (as long as none is 2+ levels down, which would
+ * escalate it out of the strengths column), so the "M of N" wording stays honest
+ * when that happens rather than claiming all are clear. "levels up" is an integer
+ * difference of integer levels, exact, not a mean.
+ */
+export function strengthSummary(controls: ControlScore[]): string {
+  const scored = controls.filter((c) => c.level !== null && c.target !== null);
+  const total = scored.length;
+  const meet = scored.filter((c) => (c.level as number) >= (c.target as number)).length;
+  let best = 0;
+  for (const c of scored) {
+    const up = (c.level as number) - (c.target as number);
+    if (up > best) best = up;
+  }
+  const lead =
+    total === 0
+      ? "no scored controls"
+      : meet === total
+        ? `all ${total} control${total === 1 ? "" : "s"} at or above target`
+        : `${meet} of ${total} at or above target`;
+  const parts = [lead];
+  if (best > 0) parts.push(`strongest ${best} level${best === 1 ? "" : "s"} up`);
+  return parts.join(" · ");
+}
+
+/**
  * One interpretive sentence per area (People / Practice / Perspective).
  * `ces` are that area's competence-element results.
  */

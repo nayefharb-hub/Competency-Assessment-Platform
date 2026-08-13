@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  areaNarrative, gapSummary, gapsOf, strengthsOf, tidyIndicator,
+  areaNarrative, gapSummary, gapsOf, strengthSummary, strengthsOf, tidyIndicator,
 } from "../lib/narrative.ts";
 
 function ce(o) {
@@ -157,6 +157,37 @@ test("gapSummary describes the element mean when no control is individually belo
     { code: "x.2", level: 1, target: null, health: null, below: false },  // untargeted, low
   ];
   assert.equal(gapSummary({ actual: 2.0, target: 3.0 }, controls), "element mean 2.0 below the 3.0 target");
+});
+
+// strengthSummary is gapSummary's mirror for the strengths column: how many
+// controls are at or above their own target, and how far up the strongest is.
+test("strengthSummary counts controls at/above target and names the strongest margin", () => {
+  const controls = [
+    { code: "x.1", level: 5, target: 2, health: "above", below: false },  // 3 up
+    { code: "x.2", level: 3, target: 3, health: "ready", below: false },  // at target
+    { code: "x.3", level: 4, target: 3, health: "above", below: false },  // 1 up
+  ];
+  assert.equal(strengthSummary(controls), "all 3 controls at or above target · strongest 3 levels up");
+});
+
+// A strength is judged on its MEAN, so it can still hold a below-target control
+// (not 2+ down, or it would escalate out of the strengths column). The wording
+// must stay honest — "M of N", never "all N".
+test("strengthSummary says 'M of N' when a strength still holds a below-target control", () => {
+  const controls = [
+    { code: "x.1", level: 4, target: 3, health: "above", below: false },  // 1 up
+    { code: "x.2", level: 2, target: 3, health: "minor", below: true },   // 1 down
+  ];
+  assert.equal(strengthSummary(controls), "1 of 2 at or above target · strongest 1 level up");
+});
+
+// Exactly at target on every control: no "levels up" clause, since best margin is 0.
+test("strengthSummary omits the margin clause when nothing is strictly above target", () => {
+  const controls = [
+    { code: "x.1", level: 3, target: 3, health: "ready", below: false },
+    { code: "x.2", level: 2, target: 2, health: "ready", below: false },
+  ];
+  assert.equal(strengthSummary(controls), "all 2 controls at or above target");
 });
 
 // Regression (/review 2026-08-10): the top gap in an area can be an

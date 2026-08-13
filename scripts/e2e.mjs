@@ -2118,24 +2118,32 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   check("?view=gaps renders the two-column strengths & gaps view", sg.includes('class="sgcols"'));
   check("the gaps view names its strengths column", /STRENGTHS/.test(sg));
   check("the gaps view names its development-areas column", /DEVELOPMENT AREAS/.test(sg));
-  const gapBlocks = await boss.page.locator(".gapblock").count();
+  // Both columns are competency blocks (owner's symmetric form). Scope by column:
+  // strengths is the first .sgcol, development areas the second.
+  const strengthsCol = boss.page.locator(".sgcols > .sgcol").nth(0);
+  const gapsCol = boss.page.locator(".sgcols > .sgcol").nth(1);
+  const gapBlocks = await gapsCol.locator(".ceblock").count();
   check("development areas are grouped into competency blocks", gapBlocks > 0, `${gapBlocks} blocks`);
   // The assessment is fully scored (approval gate) with only a few gaps, so most
-  // competencies are strengths — this exercises StrengthRow/strengthsOf, which
-  // the caption regex alone (present even in the empty state) would not.
-  const strengthRows = await boss.page.locator(".strength").count();
-  check("the strengths column renders its competency rows",
-    strengthRows > 0, `${strengthRows} strengths, ${gapBlocks} gaps`);
+  // competencies are strengths — this exercises strengthsOf/strengthSummary and
+  // the strength block, which the caption regex alone (present even in the empty
+  // state) would not.
+  const strengthBlocks = await strengthsCol.locator(".ceblock").count();
+  check("the strengths column renders its competency blocks",
+    strengthBlocks > 0, `${strengthBlocks} strengths, ${gapBlocks} gaps`);
+  const strengthPill = (await strengthsCol.locator(".ceblock .pill").first().innerText()).trim();
+  check("a strength block carries an above/role-ready pill",
+    /Above target|Role Ready/.test(strengthPill), strengthPill);
   // deficits sort before minors, so the first block is the single most serious.
-  const firstPill = (await boss.page.locator(".gapblock .pill").first().innerText()).trim();
+  const firstPill = (await gapsCol.locator(".ceblock .pill").first().innerText()).trim();
   check("the most serious gap block leads and carries its health-tier pill",
     /Capability Deficit|Minor Gap/.test(firstPill), firstPill);
-  const gapCtrls = await boss.page.locator(".gapctrl").count();
+  const gapCtrls = await gapsCol.locator(".cerow").count();
   check("each gap block opens to its below-target controls (bar-on-bar rows)",
     gapCtrls > 0, `${gapCtrls} control rows`);
-  // The overflow fold: gaps past the fourth sit behind a native <details>. Assert
-  // the disclosure's presence tracks the gap count in BOTH directions.
-  const moreGaps = await boss.page.locator("details.moregaps").count();
+  // The overflow fold: competencies past the fourth in a column sit behind a
+  // native <details>. Assert it in BOTH directions, scoped to the gaps column.
+  const moreGaps = await gapsCol.locator("details.ce-more").count();
   if (gapBlocks > 4) {
     check("gaps past the fourth fold behind a 'Show more' disclosure",
       moreGaps === 1, `${gapBlocks} gaps, ${moreGaps} disclosure(s)`);
