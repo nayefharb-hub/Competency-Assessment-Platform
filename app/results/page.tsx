@@ -7,7 +7,8 @@ import {
 } from "@/lib/db/assessment";
 import { rollupAll } from "@/lib/rollup";
 import { gapsOf } from "@/lib/narrative";
-import { CapabilityReport } from "./capability-report";
+import { CapabilitySummary, CapabilityByArea } from "./capability-report";
+import { StrengthsGaps } from "./strengths-gaps";
 import type { Assessment } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -20,16 +21,18 @@ export const dynamic = "force-dynamic";
  * with ?a=. Targets shown here are the ones frozen at approval (rollup-spec §6),
  * so a later change of benchmark profile cannot move a historic gap.
  *
- * The analytical body (tiles · radar · narrative · competency drill-down) is the
- * shared `CapabilityReport`, so the PMO analysis screen shows the identical
- * report beside a person's pace without a second copy of the rollup-to-markup.
+ * The analytical body is a shared frame — `CapabilitySummary` (tiles · radar ·
+ * narrative) — plus a swappable body under the toggle: `CapabilityByArea` (the
+ * competency drill-down) or `StrengthsGaps`. The PMO analysis screen composes the
+ * same halves via `CapabilityReport`, so there is no second copy of the
+ * rollup-to-markup mapping to drift.
  */
 export default async function ResultsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ a?: string; approved?: string }>;
+  searchParams: Promise<{ a?: string; approved?: string; view?: string }>;
 }) {
-  const { a: requested, approved } = await searchParams;
+  const { a: requested, approved, view } = await searchParams;
   const user = await requireUser();
   const fw = await getFramework();
 
@@ -49,6 +52,18 @@ export default async function ResultsPage({
   const gaps = gapsOf(rollupAll(fw.data, assessment)).length;
   const initials = assessment.assessee_name.split(" ").map((w) => w[0]).join("").slice(0, 2);
   const revised = assessment.scores.filter((s) => s.assessor_touched).length;
+
+  // Preserve ?a= (an assessor viewing someone) across the toggle, so switching
+  // views never drops back to the assessor's own assessment. Only when ?a= is
+  // actually in effect — the same guard the load above uses — so a PM's toggle
+  // never carries a stale id the page would ignore anyway. React escapes the
+  // interpolated id in the href, and an unmatched id never reaches here (it
+  // returns NotYet above), so the raw param is safe to embed.
+  const gapsView = view === "gaps";
+  const usingRequested = Boolean(requested) && canAssess(user);
+  const base = usingRequested ? `/results?a=${requested}` : "/results";
+  const areaHref = base;
+  const gapsHref = usingRequested ? `${base}&view=gaps` : `${base}?view=gaps`;
 
   return (
     <div className="section">
@@ -77,7 +92,29 @@ export default async function ResultsPage({
           </span>
         </div>
 
-        <CapabilityReport fw={fw} assessment={assessment} />
+        {/* The area tiles and radar are a constant frame; only the body below
+            the toggle swaps (owner, 2026-08-13), so a view switch never takes
+            the area picture away. */}
+        <CapabilitySummary fw={fw} assessment={assessment} />
+
+        {/* Navigation between two URLs, not in-page tab panels — so `nav` +
+            `aria-current`, not role="tablist"/aria-selected (which promises a
+            tabpanel that does not exist). Sits below the radar, above the body
+            it switches. */}
+        <nav className="sgtoggle segmented" aria-label="Results view">
+          <Link href={areaHref} aria-current={gapsView ? undefined : "page"}>
+            By area
+          </Link>
+          <Link href={gapsHref} aria-current={gapsView ? "page" : undefined}>
+            Strengths &amp; gaps
+          </Link>
+        </nav>
+
+        {gapsView ? (
+          <StrengthsGaps fw={fw} assessment={assessment} />
+        ) : (
+          <CapabilityByArea fw={fw} assessment={assessment} />
+        )}
       </div>
     </div>
   );

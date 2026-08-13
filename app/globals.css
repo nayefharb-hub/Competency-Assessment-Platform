@@ -219,6 +219,33 @@ h1, h2, h3 {
    as broken rather than deliberate. DESIGN.md Layout names all three widths. */
 .reading { max-width: 780px; margin-left: auto; margin-right: auto; }
 
+/* Top navigation progress bar — the in-app stand-in for the browser's tab
+   spinner, which client-side navigation never fires (app/nav-progress.tsx). A
+   thin azure line fixed to the viewport top, above all chrome. Shown only while
+   a navigation is pending AND past the 150ms delay, so warm clicks never flash.
+   Motion is minimal-functional per DESIGN.md: one indeterminate sweep, no
+   choreography, and honoured against prefers-reduced-motion below. */
+.navprogress {
+  position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 100;
+  overflow: hidden; pointer-events: none;
+  opacity: 0; transition: opacity 150ms ease;
+}
+.navprogress.on { opacity: 1; }
+.navprogress-bar {
+  position: absolute; top: 0; left: 0; height: 100%; width: 30%;
+  background: var(--accent); box-shadow: 0 0 8px 0 var(--accent);
+  animation: navprogress-sweep 1s linear infinite;
+}
+@keyframes navprogress-sweep {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+/* Reduced motion: no sweep. A static full-width bar still signals "loading"
+   without travel, which is the DESIGN.md contract. */
+@media (prefers-reduced-motion: reduce) {
+  .navprogress-bar { position: static; width: 100%; animation: none; }
+}
+
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   background: var(--navy); color: var(--on-navy);
@@ -675,10 +702,18 @@ textarea.input {
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
-/* ---------- results: narrative lines, area radar, capability-by-area ---------- */
-.narrative { margin: 4px 0 20px; display: grid; gap: 8px; }
-.narrative p { font-size: var(--fs-ui); line-height: 1.5; color: var(--ink); max-width: var(--measure); margin: 0; }
+/* ---------- results: narrative lines, area radar, capability-by-area ----------
+   The per-area narrative sits directly under the radar (it interprets it) and
+   above the view toggle. Each line leads with its bolded area name and runs to a
+   comfortable reading measure (~62ch, in the DESIGN.md 60–70 band) so the long
+   sentences wrap two or three times rather than towering in a 44ch column. */
+.narrative { margin: 16px auto 6px; display: grid; gap: 11px; max-width: 62ch; }
+.narrative p { font-size: var(--fs-ui); line-height: 1.55; color: var(--ink); margin: 0; }
 .narrative p b { font-weight: 650; }
+/* the leading area name — a touch heavier so each line reads as a titled
+   sentence. Bold weight only (no colour), so it is safe in both themes and never
+   reads as a link. */
+.narrative .narrative-area { font-weight: 700; }
 
 /* The radar is the centrepiece: a large triangle centred in its panel, with the
    per-area figures read directly beneath it and a compact actual/target key. */
@@ -762,6 +797,77 @@ details.dd > summary:hover .name { color: var(--accent); }
   .ctrlrow { grid-template-columns: 1fr; gap: 6px; }
   .ctrlval { text-align: left; justify-content: flex-start; }
 }
+
+/* ---------- results: strengths & gaps view (?view=gaps) ----------
+   An alternative reading of the SAME rollup — two symmetric columns of
+   competency blocks: strengths on the left, development areas on the right. No
+   new arithmetic; see app/results/strengths-gaps.tsx. */
+
+/* The view toggle reuses the shared .segmented skin (see "segmented controls"
+   below); .sgtoggle only carries its own spacing. Selected state is the current
+   link's [aria-current="page"]. */
+.sgtoggle { margin: 4px 0 18px; }
+
+/* strengths | development areas — two symmetric columns of competency blocks.
+   Development areas get a touch more width (their control rows carry the longest
+   indicator text). */
+.sgcols { display: grid; grid-template-columns: 1fr 1.2fr; gap: 26px; align-items: start; }
+@media (max-width: 860px) { .sgcols { grid-template-columns: 1fr; gap: 20px; } }
+.sgcol .cap { margin-bottom: 10px; }
+.sgsummary { font-size: var(--fs-sm); color: var(--ink-muted); margin: 0 0 14px; }
+
+/* a competency block (both columns): header, one-line summary, its controls. The
+   left border is the competency's own health, so a strength reads green/indigo
+   and a gap amber/red with no second code path. */
+.ceblock {
+  border: 1px solid var(--border); border-left: 3px solid var(--border);
+  border-radius: var(--radius-in); background: var(--surface-2);
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.ceblock.is-above { border-left-color: var(--above); }
+.ceblock.is-ready { border-left-color: var(--ready); }
+.ceblock.is-minor { border-left-color: var(--minor); }
+.ceblock.is-deficit { border-left-color: var(--deficit); }
+.ceblock-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ceblock-name { font-size: var(--fs-ui); font-weight: 640; }
+/* the domain (L1) chip beside the competency title — ONE neutral treatment for
+   every domain. Not colour-coded on purpose: a status-safe categorical domain
+   palette does not exist alongside the health colours (validated, see DESIGN.md).
+   Given the card surface so it reads on the surface-2 block; smaller than a
+   status pill so it stays secondary to the health verdict. */
+.domtag {
+  font-size: var(--fs-micro); font-weight: 600; padding: 1px 8px; margin-left: 8px;
+  background: var(--surface); vertical-align: middle; white-space: nowrap;
+}
+.ceblock-meta { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.ceblock-val { font-size: var(--fs-sm); }
+.ceblock-sum { font-size: var(--fs-sm); color: var(--ink-muted); margin: 5px 0 11px; }
+.ceblock-rows { display: flex; flex-direction: column; gap: 9px; }
+
+/* one control row: indicator | bar-on-bar | level/target */
+.cerow { display: grid; grid-template-columns: 1fr 72px auto; gap: 12px; align-items: center; }
+.cerow-name { font-size: var(--fs-sm); color: var(--ink); min-width: 0; }
+.cerow-val {
+  font-size: var(--fs-sm); white-space: nowrap; text-align: right;
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px;
+}
+.escflag { color: var(--deficit); margin-right: 5px; font-size: 0.9em; }
+@media (max-width: 760px) {
+  .cerow { grid-template-columns: 1fr auto; }
+  .cerow .track-sm { grid-column: 1 / -1; order: 3; }
+}
+
+/* the overflow behind "Show N more competencies" — native <details>, no JS */
+.ce-more > summary {
+  list-style: none; cursor: pointer; font-size: var(--fs-sm); font-weight: 600;
+  color: var(--accent); padding: 6px 0;
+}
+.ce-more > summary::-webkit-details-marker { display: none; }
+.ce-more > summary::before { content: "▸ "; }
+.ce-more[open] > summary::before { content: "▾ "; }
+.ce-more > summary:hover { text-decoration: underline; }
+.ce-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-in); }
+.ce-more-body { margin-top: 8px; }
 
 /* ---------- review + admin ---------- */
 .rrow { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
@@ -962,26 +1068,33 @@ details.dd > summary:hover .name { color: var(--accent); }
 .whoami b { color: var(--ink); font-weight: 600; }
 .whoami-right { display: flex; align-items: center; gap: 12px; }
 
-/* Light / Dark / Auto (N12) — a segmented control of submit buttons. */
-.themetoggle {
+/* Segmented controls — ONE skin shared by the results view toggle (.sgtoggle,
+   links) and the Light/Dark/Auto theme toggle (.themetoggle, buttons), so a
+   hover/selected/focus tweak to one cannot silently diverge from the other (they
+   were near-verbatim copies before). The two differ only in element reset
+   (button vs anchor), padding, and which attribute marks the selected child —
+   [aria-pressed] on a button, [aria-current] on a link — and both are styled
+   here so the paint and the accessible state can never disagree. */
+.segmented {
   display: inline-flex; border: 1px solid var(--border);
   border-radius: var(--radius-pill); overflow: hidden; background: var(--surface);
 }
-.themetoggle button {
-  appearance: none; font: inherit; font-size: var(--fs-label); font-weight: 600;
-  letter-spacing: 0.02em; padding: 4px 10px; cursor: pointer;
-  border: 0; border-right: 1px solid var(--border);
-  background: transparent; color: var(--ink-muted);
-  transition: background 0.15s, color 0.15s;
+.segmented > * {
+  font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.02em;
+  padding: 5px 14px; color: var(--ink-muted); text-decoration: none;
+  border-right: 1px solid var(--border); transition: background 0.15s, color 0.15s;
 }
-.themetoggle button:last-child { border-right: 0; }
-.themetoggle button:hover { background: var(--surface-2); color: var(--ink); }
-/* aria-pressed IS the state — styling it means the visual and the accessible
-   name can never disagree about which theme is on. */
-.themetoggle button[aria-pressed="true"] {
+/* button reset — kill the default box/borders but keep the shared right divider */
+.segmented > button {
+  appearance: none; font-family: inherit; padding: 4px 10px; cursor: pointer;
+  background: transparent; border-top: 0; border-bottom: 0; border-left: 0;
+}
+.segmented > :last-child { border-right: 0; }
+.segmented > :hover { background: var(--surface-2); color: var(--ink); }
+.segmented > :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.segmented > [aria-current="page"], .segmented > [aria-pressed="true"] {
   background: var(--selected); color: #fff;
 }
-.themetoggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- banners (status colours always carry a label, never colour alone) */
 .banner {

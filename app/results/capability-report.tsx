@@ -17,8 +17,25 @@ import type { Assessment, CeResult, ControlScore, Framework, Health, Level } fro
  * differently).
  */
 
-const MAX = 5;
-const pct = (v: number) => `${(v / MAX) * 100}%`;
+/**
+ * Bar geometry for the 0–5 results scale, shared with the strengths-gaps view so
+ * the two readings of the same rollup place a bar identically. Exported rather
+ * than re-declared there — the scale ceiling lives in one place (the rating scale
+ * is a swappable module; a second `5` is exactly the copy that gets missed).
+ */
+export const MAX = 5;
+export const pct = (v: number) => `${(v / MAX) * 100}%`;
+
+/**
+ * Resolve a control code to its ICB4 indicator text, tidied. The one definition
+ * of the `c.indicator ?? c.code` fallback — shared by the summary, the by-area
+ * body and the strengths & gaps view so the fallback rule cannot drift between
+ * three copies (a `??` is exactly the kind of small rule that does).
+ */
+export function indicatorLookup(fw: { data: Framework }): (code: string) => string {
+  const text = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  return (code) => tidyIndicator(text.get(code) ?? code);
+}
 
 export function HealthPill({ health }: { health: Health | null }) {
   if (!health) return <span className="muted">—</span>;
@@ -37,7 +54,7 @@ export function HealthPill({ health }: { health: Health | null }) {
  * cannot become a wall of text under its name; the full text rides in the row's
  * `title` for hover. Clip on a word boundary where one is near the end.
  */
-function clip(s: string, n = 66): string {
+export function clip(s: string, n = 66): string {
   if (s.length <= n) return s;
   const cut = s.slice(0, n - 1);
   const sp = cut.lastIndexOf(" ");
@@ -162,7 +179,15 @@ function Bar({
   );
 }
 
-export function CapabilityReport({
+/**
+ * The shared top of the report: the three area tiles, the radar, and the per-area
+ * narrative that interprets it. This stays on screen in BOTH /results views — the
+ * by-area/gaps toggle swaps only the body below it (owner, 2026-08-13), so the
+ * area picture, and the sentences that read it, are a constant frame rather than
+ * something a view switch takes away. The narrative sits with the radar because
+ * it interprets the radar (owner, 2026-08-13).
+ */
+export function CapabilitySummary({
   fw,
   assessment,
 }: {
@@ -171,12 +196,7 @@ export function CapabilityReport({
 }) {
   const results = rollupAll(fw.data, assessment);
   const areas = rollupAreas(results);
-
-  // Resolve a control code to its ICB4 indicator text, so the report names
-  // controls by what they mean, not by "4.4.10.1".
-  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
-
+  const controlLabel = indicatorLookup(fw);
   return (
     <>
       <div className="tiles">
@@ -218,13 +238,44 @@ export function CapabilityReport({
       <AreaRadar areas={areas} />
 
       <div className="narrative">
-        {areas.map((ar) => (
-          <p key={ar.area}>
-            {areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel)}
-          </p>
-        ))}
+        {areas.map((ar) => {
+          // areaNarrative leads with "Area: …"; lift the label out and bold it so
+          // each line reads as a titled sentence rather than a grey wall.
+          const text = areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel);
+          const rest = text.startsWith(`${ar.area}: `) ? text.slice(ar.area.length + 2) : text;
+          return (
+            <p key={ar.area}>
+              <b className="narrative-area">{ar.area}</b> — {rest}
+            </p>
+          );
+        })}
       </div>
+    </>
+  );
+}
 
+/**
+ * The by-area body: the competence-element list grouped by area with the control
+ * drill-down. This is the swappable half — the strengths-and-gaps view
+ * (StrengthsGaps) is its alternative under the toggle. The per-area narrative now
+ * lives in CapabilitySummary (it interprets the radar, so it stays with it).
+ */
+export function CapabilityByArea({
+  fw,
+  assessment,
+}: {
+  fw: { data: Framework; labelOf: (n: Level | null) => string };
+  assessment: Assessment;
+}) {
+  const results = rollupAll(fw.data, assessment);
+  const areas = rollupAreas(results);
+
+  // Resolve a control code to its ICB4 indicator text, so the report names
+  // controls by what they mean, not by "4.4.10.1".
+  const controlLabel = indicatorLookup(fw);
+
+  return (
+    <>
       <div className="cap" style={{ marginBottom: 6 }}>
         CAPABILITY BY COMPETENCE ELEMENT · grouped by area · most serious first · actual vs target on 0–5
       </div>
@@ -274,6 +325,26 @@ export function CapabilityReport({
         weakest control is named alongside so a single serious gap is not absorbed by the
         average. This report supports a decision — it does not approve, reject or gate one.
       </p>
+    </>
+  );
+}
+
+/**
+ * The full report — summary frame plus the by-area body — as one piece, for the
+ * PMO analysis screen's unified per-person view (which has no view toggle). On
+ * /results the two halves are rendered separately with the toggle between them.
+ */
+export function CapabilityReport({
+  fw,
+  assessment,
+}: {
+  fw: { data: Framework; labelOf: (n: Level | null) => string };
+  assessment: Assessment;
+}) {
+  return (
+    <>
+      <CapabilitySummary fw={fw} assessment={assessment} />
+      <CapabilityByArea fw={fw} assessment={assessment} />
     </>
   );
 }

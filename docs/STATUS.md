@@ -2,6 +2,104 @@
 
 Last updated: **2026-08-12** — six PRs merged to `main` (prod). Read this first.
 
+## In flight — strengths & gaps view (branch `claude/cap-supabase-integration-ubitap`)
+
+**NOT merged.** `/results` gains a **view toggle**: the existing **By area** report,
+plus a new **Strengths & gaps** view (`?view=gaps`). Two columns — strengths on the
+left (most clear of target first) and development areas on the right, **grouped by
+competency, most serious first**, each opened to the controls that are actually below
+target (weakest first, bar-on-bar), with the **⚑ escalation flag** on the control 2+
+levels down that drives the Capability Deficit. Overflow past four folds behind a
+native `<details>` "Show N more competencies"; the column states its deficit/minor-gap
+count. Owner reviewed the design (grouped-by-competency, distance-ordered strengths)
+and approved the build.
+
+The **area tiles, radar, and per-area narrative are a shared frame** (owner,
+2026-08-13): the toggle sits **below the narrative** and swaps only the body under it
+— by-area CE list vs strengths & gaps — so a view switch never takes the area picture
+or its interpretation away. The narrative interprets the radar, so it stays with it;
+each line now **leads with its bolded area name** and runs to a ~62ch reading measure
+(was a cramped 44ch). `CapabilityReport` was split into `CapabilitySummary` (tiles +
+radar + narrative) and `CapabilityByArea` (CE list); `CapabilityReport` still composes
+both for `/analysis`, which is unchanged.
+
+Both columns are now **symmetric detailed blocks** (owner chose the detailed form
+over a compact strengths list, 2026-08-13, from two prototypes): one shared
+`CompetencyBlock` renders a competency's header (name · health pill · mean/target),
+a one-line summary and its controls, its left-border colour driven by the
+competency's own health. A gap block shows the below-target controls weakest-first
+with the ⚑; a strength block shows every control strongest-first. New
+`strengthSummary` in `lib/narrative.ts` mirrors `gapSummary` (unit-tested). CSS
+`.gap*` renamed to the neutral `.ceblock`/`.cerow` since the block now serves both
+sides. e2e **464/0** (both columns asserted by scoped column locators).
+
+Each competency (**L2**) now shows its **domain (L1) name** in a single **neutral**
+chip (`.domtag`) — the name from `CeResult.area` (framework data), one style for
+every domain. **Not colour-coded, on computed evidence:** the dataviz validator
+proved no categorical domain palette stays clear of the reserved health-status hues
+(magenta↔Role-Ready-green ΔE 3.0 CVD, violet↔accent 1.9, etc. — every candidate
+failed), so identity is carried by text, which also generalises to any framework at
+any domain count. This is the **framework-arbitrary filter** now written into
+CLAUDE.md and DESIGN.md (2026-08-13). **Parked / tenant-owned:** per-domain colour as
+a data field set + validated in framework-authoring by the tenant — never an app
+default (the app cannot ship a safe default palette). Routed through `/office-hours`
+(area context is worth it) then the dataviz palette method (colour is not viable).
+
+**Final pre-merge gates ran on the whole accumulated branch.** `/qa` on the Vercel
+preview (`84e7d53`): **457 passed / 0 failed / 4 SKIPPED** (round-trip budgets + JWKS,
+server-log only; green locally), clean on retry after the documented proxy-TLS
+`page.goto` flake. `/review` (3 specialists + adversarial red-team) found **no
+correctness-breaking bug**; the real items were fixed: an empty column printed its
+headline twice (removed the redundant note); the nav bar's stuck-on backstop was only
+a comment claiming "the link unmounts" (false for the persistent header links) — added
+a real route-change **drain** (`resetPending`, `NavProgress` on `usePathname`); a
+strength block's "M of N" could disagree with its rendered rows when an active control
+was unscored (now filtered to scored controls); the tripled `indicatorLookup` copy
+extracted; the coloured strength bars documented as deliberate; a stale docstring and
+the "one rollup" overclaim corrected (the extra passes are pure CPU, not round trips).
+Re-verified: unit **182**, e2e **465/0**, nav-progress verify 4/0, typecheck + build
+clean. No `/cso` — no auth/session/storage/allowlist code. Ready for the owner's merge.
+
+**No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
+`strengthsOf` + `gapsOf` + `gapSummary` (ordering and text over their output,
+all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,
+no client JS. New `app/results/strengths-gaps.tsx`; `clip` exported from
+`capability-report.tsx` for reuse. Gates: **176 unit** (new `strengthsOf` /
+`gapSummary` tests) · **e2e 463/0** locally with the 5/3 round-trip budgets
+asserted · typecheck + build clean · design self-check (light/dark/mobile) against
+DESIGN.md.
+
+**All merge gates have run and are green.** `/review` (3 specialists + adversarial
+red-team) found the "0 controls below target" empty-block trap (a gap CE with no
+control below its own target — an untargeted/newly-active control dragging the mean;
+`gapControlSummary`→`gapSummary` now states the mean, comment corrected, tested), a
+zero-gaps line that ignored unscored CEs, a missing `gapsOf` tiebreak, and a
+`.sgtoggle`/`.themetoggle` CSS duplication (shared `.segmented` skin) — all fixed in
+`0a34f3a`, plus the toggle moved to `<nav>`+`aria-current`. One finding kept and
+documented (header mean beside a Deficit pill for escalation cases — matches the
+by-area view; diverging would break the cross-view number agreement). `/qa` on the
+**Vercel preview** (`0a34f3a`, protection bypass): **455 passed / 0 failed / 4 SKIPPED**
+(the 3 round-trip budgets + JWKS bootstrap, all read the server log and cannot run
+remotely; all green locally). No `/cso` — nothing touches auth, sessions, storage or
+the allowlist. **Open on PR #36 as a draft; merge + the production pass are the
+owner's (loop stage 10).**
+
+**Also on this branch — a top navigation progress bar** (owner asked why clicking a
+nav tab shows no loading indication). Root cause: client-side App Router navigation
+never fires the browser's tab spinner, and with every route `force-dynamic`, prefetch
+off (N21) and no `loading.tsx`, a click waits on a live render with nothing on screen.
+Fix: a thin azure bar fixed to the viewport top, the in-app stand-in for the tab
+spinner. `<Link>` (the one seam every in-app navigation passes through) reports its
+`useLinkStatus` pending into a **client-only** count store (`app/nav-progress-store.ts`,
+`import "client-only"` so it can never become the Fluid-Compute module-scope hazard);
+`<NavProgress>` (`app/nav-progress.tsx`) shows the bar after a **150ms delay** (warm
+navigations never flash) and clears on commit. Honours `prefers-reduced-motion` (static
+bar, no sweep). No new server round-trips — the 5/3 budgets held. Verified end-to-end by
+`npm run verify:navprogress` (a disposable admin, a delayed navigation, the bar asserted
+visible while pending and cleared after — a one-off, kept out of the e2e suite because it
+is timing-based). e2e **463/0**, typecheck + build clean. Owner picked the top-bar option
+over per-tab spinner / `loading.tsx` skeletons.
+
 ## Live on `main` (prod) as of 2026-08-12
 
 Six PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the

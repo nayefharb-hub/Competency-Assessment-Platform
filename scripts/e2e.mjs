@@ -2104,6 +2104,61 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   check("some controls are below target (gap-marked) and some are not — exceptions-only",
     gapCtrlRows > 0 && gapCtrlRows < ctrlRows, `${gapCtrlRows} of ${ctrlRows} below target`);
 
+  /*
+   * Strengths & gaps view (?view=gaps) — an alternative reading of the SAME
+   * rollup (strengthsOf/gapsOf/gapSummary are unit-tested). This proves the view
+   * ships, BOTH columns render real rows, the development areas group into
+   * competency blocks that open to their below-target controls, the overflow
+   * disclosure matches the gap count, and the toggle round-trips back to the
+   * by-area report without dropping ?a=.
+   */
+  check("the by-area report offers the strengths & gaps toggle", results.includes("sgtoggle"));
+  await boss.page.goto(`/results?a=${assessmentId}&view=gaps`);
+  const sg = await boss.page.content();
+  check("?view=gaps renders the two-column strengths & gaps view", sg.includes('class="sgcols"'));
+  check("the gaps view names its strengths column", /STRENGTHS/.test(sg));
+  check("the gaps view names its development-areas column", /DEVELOPMENT AREAS/.test(sg));
+  // Both columns are competency blocks (owner's symmetric form). Scope by column:
+  // strengths is the first .sgcol, development areas the second.
+  const strengthsCol = boss.page.locator(".sgcols > .sgcol").nth(0);
+  const gapsCol = boss.page.locator(".sgcols > .sgcol").nth(1);
+  const gapBlocks = await gapsCol.locator(".ceblock").count();
+  check("development areas are grouped into competency blocks", gapBlocks > 0, `${gapBlocks} blocks`);
+  // The assessment is fully scored (approval gate) with only a few gaps, so most
+  // competencies are strengths — this exercises strengthsOf/strengthSummary and
+  // the strength block, which the caption regex alone (present even in the empty
+  // state) would not.
+  const strengthBlocks = await strengthsCol.locator(".ceblock").count();
+  check("the strengths column renders its competency blocks",
+    strengthBlocks > 0, `${strengthBlocks} strengths, ${gapBlocks} gaps`);
+  const strengthPill = (await strengthsCol.locator(".ceblock .pill:not(.domtag)").first().innerText()).trim();
+  check("a strength block carries an above/role-ready pill",
+    /Above target|Role Ready/.test(strengthPill), strengthPill);
+  // Each competency block shows its domain (L1) name in a neutral chip — text,
+  // never colour (a status-safe domain palette does not exist; DESIGN.md).
+  const domTag = (await gapsCol.locator(".ceblock .domtag").first().innerText()).trim();
+  check("each competency block shows its domain (L1) name",
+    /Perspective|People|Practice/.test(domTag), domTag);
+  // deficits sort before minors, so the first block is the single most serious.
+  const firstPill = (await gapsCol.locator(".ceblock .pill:not(.domtag)").first().innerText()).trim();
+  check("the most serious gap block leads and carries its health-tier pill",
+    /Capability Deficit|Minor Gap/.test(firstPill), firstPill);
+  const gapCtrls = await gapsCol.locator(".cerow").count();
+  check("each gap block opens to its below-target controls (bar-on-bar rows)",
+    gapCtrls > 0, `${gapCtrls} control rows`);
+  // The overflow fold: competencies past the fourth in a column sit behind a
+  // native <details>. Assert it in BOTH directions, scoped to the gaps column.
+  const moreGaps = await gapsCol.locator("details.ce-more").count();
+  if (gapBlocks > 4) {
+    check("gaps past the fourth fold behind a 'Show more' disclosure",
+      moreGaps === 1, `${gapBlocks} gaps, ${moreGaps} disclosure(s)`);
+  } else {
+    check("no overflow disclosure when four or fewer gaps",
+      moreGaps === 0, `${gapBlocks} gaps, ${moreGaps} disclosure(s)`);
+  }
+  check("the gaps toggle preserves ?a= back to the by-area view",
+    sg.includes(`href="/results?a=${assessmentId}"`));
+
   await pm.page.goto("/results");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
 

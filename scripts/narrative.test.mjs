@@ -7,7 +7,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { areaNarrative, gapsOf, tidyIndicator } from "../lib/narrative.ts";
+import {
+  areaNarrative, gapSummary, gapsOf, strengthSummary, strengthsOf, tidyIndicator,
+} from "../lib/narrative.ts";
 
 function ce(o) {
   return {
@@ -94,6 +96,109 @@ test("gapsOf keeps only gap competencies, deficits before minors, then by gap", 
     ce({ ce_code: "e", health: "above", gap: -2 }),
   ];
   assert.deepEqual(gapsOf(rows).map((r) => r.ce_code), ["d", "b", "a"]);
+});
+
+// strengthsOf is gapsOf's mirror for the ?view=gaps strengths column: only
+// above/ready, most clear of target first (gap ascending — a more-negative gap
+// is further above). It must NOT include minor/deficit, must order the most
+// clear first, and must break ties on ce_code so the order is total.
+test("strengthsOf keeps only above/ready, most clear of target first, ties by code", () => {
+  const rows = [
+    ce({ ce_code: "a", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "b", health: "ready", gap: 0 }),
+    ce({ ce_code: "c", health: "above", gap: -1.5 }),
+    ce({ ce_code: "d", health: "deficit", gap: 1.0 }),
+    ce({ ce_code: "z", health: "above", gap: -2 }),
+    ce({ ce_code: "e", health: "above", gap: -2 }),
+  ];
+  // -2 (tie z,e → e before z by code), then -1.5, then 0. No minor/deficit.
+  assert.deepEqual(strengthsOf(rows).map((r) => r.ce_code), ["e", "z", "c", "b"]);
+});
+
+// gapsOf's final tiebreak makes the order total: two equal-severity, equal-gap
+// competencies order by ce_code, not by input position (a reordered rollupAll
+// must not change the display order).
+test("gapsOf breaks equal severity+gap ties by ce_code, not input order", () => {
+  const rows = [
+    ce({ ce_code: "z", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "a", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "m", health: "minor", gap: 0.4 }),
+  ];
+  assert.deepEqual(gapsOf(rows).map((r) => r.ce_code), ["a", "m", "z"]);
+});
+
+// gapSummary reads the control breakdown, not the CE mean: it counts the controls
+// actually below their own target and states how far down the worst is. "levels
+// down" is an integer difference of integer levels, so it is exact.
+test("gapSummary counts controls below target and names the worst shortfall", () => {
+  const controls = [
+    { code: "x.1", level: 1, target: 3, health: "deficit", below: true },  // 2 down
+    { code: "x.2", level: 2, target: 3, health: "minor", below: true },    // 1 down
+    { code: "x.3", level: 3, target: 3, health: "ready", below: false },   // on target
+  ];
+  assert.equal(gapSummary({ actual: 2.0, target: 3.0 }, controls), "2 controls below target · weakest 2 levels down");
+});
+
+test("gapSummary singularises one control one level down", () => {
+  const controls = [
+    { code: "x.1", level: 2, target: 3, health: "minor", below: true },
+    { code: "x.2", level: 4, target: 4, health: "ready", below: false },
+  ];
+  assert.equal(gapSummary({ actual: 3.0, target: 3.5 }, controls), "1 control below target · weakest 1 level down");
+});
+
+// The edge the review caught: a competency can be a gap (mean below target) while
+// NO single control is below its own target — an untargeted or post-approval
+// newly-active control drags the mean down. gapSummary must describe the mean,
+// never render "0 controls below target" over an empty list.
+test("gapSummary describes the element mean when no control is individually below target", () => {
+  const controls = [
+    { code: "x.1", level: 3, target: 3, health: "ready", below: false },  // on target
+    { code: "x.2", level: 1, target: null, health: null, below: false },  // untargeted, low
+  ];
+  assert.equal(gapSummary({ actual: 2.0, target: 3.0 }, controls), "element mean 2.0 below the 3.0 target");
+});
+
+// strengthSummary is gapSummary's mirror for the strengths column: how many
+// controls are at or above their own target, and how far up the strongest is.
+test("strengthSummary counts controls at/above target and names the strongest margin", () => {
+  const controls = [
+    { code: "x.1", level: 5, target: 2, health: "above", below: false },  // 3 up
+    { code: "x.2", level: 3, target: 3, health: "ready", below: false },  // at target
+    { code: "x.3", level: 4, target: 3, health: "above", below: false },  // 1 up
+  ];
+  assert.equal(strengthSummary(controls), "all 3 controls at or above target · strongest 3 levels up");
+});
+
+// A strength is judged on its MEAN, so it can still hold a below-target control
+// (not 2+ down, or it would escalate out of the strengths column). The wording
+// must stay honest — "M of N", never "all N".
+test("strengthSummary says 'M of N' when a strength still holds a below-target control", () => {
+  const controls = [
+    { code: "x.1", level: 4, target: 3, health: "above", below: false },  // 1 up
+    { code: "x.2", level: 2, target: 3, health: "minor", below: true },   // 1 down
+  ];
+  assert.equal(strengthSummary(controls), "1 of 2 at or above target · strongest 1 level up");
+});
+
+// Exactly at target on every control: no "levels up" clause, since best margin is 0.
+test("strengthSummary omits the margin clause when nothing is strictly above target", () => {
+  const controls = [
+    { code: "x.1", level: 3, target: 3, health: "ready", below: false },
+    { code: "x.2", level: 2, target: 2, health: "ready", below: false },
+  ];
+  assert.equal(strengthSummary(controls), "all 2 controls at or above target");
+});
+
+// The total===0 branch: nothing scored+targeted. Not reachable through the app
+// today (a strength always has at least one scored control), but the helper must
+// not divide by zero or claim "all 0 controls" — it says so plainly instead.
+test("strengthSummary says 'no scored controls' when the scored+targeted set is empty", () => {
+  const controls = [
+    { code: "x.1", level: null, target: 3, health: null, below: false },   // unscored
+    { code: "x.2", level: 4, target: null, health: null, below: false },   // untargeted
+  ];
+  assert.equal(strengthSummary(controls), "no scored controls");
 });
 
 // Regression (/review 2026-08-10): the top gap in an area can be an

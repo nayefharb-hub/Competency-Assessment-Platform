@@ -225,12 +225,28 @@ After you submit:
 
 | Band | Means |
 |---|---|
-| **Role Ready** | At or above target |
+| **Above target** | A full level or more clear of target |
+| **Role Ready** | At target, up to just under a full level above |
 | **Minor Gap** | Within half a level below target |
 | **Capability Deficit** | More than half a level below target, or any single control two or more levels below its own target |
 
 The levels shown are the **assessor's**, which is the authoritative record. Your
 own self-scores are kept, and the Head of PMO can see both side by side.
+
+### Two ways to read it
+
+A toggle at the top of the report switches between:
+
+- **By area** — every competence element grouped under its area (Perspective ·
+  People · Practice), with the area radar and per-area narrative. Click any
+  element to open its controls. This is the full picture.
+- **Strengths & gaps** — the same numbers turned around the question *what do I
+  develop next?* Your strengths are listed on the left, most clear of target
+  first. Your development areas are on the right, most serious first: each is a
+  competency showing how many of its controls are below target and how far, with
+  a ⚑ on any control two or more levels down (the one that makes the whole
+  competency a Capability Deficit). Nothing is computed differently — it is the
+  same assessment, read for action.
 
 ---
 

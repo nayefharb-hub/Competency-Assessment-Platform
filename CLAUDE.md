@@ -63,6 +63,20 @@ Each was learned by measurement — most during the 2026-08 performance arc, the
 last from a defect that reached the owner — and each has a cost that was paid
 once already. None of them is a preference.
 
+- **The framework-arbitrary filter — before adding anything visible, check it
+  holds when the framework is arbitrary** (owner, 2026-08-13). This is the
+  operational edge of "data, not constants." A feature that only works for ICB4's
+  three specific areas, their names, or its 0–5 scale is a **constant in
+  disguise** — store the varying part as framework data, or don't build it. Worked
+  example: a per-domain **colour** was wanted on the strengths & gaps view. Colour
+  keyed to a domain *name* is the forbidden constant; even done data-driven (a
+  categorical palette assigned by domain order) it is **not viable here** — the
+  dataviz validator proved no categorical domain palette stays clear of the
+  reserved health-status hues (every candidate collides under CVD). The shipped
+  answer carries domain identity in **text** (`CeResult.area`, one neutral style
+  for all), which generalises to any framework at any domain count. Per-domain
+  colour, if ever added, is a **data field on the domain set in authoring by the
+  tenant**, never an app default — see DESIGN.md 2026-08-13.
 - **No synchronous network dependency in the per-request hot path unless it
   fetches the data being served.** Auth is verified locally by signature
   (`getClaims`, ES256) — never reintroduce a per-request call to an auth

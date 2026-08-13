@@ -11,7 +11,7 @@
  * The tool supports a decision and never gates one (rollup-spec §7), so the
  * development actions are phrased as suggestions ("Consider …"), never mandates.
  */
-import type { AreaResult, CeResult } from "./types";
+import type { AreaResult, CeResult, ControlScore } from "./types";
 
 /**
  * CE means to one decimal, "—" for null — the same rule as `fmtLevel` in
@@ -46,12 +46,99 @@ export function tidyIndicator(s: string): string {
     .trim();
 }
 
-/** Gap competencies (minor / deficit), most serious first: deficits before minors, then by gap. */
+/**
+ * Gap competencies (minor / deficit), most serious first: deficits before minors,
+ * then by gap, then by ce_code. The final ce_code tiebreak makes the order TOTAL
+ * rather than leaning on the sort being stable — two equal-severity, equal-gap
+ * competencies otherwise order only by input position, which is the kind of
+ * silent dependency a reordered `rollupAll` would surface. `strengthsOf` mirrors
+ * this exactly.
+ */
 export function gapsOf(ces: CeResult[]): CeResult[] {
   const sev = (r: CeResult) => (r.health === "deficit" ? 2 : r.health === "minor" ? 1 : 0);
   return ces
     .filter((r) => r.health === "minor" || r.health === "deficit")
-    .sort((a, b) => sev(b) - sev(a) || (b.gap ?? 0) - (a.gap ?? 0));
+    .sort((a, b) => sev(b) - sev(a) || (b.gap ?? 0) - (a.gap ?? 0) || a.ce_code.localeCompare(b.ce_code));
+}
+
+/**
+ * Strength competencies (above / role-ready), furthest clear of target first —
+ * the mirror of gapsOf for the strengths column of the strengths-and-gaps view.
+ * Distance is the NEGATIVE gap (target - actual < 0 means clear of target), so
+ * sorting gap ascending puts the most-clear first. Ties resolve by ce_code so
+ * the order is total, the same final tiebreak gapsOf carries.
+ */
+export function strengthsOf(ces: CeResult[]): CeResult[] {
+  return ces
+    .filter((r) => r.health === "above" || r.health === "ready")
+    .sort((a, b) => (a.gap ?? 0) - (b.gap ?? 0) || a.ce_code.localeCompare(b.ce_code));
+}
+
+/**
+ * The one-line summary under a gap competency's name. Assembled from the control
+ * breakdown (rollup arithmetic), never invented — the same discipline as every
+ * other line in this module.
+ *
+ * USUAL CASE — one or more controls below their own target: how many, and how far
+ * down the worst is. "levels down" is an integer gap between two integer control
+ * levels, so it is exact, not a mean.
+ *
+ * EDGE CASE — the element is a gap yet NO single control is below its own target.
+ * The earlier version of this comment claimed that could not happen; it can. The
+ * element mean and the target mean are taken over different control sets — the
+ * mean over SCORED active controls, the target over active controls that HAVE a
+ * target (rollup.ts) — so an active control with no target, or one activated
+ * after approval (unscored, but its live target counted), can drag the mean below
+ * target while every scored control sits at or above its own. Rather than print
+ * "0 controls below target" over an empty list, describe the element mean. Today
+ * no active control is untargeted, so this path is not reachable through the app,
+ * but it is one admin edit away and cheap to state honestly.
+ */
+export function gapSummary(
+  r: { actual: number | null; target: number | null },
+  controls: ControlScore[],
+): string {
+  const below = controls.filter((c) => c.below);
+  if (below.length === 0) {
+    return `element mean ${fmtLevel(r.actual)} below the ${fmtLevel(r.target)} target`;
+  }
+  let worst = 0;
+  for (const c of below) {
+    if (c.level !== null && c.target !== null) worst = Math.max(worst, c.target - c.level);
+  }
+  const n = below.length;
+  const parts = [`${n} control${n === 1 ? "" : "s"} below target`];
+  if (worst > 0) parts.push(`weakest ${worst} level${worst === 1 ? "" : "s"} down`);
+  return parts.join(" · ");
+}
+
+/**
+ * The one-line summary under a STRENGTH competency's name — the mirror of
+ * gapSummary. How many of its controls sit at or above their own target, and how
+ * far up the strongest is. A strength is judged on its MEAN, so it can still hold
+ * a control or two below target (as long as none is 2+ levels down, which would
+ * escalate it out of the strengths column), so the "M of N" wording stays honest
+ * when that happens rather than claiming all are clear. "levels up" is an integer
+ * difference of integer levels, exact, not a mean.
+ */
+export function strengthSummary(controls: ControlScore[]): string {
+  const scored = controls.filter((c) => c.level !== null && c.target !== null);
+  const total = scored.length;
+  const meet = scored.filter((c) => (c.level as number) >= (c.target as number)).length;
+  let best = 0;
+  for (const c of scored) {
+    const up = (c.level as number) - (c.target as number);
+    if (up > best) best = up;
+  }
+  const lead =
+    total === 0
+      ? "no scored controls"
+      : meet === total
+        ? `all ${total} control${total === 1 ? "" : "s"} at or above target`
+        : `${meet} of ${total} at or above target`;
+  const parts = [lead];
+  if (best > 0) parts.push(`strongest ${best} level${best === 1 ? "" : "s"} up`);
+  return parts.join(" · ");
 }
 
 /**
