@@ -168,21 +168,20 @@ function Bar({
   );
 }
 
-export function CapabilityReport({
+/**
+ * The shared top of the report: the three area tiles and the radar. This stays
+ * on screen in BOTH /results views — the by-area/gaps toggle swaps only the body
+ * below it (owner, 2026-08-13), so the area picture is a constant frame rather
+ * than something a view switch takes away.
+ */
+export function CapabilitySummary({
   fw,
   assessment,
 }: {
   fw: { data: Framework; labelOf: (n: Level | null) => string };
   assessment: Assessment;
 }) {
-  const results = rollupAll(fw.data, assessment);
-  const areas = rollupAreas(results);
-
-  // Resolve a control code to its ICB4 indicator text, so the report names
-  // controls by what they mean, not by "4.4.10.1".
-  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
-  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
-
+  const areas = rollupAreas(rollupAll(fw.data, assessment));
   return (
     <>
       <div className="tiles">
@@ -222,7 +221,32 @@ export function CapabilityReport({
       </div>
 
       <AreaRadar areas={areas} />
+    </>
+  );
+}
 
+/**
+ * The by-area body: per-area narrative, then the competence-element list grouped
+ * by area with the control drill-down. This is the swappable half — the
+ * strengths-and-gaps view (StrengthsGaps) is its alternative under the toggle.
+ */
+export function CapabilityByArea({
+  fw,
+  assessment,
+}: {
+  fw: { data: Framework; labelOf: (n: Level | null) => string };
+  assessment: Assessment;
+}) {
+  const results = rollupAll(fw.data, assessment);
+  const areas = rollupAreas(results);
+
+  // Resolve a control code to its ICB4 indicator text, so the report names
+  // controls by what they mean, not by "4.4.10.1".
+  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
+
+  return (
+    <>
       <div className="narrative">
         {areas.map((ar) => (
           <p key={ar.area}>
@@ -280,6 +304,26 @@ export function CapabilityReport({
         weakest control is named alongside so a single serious gap is not absorbed by the
         average. This report supports a decision — it does not approve, reject or gate one.
       </p>
+    </>
+  );
+}
+
+/**
+ * The full report — summary frame plus the by-area body — as one piece, for the
+ * PMO analysis screen's unified per-person view (which has no view toggle). On
+ * /results the two halves are rendered separately with the toggle between them.
+ */
+export function CapabilityReport({
+  fw,
+  assessment,
+}: {
+  fw: { data: Framework; labelOf: (n: Level | null) => string };
+  assessment: Assessment;
+}) {
+  return (
+    <>
+      <CapabilitySummary fw={fw} assessment={assessment} />
+      <CapabilityByArea fw={fw} assessment={assessment} />
     </>
   );
 }

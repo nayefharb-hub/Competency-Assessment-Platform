@@ -7,7 +7,7 @@ import {
 } from "@/lib/db/assessment";
 import { rollupAll } from "@/lib/rollup";
 import { gapsOf } from "@/lib/narrative";
-import { CapabilityReport } from "./capability-report";
+import { CapabilitySummary, CapabilityByArea } from "./capability-report";
 import { StrengthsGaps } from "./strengths-gaps";
 import type { Assessment } from "@/lib/types";
 
@@ -90,9 +90,15 @@ export default async function ResultsPage({
           </span>
         </div>
 
+        {/* The area tiles and radar are a constant frame; only the body below
+            the toggle swaps (owner, 2026-08-13), so a view switch never takes
+            the area picture away. */}
+        <CapabilitySummary fw={fw} assessment={assessment} />
+
         {/* Navigation between two URLs, not in-page tab panels — so `nav` +
             `aria-current`, not role="tablist"/aria-selected (which promises a
-            tabpanel that does not exist). */}
+            tabpanel that does not exist). Sits below the radar, above the body
+            it switches. */}
         <nav className="sgtoggle segmented" aria-label="Results view">
           <Link href={areaHref} aria-current={gapsView ? undefined : "page"}>
             By area
@@ -105,7 +111,7 @@ export default async function ResultsPage({
         {gapsView ? (
           <StrengthsGaps fw={fw} assessment={assessment} />
         ) : (
-          <CapabilityReport fw={fw} assessment={assessment} />
+          <CapabilityByArea fw={fw} assessment={assessment} />
         )}
       </div>
     </div>

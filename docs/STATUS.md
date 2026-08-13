@@ -14,6 +14,12 @@ native `<details>` "Show N more competencies"; the column states its deficit/min
 count. Owner reviewed the design (grouped-by-competency, distance-ordered strengths)
 and approved the build.
 
+The **area tiles and radar are a shared frame** (owner, 2026-08-13): the toggle sits
+**below the radar** and swaps only the body under it — by-area (narrative + CE list) vs
+strengths & gaps — so a view switch never takes the area picture away. `CapabilityReport`
+was split into `CapabilitySummary` (tiles + radar) and `CapabilityByArea` (narrative + CE
+list); `CapabilityReport` still composes both for `/analysis`, which is unchanged.
+
 **No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
 `strengthsOf` + `gapsOf` + `gapSummary` (ordering and text over their output,
 all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,
