@@ -38,6 +38,22 @@ remotely; all green locally). No `/cso` — nothing touches auth, sessions, stor
 the allowlist. **Open on PR #36 as a draft; merge + the production pass are the
 owner's (loop stage 10).**
 
+**Also on this branch — a top navigation progress bar** (owner asked why clicking a
+nav tab shows no loading indication). Root cause: client-side App Router navigation
+never fires the browser's tab spinner, and with every route `force-dynamic`, prefetch
+off (N21) and no `loading.tsx`, a click waits on a live render with nothing on screen.
+Fix: a thin azure bar fixed to the viewport top, the in-app stand-in for the tab
+spinner. `<Link>` (the one seam every in-app navigation passes through) reports its
+`useLinkStatus` pending into a **client-only** count store (`app/nav-progress-store.ts`,
+`import "client-only"` so it can never become the Fluid-Compute module-scope hazard);
+`<NavProgress>` (`app/nav-progress.tsx`) shows the bar after a **150ms delay** (warm
+navigations never flash) and clears on commit. Honours `prefers-reduced-motion` (static
+bar, no sweep). No new server round-trips — the 5/3 budgets held. Verified end-to-end by
+`npm run verify:navprogress` (a disposable admin, a delayed navigation, the bar asserted
+visible while pending and cleared after — a one-off, kept out of the e2e suite because it
+is timing-based). e2e **463/0**, typecheck + build clean. Owner picked the top-bar option
+over per-tab spinner / `loading.tsx` skeletons.
+
 ## Live on `main` (prod) as of 2026-08-12
 
 Six PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the

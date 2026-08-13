@@ -9,6 +9,7 @@ import ThemeToggle from "./theme-toggle";
 import OutboxBanner from "./outbox-banner";
 import OfflineBanner from "./offline-banner";
 import SignOutLink from "./sign-out-link";
+import NavProgress from "./nav-progress";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -41,6 +42,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       data-theme={theme}
     >
       <body>
+        {/* Fixed to the viewport top, above everything — the in-app stand-in for
+            the browser's tab spinner, which client-side navigation never fires.
+            Outside the `user &&` gate so it also covers login/change-password. */}
+        <NavProgress />
         <div className="shell">
           <header className="topbar">
             <div className="brand">

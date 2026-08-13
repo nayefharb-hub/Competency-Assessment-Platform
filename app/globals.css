@@ -219,6 +219,33 @@ h1, h2, h3 {
    as broken rather than deliberate. DESIGN.md Layout names all three widths. */
 .reading { max-width: 780px; margin-left: auto; margin-right: auto; }
 
+/* Top navigation progress bar — the in-app stand-in for the browser's tab
+   spinner, which client-side navigation never fires (app/nav-progress.tsx). A
+   thin azure line fixed to the viewport top, above all chrome. Shown only while
+   a navigation is pending AND past the 150ms delay, so warm clicks never flash.
+   Motion is minimal-functional per DESIGN.md: one indeterminate sweep, no
+   choreography, and honoured against prefers-reduced-motion below. */
+.navprogress {
+  position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 100;
+  overflow: hidden; pointer-events: none;
+  opacity: 0; transition: opacity 150ms ease;
+}
+.navprogress.on { opacity: 1; }
+.navprogress-bar {
+  position: absolute; top: 0; left: 0; height: 100%; width: 30%;
+  background: var(--accent); box-shadow: 0 0 8px 0 var(--accent);
+  animation: navprogress-sweep 1s linear infinite;
+}
+@keyframes navprogress-sweep {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+/* Reduced motion: no sweep. A static full-width bar still signals "loading"
+   without travel, which is the DESIGN.md contract. */
+@media (prefers-reduced-motion: reduce) {
+  .navprogress-bar { position: static; width: 100%; animation: none; }
+}
+
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   background: var(--navy); color: var(--on-navy);

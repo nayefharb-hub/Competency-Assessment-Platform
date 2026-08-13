@@ -1,7 +1,9 @@
 "use client";
 
-import NextLink from "next/link";
+import NextLink, { useLinkStatus } from "next/link";
+import { useEffect } from "react";
 import type { ComponentProps } from "react";
+import { pushPending } from "./nav-progress-store";
 
 /**
  * `<Link>`, with prefetching off by default (N21).
@@ -46,8 +48,37 @@ import type { ComponentProps } from "react";
  * `{...props}` comes after the default, so any single link can still opt in
  * with an explicit `prefetch`.
  */
-export default function Link(props: ComponentProps<typeof NextLink>) {
-  return <NextLink prefetch={false} {...props} onClick={guardOffline(props.onClick)} />;
+export default function Link({ children, onClick, ...props }: ComponentProps<typeof NextLink>) {
+  // prefetch stays in `...props` so a single link can still opt in explicitly
+  // (the N21 default is off); the guarded onClick and the pending reporter are
+  // the two things this seam adds on top of NextLink.
+  return (
+    <NextLink prefetch={false} {...props} onClick={guardOffline(onClick)}>
+      {children}
+      <NavPending />
+    </NextLink>
+  );
+}
+
+/**
+ * Reports THIS link's navigation-pending state to the shared store that drives
+ * the top progress bar. Rendered inside every `<Link>` (this is the one seam all
+ * in-app navigation passes through), it reads `useLinkStatus` for the enclosing
+ * link and renders nothing — no DOM node, so it changes no link's layout.
+ *
+ * `useLinkStatus` goes pending the moment the click starts a navigation and
+ * clears when the destination has fully rendered — exactly the window with no
+ * on-screen feedback today. The effect's cleanup releases the count on settle OR
+ * on unmount (the clicked in-page link unmounts when its page is replaced), so a
+ * navigation can never leave the bar stuck on.
+ */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  useEffect(() => {
+    if (!pending) return;
+    return pushPending();
+  }, [pending]);
+  return null;
 }
 
 /**
