@@ -702,10 +702,18 @@ textarea.input {
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
-/* ---------- results: narrative lines, area radar, capability-by-area ---------- */
-.narrative { margin: 4px 0 20px; display: grid; gap: 8px; }
-.narrative p { font-size: var(--fs-ui); line-height: 1.5; color: var(--ink); max-width: var(--measure); margin: 0; }
+/* ---------- results: narrative lines, area radar, capability-by-area ----------
+   The per-area narrative sits directly under the radar (it interprets it) and
+   above the view toggle. Each line leads with its bolded area name and runs to a
+   comfortable reading measure (~62ch, in the DESIGN.md 60–70 band) so the long
+   sentences wrap two or three times rather than towering in a 44ch column. */
+.narrative { margin: 16px auto 6px; display: grid; gap: 11px; max-width: 62ch; }
+.narrative p { font-size: var(--fs-ui); line-height: 1.55; color: var(--ink); margin: 0; }
 .narrative p b { font-weight: 650; }
+/* the leading area name — a touch heavier so each line reads as a titled
+   sentence. Bold weight only (no colour), so it is safe in both themes and never
+   reads as a link. */
+.narrative .narrative-area { font-weight: 700; }
 
 /* The radar is the centrepiece: a large triangle centred in its panel, with the
    per-area figures read directly beneath it and a compact actual/target key. */

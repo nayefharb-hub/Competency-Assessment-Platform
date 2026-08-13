@@ -14,11 +14,14 @@ native `<details>` "Show N more competencies"; the column states its deficit/min
 count. Owner reviewed the design (grouped-by-competency, distance-ordered strengths)
 and approved the build.
 
-The **area tiles and radar are a shared frame** (owner, 2026-08-13): the toggle sits
-**below the radar** and swaps only the body under it — by-area (narrative + CE list) vs
-strengths & gaps — so a view switch never takes the area picture away. `CapabilityReport`
-was split into `CapabilitySummary` (tiles + radar) and `CapabilityByArea` (narrative + CE
-list); `CapabilityReport` still composes both for `/analysis`, which is unchanged.
+The **area tiles, radar, and per-area narrative are a shared frame** (owner,
+2026-08-13): the toggle sits **below the narrative** and swaps only the body under it
+— by-area CE list vs strengths & gaps — so a view switch never takes the area picture
+or its interpretation away. The narrative interprets the radar, so it stays with it;
+each line now **leads with its bolded area name** and runs to a ~62ch reading measure
+(was a cramped 44ch). `CapabilityReport` was split into `CapabilitySummary` (tiles +
+radar + narrative) and `CapabilityByArea` (CE list); `CapabilityReport` still composes
+both for `/analysis`, which is unchanged.
 
 Both columns are now **symmetric detailed blocks** (owner chose the detailed form
 over a compact strengths list, 2026-08-13, from two prototypes): one shared

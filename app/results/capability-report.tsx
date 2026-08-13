@@ -169,10 +169,12 @@ function Bar({
 }
 
 /**
- * The shared top of the report: the three area tiles and the radar. This stays
- * on screen in BOTH /results views — the by-area/gaps toggle swaps only the body
- * below it (owner, 2026-08-13), so the area picture is a constant frame rather
- * than something a view switch takes away.
+ * The shared top of the report: the three area tiles, the radar, and the per-area
+ * narrative that interprets it. This stays on screen in BOTH /results views — the
+ * by-area/gaps toggle swaps only the body below it (owner, 2026-08-13), so the
+ * area picture, and the sentences that read it, are a constant frame rather than
+ * something a view switch takes away. The narrative sits with the radar because
+ * it interprets the radar (owner, 2026-08-13).
  */
 export function CapabilitySummary({
   fw,
@@ -181,7 +183,10 @@ export function CapabilitySummary({
   fw: { data: Framework; labelOf: (n: Level | null) => string };
   assessment: Assessment;
 }) {
-  const areas = rollupAreas(rollupAll(fw.data, assessment));
+  const results = rollupAll(fw.data, assessment);
+  const areas = rollupAreas(results);
+  const ctrlText = new Map(fw.data.controls.map((c) => [c.code, c.indicator ?? c.code]));
+  const controlLabel = (code: string) => tidyIndicator(ctrlText.get(code) ?? code);
   return (
     <>
       <div className="tiles">
@@ -221,14 +226,29 @@ export function CapabilitySummary({
       </div>
 
       <AreaRadar areas={areas} />
+
+      <div className="narrative">
+        {areas.map((ar) => {
+          // areaNarrative leads with "Area: …"; lift the label out and bold it so
+          // each line reads as a titled sentence rather than a grey wall.
+          const text = areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel);
+          const rest = text.startsWith(`${ar.area}: `) ? text.slice(ar.area.length + 2) : text;
+          return (
+            <p key={ar.area}>
+              <b className="narrative-area">{ar.area}</b> — {rest}
+            </p>
+          );
+        })}
+      </div>
     </>
   );
 }
 
 /**
- * The by-area body: per-area narrative, then the competence-element list grouped
- * by area with the control drill-down. This is the swappable half — the
- * strengths-and-gaps view (StrengthsGaps) is its alternative under the toggle.
+ * The by-area body: the competence-element list grouped by area with the control
+ * drill-down. This is the swappable half — the strengths-and-gaps view
+ * (StrengthsGaps) is its alternative under the toggle. The per-area narrative now
+ * lives in CapabilitySummary (it interprets the radar, so it stays with it).
  */
 export function CapabilityByArea({
   fw,
@@ -247,14 +267,6 @@ export function CapabilityByArea({
 
   return (
     <>
-      <div className="narrative">
-        {areas.map((ar) => (
-          <p key={ar.area}>
-            {areaNarrative(ar, results.filter((r) => r.area === ar.area), controlLabel)}
-          </p>
-        ))}
-      </div>
-
       <div className="cap" style={{ marginBottom: 6 }}>
         CAPABILITY BY COMPETENCE ELEMENT · grouped by area · most serious first · actual vs target on 0–5
       </div>
