@@ -33,6 +33,18 @@ with the ⚑; a strength block shows every control strongest-first. New
 `.gap*` renamed to the neutral `.ceblock`/`.cerow` since the block now serves both
 sides. e2e **464/0** (both columns asserted by scoped column locators).
 
+Each competency (**L2**) now shows its **domain (L1) name** in a single **neutral**
+chip (`.domtag`) — the name from `CeResult.area` (framework data), one style for
+every domain. **Not colour-coded, on computed evidence:** the dataviz validator
+proved no categorical domain palette stays clear of the reserved health-status hues
+(magenta↔Role-Ready-green ΔE 3.0 CVD, violet↔accent 1.9, etc. — every candidate
+failed), so identity is carried by text, which also generalises to any framework at
+any domain count. This is the **framework-arbitrary filter** now written into
+CLAUDE.md and DESIGN.md (2026-08-13). **Parked / tenant-owned:** per-domain colour as
+a data field set + validated in framework-authoring by the tenant — never an app
+default (the app cannot ship a safe default palette). Routed through `/office-hours`
+(area context is worth it) then the dataviz palette method (colour is not viable).
+
 **No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
 `strengthsOf` + `gapsOf` + `gapSummary` (ordering and text over their output,
 all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,

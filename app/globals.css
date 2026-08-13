@@ -830,6 +830,15 @@ details.dd > summary:hover .name { color: var(--accent); }
 .ceblock.is-deficit { border-left-color: var(--deficit); }
 .ceblock-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .ceblock-name { font-size: var(--fs-ui); font-weight: 640; }
+/* the domain (L1) chip beside the competency title — ONE neutral treatment for
+   every domain. Not colour-coded on purpose: a status-safe categorical domain
+   palette does not exist alongside the health colours (validated, see DESIGN.md).
+   Given the card surface so it reads on the surface-2 block; smaller than a
+   status pill so it stays secondary to the health verdict. */
+.domtag {
+  font-size: var(--fs-micro); font-weight: 600; padding: 1px 8px; margin-left: 8px;
+  background: var(--surface); vertical-align: middle; white-space: nowrap;
+}
 .ceblock-meta { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
 .ceblock-val { font-size: var(--fs-sm); }
 .ceblock-sum { font-size: var(--fs-sm); color: var(--ink-muted); margin: 5px 0 11px; }

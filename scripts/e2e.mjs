@@ -2131,11 +2131,16 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   const strengthBlocks = await strengthsCol.locator(".ceblock").count();
   check("the strengths column renders its competency blocks",
     strengthBlocks > 0, `${strengthBlocks} strengths, ${gapBlocks} gaps`);
-  const strengthPill = (await strengthsCol.locator(".ceblock .pill").first().innerText()).trim();
+  const strengthPill = (await strengthsCol.locator(".ceblock .pill:not(.domtag)").first().innerText()).trim();
   check("a strength block carries an above/role-ready pill",
     /Above target|Role Ready/.test(strengthPill), strengthPill);
+  // Each competency block shows its domain (L1) name in a neutral chip — text,
+  // never colour (a status-safe domain palette does not exist; DESIGN.md).
+  const domTag = (await gapsCol.locator(".ceblock .domtag").first().innerText()).trim();
+  check("each competency block shows its domain (L1) name",
+    /Perspective|People|Practice/.test(domTag), domTag);
   // deficits sort before minors, so the first block is the single most serious.
-  const firstPill = (await gapsCol.locator(".ceblock .pill").first().innerText()).trim();
+  const firstPill = (await gapsCol.locator(".ceblock .pill:not(.domtag)").first().innerText()).trim();
   check("the most serious gap block leads and carries its health-tier pill",
     /Capability Deficit|Minor Gap/.test(firstPill), firstPill);
   const gapCtrls = await gapsCol.locator(".cerow").count();

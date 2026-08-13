@@ -98,7 +98,16 @@ function CompetencyBlock({
   return (
     <div className={`ceblock is-${r.health}`}>
       <div className="ceblock-head">
-        <div className="ceblock-name">{r.ce_name}</div>
+        <div className="ceblock-name">
+          {r.ce_name}
+          {/* The domain (L1) this competency (L2) sits in — its NAME, straight
+              from the rollup (framework data), in a single neutral chip that is
+              identical for every domain. Deliberately NOT colour-coded: a
+              status-safe categorical domain palette does not exist alongside the
+              health colours (validated, DESIGN.md 2026-08-13), so identity is
+              carried by text. Works for any framework's domains, any number. */}
+          <span className="pill pill-neutral domtag">{r.area}</span>
+        </div>
         <div className="ceblock-meta">
           <HealthPill health={r.health} />
           <span className="ceblock-val tnum">
