@@ -2104,6 +2104,32 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   check("some controls are below target (gap-marked) and some are not — exceptions-only",
     gapCtrlRows > 0 && gapCtrlRows < ctrlRows, `${gapCtrlRows} of ${ctrlRows} below target`);
 
+  /*
+   * Strengths & gaps view (?view=gaps) — an alternative reading of the SAME
+   * rollup (strengthsOf/gapsOf/gapControlSummary are unit-tested). This proves
+   * the view ships, the two columns render, the development areas group into
+   * competency blocks that open to their below-target controls, and the toggle
+   * round-trips back to the by-area report without dropping ?a=.
+   */
+  check("the by-area report offers the strengths & gaps toggle",
+    results.includes('class="sgtoggle"'));
+  await boss.page.goto(`/results?a=${assessmentId}&view=gaps`);
+  const sg = await boss.page.content();
+  check("?view=gaps renders the two-column strengths & gaps view", sg.includes('class="sgcols"'));
+  check("the gaps view names its strengths column", /STRENGTHS/.test(sg));
+  check("the gaps view names its development-areas column", /DEVELOPMENT AREAS/.test(sg));
+  const gapBlocks = await boss.page.locator(".gapblock").count();
+  check("development areas are grouped into competency blocks", gapBlocks > 0, `${gapBlocks} blocks`);
+  // deficits sort before minors, so the first block is the single most serious.
+  const firstPill = (await boss.page.locator(".gapblock .pill").first().innerText()).trim();
+  check("the most serious gap block leads and carries its health-tier pill",
+    /Capability Deficit|Minor Gap/.test(firstPill), firstPill);
+  const gapCtrls = await boss.page.locator(".gapctrl").count();
+  check("each gap block opens to its below-target controls (bar-on-bar rows)",
+    gapCtrls > 0, `${gapCtrls} control rows`);
+  check("the gaps toggle preserves ?a= back to the by-area view",
+    sg.includes(`href="/results?a=${assessmentId}"`));
+
   await pm.page.goto("/results");
   check("PM now sees their own results", (await pm.page.content()).includes("CAPABILITY BY COMPETENCE ELEMENT"));
 

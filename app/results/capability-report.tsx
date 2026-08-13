@@ -37,7 +37,7 @@ export function HealthPill({ health }: { health: Health | null }) {
  * cannot become a wall of text under its name; the full text rides in the row's
  * `title` for hover. Clip on a word boundary where one is near the end.
  */
-function clip(s: string, n = 66): string {
+export function clip(s: string, n = 66): string {
   if (s.length <= n) return s;
   const cut = s.slice(0, n - 1);
   const sp = cut.lastIndexOf(" ");

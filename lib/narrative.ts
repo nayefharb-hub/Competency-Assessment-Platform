@@ -11,7 +11,7 @@
  * The tool supports a decision and never gates one (rollup-spec §7), so the
  * development actions are phrased as suggestions ("Consider …"), never mandates.
  */
-import type { AreaResult, CeResult } from "./types";
+import type { AreaResult, CeResult, ControlScore } from "./types";
 
 /**
  * CE means to one decimal, "—" for null — the same rule as `fmtLevel` in
@@ -52,6 +52,43 @@ export function gapsOf(ces: CeResult[]): CeResult[] {
   return ces
     .filter((r) => r.health === "minor" || r.health === "deficit")
     .sort((a, b) => sev(b) - sev(a) || (b.gap ?? 0) - (a.gap ?? 0));
+}
+
+/**
+ * Strength competencies (above / role-ready), furthest clear of target first —
+ * the mirror of gapsOf for the strengths column of the strengths-and-gaps view.
+ * Distance is the NEGATIVE gap (target - actual < 0 means clear of target), so
+ * sorting gap ascending puts the most-clear first. Ties resolve by ce_code so
+ * the order is total and stable, the same determinism gapsOf's sev/gap gives.
+ */
+export function strengthsOf(ces: CeResult[]): CeResult[] {
+  return ces
+    .filter((r) => r.health === "above" || r.health === "ready")
+    .sort((a, b) => (a.gap ?? 0) - (b.gap ?? 0) || a.ce_code.localeCompare(b.ce_code));
+}
+
+/**
+ * The one-line summary under a gap competency's name: how many controls sit
+ * below their own target, and how far down the worst of them is. Assembled from
+ * the control breakdown (rollup arithmetic), never invented — the same
+ * discipline as every other line in this module. "levels down" is an integer
+ * gap between two integer control levels, so it is exact, not a mean.
+ *
+ * A gap competency always has at least one control below target: an ordinary
+ * minor/deficit has a sub-target mean (so some control is short), and an
+ * escalation-driven deficit is short by definition of the control that escalated
+ * it. So `n` is never zero here.
+ */
+export function gapControlSummary(controls: ControlScore[]): string {
+  const below = controls.filter((c) => c.below);
+  let worst = 0;
+  for (const c of below) {
+    if (c.level !== null && c.target !== null) worst = Math.max(worst, c.target - c.level);
+  }
+  const n = below.length;
+  const parts = [`${n} control${n === 1 ? "" : "s"} below target`];
+  if (worst > 0) parts.push(`weakest ${worst} level${worst === 1 ? "" : "s"} down`);
+  return parts.join(" · ");
 }
 
 /**

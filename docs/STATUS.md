@@ -2,6 +2,28 @@
 
 Last updated: **2026-08-12** — six PRs merged to `main` (prod). Read this first.
 
+## In flight — strengths & gaps view (branch `claude/cap-supabase-integration-ubitap`)
+
+**NOT merged.** `/results` gains a **view toggle**: the existing **By area** report,
+plus a new **Strengths & gaps** view (`?view=gaps`). Two columns — strengths on the
+left (most clear of target first) and development areas on the right, **grouped by
+competency, most serious first**, each opened to the controls that are actually below
+target (weakest first, bar-on-bar), with the **⚑ escalation flag** on the control 2+
+levels down that drives the Capability Deficit. Overflow past four folds behind a
+native `<details>` "Show N more competencies"; the column states its deficit/minor-gap
+count. Owner reviewed the design (grouped-by-competency, distance-ordered strengths)
+and approved the build.
+
+**No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
+`strengthsOf` + `gapsOf` + `gapControlSummary` (ordering and text over their output,
+all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,
+no client JS. New `app/results/strengths-gaps.tsx`; `clip` exported from
+`capability-report.tsx` for reuse. Gates: **176 unit** (new `strengthsOf` /
+`gapControlSummary` tests) · **e2e 461/0** locally with the 5/3 round-trip budgets
+asserted (up from 453 by the 8 new gaps-view checks) · typecheck + build clean · design
+self-check (light/dark/mobile) against DESIGN.md. Remaining: `/review` on the diff,
+`/qa` on the Vercel preview, `/design-review`, then `/ship`.
+
 ## Live on `main` (prod) as of 2026-08-12
 
 Six PRs shipped this session, each gated (`/review` or `/cso` + `/qa` on the

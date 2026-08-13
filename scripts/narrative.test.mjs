@@ -7,7 +7,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { areaNarrative, gapsOf, tidyIndicator } from "../lib/narrative.ts";
+import {
+  areaNarrative, gapControlSummary, gapsOf, strengthsOf, tidyIndicator,
+} from "../lib/narrative.ts";
 
 function ce(o) {
   return {
@@ -94,6 +96,43 @@ test("gapsOf keeps only gap competencies, deficits before minors, then by gap", 
     ce({ ce_code: "e", health: "above", gap: -2 }),
   ];
   assert.deepEqual(gapsOf(rows).map((r) => r.ce_code), ["d", "b", "a"]);
+});
+
+// strengthsOf is gapsOf's mirror for the ?view=gaps strengths column: only
+// above/ready, most clear of target first (gap ascending — a more-negative gap
+// is further above). It must NOT include minor/deficit, must order the most
+// clear first, and must break ties on ce_code so the order is total.
+test("strengthsOf keeps only above/ready, most clear of target first, ties by code", () => {
+  const rows = [
+    ce({ ce_code: "a", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "b", health: "ready", gap: 0 }),
+    ce({ ce_code: "c", health: "above", gap: -1.5 }),
+    ce({ ce_code: "d", health: "deficit", gap: 1.0 }),
+    ce({ ce_code: "z", health: "above", gap: -2 }),
+    ce({ ce_code: "e", health: "above", gap: -2 }),
+  ];
+  // -2 (tie z,e → e before z by code), then -1.5, then 0. No minor/deficit.
+  assert.deepEqual(strengthsOf(rows).map((r) => r.ce_code), ["e", "z", "c", "b"]);
+});
+
+// gapControlSummary reads the control breakdown, not the CE mean: it counts the
+// controls actually below their own target and states how far down the worst is.
+// "levels down" is an integer difference of integer levels, so it is exact.
+test("gapControlSummary counts controls below target and names the worst shortfall", () => {
+  const controls = [
+    { code: "x.1", level: 1, target: 3, health: "deficit", below: true },  // 2 down
+    { code: "x.2", level: 2, target: 3, health: "minor", below: true },    // 1 down
+    { code: "x.3", level: 3, target: 3, health: "ready", below: false },   // on target
+  ];
+  assert.equal(gapControlSummary(controls), "2 controls below target · weakest 2 levels down");
+});
+
+test("gapControlSummary singularises one control one level down", () => {
+  const controls = [
+    { code: "x.1", level: 2, target: 3, health: "minor", below: true },
+    { code: "x.2", level: 4, target: 4, health: "ready", below: false },
+  ];
+  assert.equal(gapControlSummary(controls), "1 control below target · weakest 1 level down");
 });
 
 // Regression (/review 2026-08-10): the top gap in an area can be an

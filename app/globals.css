@@ -763,6 +763,87 @@ details.dd > summary:hover .name { color: var(--accent); }
   .ctrlval { text-align: left; justify-content: flex-start; }
 }
 
+/* ---------- results: strengths & gaps view (?view=gaps) ----------
+   An alternative reading of the SAME rollup — strengths on the left, development
+   areas grouped by competency on the right. No new arithmetic; see
+   app/results/strengths-gaps.tsx. */
+
+/* The view toggle — modelled on .themetoggle, but anchors, so aria-selected
+   (not aria-pressed) carries the state and the styled state cannot disagree with
+   the accessible one. */
+.sgtoggle {
+  display: inline-flex; border: 1px solid var(--border);
+  border-radius: var(--radius-pill); overflow: hidden; background: var(--surface);
+  margin: 4px 0 18px;
+}
+.sgtoggle a {
+  font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.02em;
+  padding: 5px 14px; text-decoration: none; color: var(--ink-muted);
+  border-right: 1px solid var(--border); transition: background 0.15s, color 0.15s;
+}
+.sgtoggle a:last-child { border-right: 0; }
+.sgtoggle a:hover { background: var(--surface-2); color: var(--ink); }
+.sgtoggle a.on { background: var(--selected); color: #fff; }
+.sgtoggle a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* strengths | development areas. Gaps get the wider column — they carry the
+   nested controls, strengths are one line each. */
+.sgcols { display: grid; grid-template-columns: 1fr 1.35fr; gap: 26px; align-items: start; }
+@media (max-width: 860px) { .sgcols { grid-template-columns: 1fr; gap: 20px; } }
+.sgcol .cap { margin-bottom: 10px; }
+.sgsummary { font-size: var(--fs-sm); color: var(--ink-muted); margin: 0 0 14px; }
+
+/* strengths: one summarised row each, ordered most-clear-of-target first */
+.strength {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.strength:last-child { border-bottom: 0; }
+.strength .sname { font-size: var(--fs-ui); }
+.strength .sval { font-size: var(--fs-sm); white-space: nowrap; }
+.strength .smargin { font-weight: 650; margin-left: 2px; }
+.strength .smargin.above { color: var(--above); }
+.strength .smargin.ready { color: var(--ready); }
+
+/* a gap competency block: header, one-line summary, its short controls */
+.gapblock {
+  border: 1px solid var(--border); border-left: 3px solid var(--minor);
+  border-radius: var(--radius-in); background: var(--surface-2);
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.gapblock.gap-deficit { border-left-color: var(--deficit); }
+.gaphead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.gapname { font-size: var(--fs-ui); font-weight: 640; }
+.gapmeta { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.gapval { font-size: var(--fs-sm); }
+.gapsum { font-size: var(--fs-sm); color: var(--ink-muted); margin: 5px 0 11px; }
+.gapctrls { display: flex; flex-direction: column; gap: 9px; }
+
+/* one below-target control: indicator | bar-on-bar | level/target */
+.gapctrl { display: grid; grid-template-columns: 1fr 72px auto; gap: 12px; align-items: center; }
+.gapctrl .gcname { font-size: var(--fs-sm); color: var(--ink); min-width: 0; }
+.gapctrl .gcval {
+  font-size: var(--fs-sm); white-space: nowrap; text-align: right;
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px;
+}
+.escflag { color: var(--deficit); margin-right: 5px; font-size: 0.9em; }
+@media (max-width: 760px) {
+  .gapctrl { grid-template-columns: 1fr auto; }
+  .gapctrl .track-sm { grid-column: 1 / -1; order: 3; }
+}
+
+/* the overflow behind "Show N more competencies" — native <details>, no JS */
+.moregaps > summary {
+  list-style: none; cursor: pointer; font-size: var(--fs-sm); font-weight: 600;
+  color: var(--accent); padding: 6px 0;
+}
+.moregaps > summary::-webkit-details-marker { display: none; }
+.moregaps > summary::before { content: "▸ "; }
+.moregaps[open] > summary::before { content: "▾ "; }
+.moregaps > summary:hover { text-decoration: underline; }
+.moregaps > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.moregaps-body { margin-top: 8px; }
+
 /* ---------- review + admin ---------- */
 .rrow { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .rrow:last-of-type { border-bottom: 0; }
