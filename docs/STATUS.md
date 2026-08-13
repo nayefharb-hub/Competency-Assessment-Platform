@@ -19,10 +19,24 @@ and approved the build.
 all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,
 no client JS. New `app/results/strengths-gaps.tsx`; `clip` exported from
 `capability-report.tsx` for reuse. Gates: **176 unit** (new `strengthsOf` /
-`gapSummary` tests) · **e2e 461/0** locally with the 5/3 round-trip budgets
-asserted (up from 453 by the 8 new gaps-view checks) · typecheck + build clean · design
-self-check (light/dark/mobile) against DESIGN.md. Remaining: `/review` on the diff,
-`/qa` on the Vercel preview, `/design-review`, then `/ship`.
+`gapSummary` tests) · **e2e 463/0** locally with the 5/3 round-trip budgets
+asserted · typecheck + build clean · design self-check (light/dark/mobile) against
+DESIGN.md.
+
+**All merge gates have run and are green.** `/review` (3 specialists + adversarial
+red-team) found the "0 controls below target" empty-block trap (a gap CE with no
+control below its own target — an untargeted/newly-active control dragging the mean;
+`gapControlSummary`→`gapSummary` now states the mean, comment corrected, tested), a
+zero-gaps line that ignored unscored CEs, a missing `gapsOf` tiebreak, and a
+`.sgtoggle`/`.themetoggle` CSS duplication (shared `.segmented` skin) — all fixed in
+`0a34f3a`, plus the toggle moved to `<nav>`+`aria-current`. One finding kept and
+documented (header mean beside a Deficit pill for escalation cases — matches the
+by-area view; diverging would break the cross-view number agreement). `/qa` on the
+**Vercel preview** (`0a34f3a`, protection bypass): **455 passed / 0 failed / 4 SKIPPED**
+(the 3 round-trip budgets + JWKS bootstrap, all read the server log and cannot run
+remotely; all green locally). No `/cso` — nothing touches auth, sessions, storage or
+the allowlist. **Open on PR #36 as a draft; merge + the production pass are the
+owner's (loop stage 10).**
 
 ## Live on `main` (prod) as of 2026-08-12
 
