@@ -15,11 +15,11 @@ count. Owner reviewed the design (grouped-by-competency, distance-ordered streng
 and approved the build.
 
 **No new arithmetic.** `rollupAll`/`controlBreakdown` are reused unchanged; the view is
-`strengthsOf` + `gapsOf` + `gapControlSummary` (ordering and text over their output,
+`strengthsOf` + `gapsOf` + `gapSummary` (ordering and text over their output,
 all in `lib/narrative.ts`, unit-tested). Fully server-rendered — native `<details>`,
 no client JS. New `app/results/strengths-gaps.tsx`; `clip` exported from
 `capability-report.tsx` for reuse. Gates: **176 unit** (new `strengthsOf` /
-`gapControlSummary` tests) · **e2e 461/0** locally with the 5/3 round-trip budgets
+`gapSummary` tests) · **e2e 461/0** locally with the 5/3 round-trip budgets
 asserted (up from 453 by the 8 new gaps-view checks) · typecheck + build clean · design
 self-check (light/dark/mobile) against DESIGN.md. Remaining: `/review` on the diff,
 `/qa` on the Vercel preview, `/design-review`, then `/ship`.

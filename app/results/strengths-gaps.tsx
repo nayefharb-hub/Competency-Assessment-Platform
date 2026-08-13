@@ -1,6 +1,6 @@
 import { controlBreakdown, fmtLevel, rollupAll } from "@/lib/rollup";
-import { gapControlSummary, gapsOf, strengthsOf, tidyIndicator } from "@/lib/narrative";
-import { HealthPill, clip } from "./capability-report";
+import { gapSummary, gapsOf, strengthsOf, tidyIndicator } from "@/lib/narrative";
+import { HealthPill, clip, pct } from "./capability-report";
 import type { Assessment, CeResult, ControlScore, Framework, Level } from "@/lib/types";
 
 /**
@@ -12,15 +12,12 @@ import type { Assessment, CeResult, ControlScore, Framework, Level } from "@/lib
  * first, each opened to the controls that are actually short).
  *
  * It computes NOTHING new. `rollupAll` and `controlBreakdown` are the same
- * functions the by-area report calls; `gapsOf`/`strengthsOf`/`gapControlSummary`
+ * functions the by-area report calls; `gapsOf`/`strengthsOf`/`gapSummary`
  * are ordering and text over their output. So the two views can never disagree
  * about a number — there is one rollup, read two ways. Fully server-rendered
  * (native <details> for the overflow), no client JS, consistent with the rest of
  * /results.
  */
-
-const MAX = 5;
-const pct = (v: number) => `${(v / MAX) * 100}%`;
 
 /**
  * Gap competencies shown before the rest fold behind "Show N more". Four keeps
@@ -55,7 +52,7 @@ function GapControlRow({
   labelOf: (n: Level | null) => string;
 }) {
   return (
-    <div className={`gapctrl${escalated ? " is-esc" : ""}`} title={indicator}>
+    <div className="gapctrl" title={indicator}>
       <div className="gcname">
         {escalated && (
           <span className="escflag" title="2+ levels below target — escalated" aria-label="escalated">
@@ -106,7 +103,11 @@ function GapBlock({
           </span>
         </div>
       </div>
-      <div className="gapsum">{gapControlSummary(controls)}</div>
+      {/* gapSummary describes the below-target controls, or — if none is below
+          its own target yet the element is a gap (an untargeted or post-approval
+          newly-active control dragging the mean) — the element mean, so the block
+          never claims "0 controls below target" over an empty list. */}
+      <div className="gapsum">{gapSummary(r, controls)}</div>
       <div className="gapctrls">
         {below.map((cs) => (
           <GapControlRow
@@ -138,9 +139,13 @@ export function StrengthsGaps({
 
   const deficits = gaps.filter((r) => r.health === "deficit").length;
   const minors = gaps.length - deficits;
-  const gapSummary =
+  // "No competency is below target" — NOT "every competency is at or above
+  // target": an unscored competency (health null) is in neither column, so the
+  // stronger claim would be false while one sits unscored. Below-target is what
+  // gaps.length measures, so the weaker claim is always true.
+  const gapsHeadline =
     gaps.length === 0
-      ? "Every competency is at or above target."
+      ? "No competency is below target."
       : `${gaps.length} development area${gaps.length === 1 ? "" : "s"} — ` +
         [
           deficits > 0 ? `${deficits} capability deficit${deficits === 1 ? "" : "s"}` : null,
@@ -179,7 +184,7 @@ export function StrengthsGaps({
 
       <section className="sgcol">
         <div className="cap">DEVELOPMENT AREAS · most serious first</div>
-        <p className="sgsummary">{gapSummary}</p>
+        <p className="sgsummary">{gapsHeadline}</p>
         {gaps.length > 0 && (
           <>
             {shown.map(block)}

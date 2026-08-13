@@ -2106,13 +2106,13 @@ console.log("\n[7] Approval snapshots targets and locks the record");
 
   /*
    * Strengths & gaps view (?view=gaps) — an alternative reading of the SAME
-   * rollup (strengthsOf/gapsOf/gapControlSummary are unit-tested). This proves
-   * the view ships, the two columns render, the development areas group into
-   * competency blocks that open to their below-target controls, and the toggle
-   * round-trips back to the by-area report without dropping ?a=.
+   * rollup (strengthsOf/gapsOf/gapSummary are unit-tested). This proves the view
+   * ships, BOTH columns render real rows, the development areas group into
+   * competency blocks that open to their below-target controls, the overflow
+   * disclosure matches the gap count, and the toggle round-trips back to the
+   * by-area report without dropping ?a=.
    */
-  check("the by-area report offers the strengths & gaps toggle",
-    results.includes('class="sgtoggle"'));
+  check("the by-area report offers the strengths & gaps toggle", results.includes("sgtoggle"));
   await boss.page.goto(`/results?a=${assessmentId}&view=gaps`);
   const sg = await boss.page.content();
   check("?view=gaps renders the two-column strengths & gaps view", sg.includes('class="sgcols"'));
@@ -2120,6 +2120,12 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   check("the gaps view names its development-areas column", /DEVELOPMENT AREAS/.test(sg));
   const gapBlocks = await boss.page.locator(".gapblock").count();
   check("development areas are grouped into competency blocks", gapBlocks > 0, `${gapBlocks} blocks`);
+  // The assessment is fully scored (approval gate) with only a few gaps, so most
+  // competencies are strengths — this exercises StrengthRow/strengthsOf, which
+  // the caption regex alone (present even in the empty state) would not.
+  const strengthRows = await boss.page.locator(".strength").count();
+  check("the strengths column renders its competency rows",
+    strengthRows > 0, `${strengthRows} strengths, ${gapBlocks} gaps`);
   // deficits sort before minors, so the first block is the single most serious.
   const firstPill = (await boss.page.locator(".gapblock .pill").first().innerText()).trim();
   check("the most serious gap block leads and carries its health-tier pill",
@@ -2127,6 +2133,16 @@ console.log("\n[7] Approval snapshots targets and locks the record");
   const gapCtrls = await boss.page.locator(".gapctrl").count();
   check("each gap block opens to its below-target controls (bar-on-bar rows)",
     gapCtrls > 0, `${gapCtrls} control rows`);
+  // The overflow fold: gaps past the fourth sit behind a native <details>. Assert
+  // the disclosure's presence tracks the gap count in BOTH directions.
+  const moreGaps = await boss.page.locator("details.moregaps").count();
+  if (gapBlocks > 4) {
+    check("gaps past the fourth fold behind a 'Show more' disclosure",
+      moreGaps === 1, `${gapBlocks} gaps, ${moreGaps} disclosure(s)`);
+  } else {
+    check("no overflow disclosure when four or fewer gaps",
+      moreGaps === 0, `${gapBlocks} gaps, ${moreGaps} disclosure(s)`);
+  }
   check("the gaps toggle preserves ?a= back to the by-area view",
     sg.includes(`href="/results?a=${assessmentId}"`));
 

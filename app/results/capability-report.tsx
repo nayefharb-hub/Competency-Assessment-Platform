@@ -17,8 +17,14 @@ import type { Assessment, CeResult, ControlScore, Framework, Health, Level } fro
  * differently).
  */
 
-const MAX = 5;
-const pct = (v: number) => `${(v / MAX) * 100}%`;
+/**
+ * Bar geometry for the 0–5 results scale, shared with the strengths-gaps view so
+ * the two readings of the same rollup place a bar identically. Exported rather
+ * than re-declared there — the scale ceiling lives in one place (the rating scale
+ * is a swappable module; a second `5` is exactly the copy that gets missed).
+ */
+export const MAX = 5;
+export const pct = (v: number) => `${(v / MAX) * 100}%`;
 
 export function HealthPill({ health }: { health: Health | null }) {
   if (!health) return <span className="muted">—</span>;

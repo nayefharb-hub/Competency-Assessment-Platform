@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  areaNarrative, gapControlSummary, gapsOf, strengthsOf, tidyIndicator,
+  areaNarrative, gapSummary, gapsOf, strengthsOf, tidyIndicator,
 } from "../lib/narrative.ts";
 
 function ce(o) {
@@ -115,24 +115,48 @@ test("strengthsOf keeps only above/ready, most clear of target first, ties by co
   assert.deepEqual(strengthsOf(rows).map((r) => r.ce_code), ["e", "z", "c", "b"]);
 });
 
-// gapControlSummary reads the control breakdown, not the CE mean: it counts the
-// controls actually below their own target and states how far down the worst is.
-// "levels down" is an integer difference of integer levels, so it is exact.
-test("gapControlSummary counts controls below target and names the worst shortfall", () => {
+// gapsOf's final tiebreak makes the order total: two equal-severity, equal-gap
+// competencies order by ce_code, not by input position (a reordered rollupAll
+// must not change the display order).
+test("gapsOf breaks equal severity+gap ties by ce_code, not input order", () => {
+  const rows = [
+    ce({ ce_code: "z", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "a", health: "minor", gap: 0.4 }),
+    ce({ ce_code: "m", health: "minor", gap: 0.4 }),
+  ];
+  assert.deepEqual(gapsOf(rows).map((r) => r.ce_code), ["a", "m", "z"]);
+});
+
+// gapSummary reads the control breakdown, not the CE mean: it counts the controls
+// actually below their own target and states how far down the worst is. "levels
+// down" is an integer difference of integer levels, so it is exact.
+test("gapSummary counts controls below target and names the worst shortfall", () => {
   const controls = [
     { code: "x.1", level: 1, target: 3, health: "deficit", below: true },  // 2 down
     { code: "x.2", level: 2, target: 3, health: "minor", below: true },    // 1 down
     { code: "x.3", level: 3, target: 3, health: "ready", below: false },   // on target
   ];
-  assert.equal(gapControlSummary(controls), "2 controls below target · weakest 2 levels down");
+  assert.equal(gapSummary({ actual: 2.0, target: 3.0 }, controls), "2 controls below target · weakest 2 levels down");
 });
 
-test("gapControlSummary singularises one control one level down", () => {
+test("gapSummary singularises one control one level down", () => {
   const controls = [
     { code: "x.1", level: 2, target: 3, health: "minor", below: true },
     { code: "x.2", level: 4, target: 4, health: "ready", below: false },
   ];
-  assert.equal(gapControlSummary(controls), "1 control below target · weakest 1 level down");
+  assert.equal(gapSummary({ actual: 3.0, target: 3.5 }, controls), "1 control below target · weakest 1 level down");
+});
+
+// The edge the review caught: a competency can be a gap (mean below target) while
+// NO single control is below its own target — an untargeted or post-approval
+// newly-active control drags the mean down. gapSummary must describe the mean,
+// never render "0 controls below target" over an empty list.
+test("gapSummary describes the element mean when no control is individually below target", () => {
+  const controls = [
+    { code: "x.1", level: 3, target: 3, health: "ready", below: false },  // on target
+    { code: "x.2", level: 1, target: null, health: null, below: false },  // untargeted, low
+  ];
+  assert.equal(gapSummary({ actual: 2.0, target: 3.0 }, controls), "element mean 2.0 below the 3.0 target");
 });
 
 // Regression (/review 2026-08-10): the top gap in an area can be an

@@ -90,14 +90,17 @@ export default async function ResultsPage({
           </span>
         </div>
 
-        <div className="sgtoggle" role="tablist" aria-label="Results view">
-          <Link href={areaHref} role="tab" aria-selected={!gapsView} className={gapsView ? "" : "on"}>
+        {/* Navigation between two URLs, not in-page tab panels — so `nav` +
+            `aria-current`, not role="tablist"/aria-selected (which promises a
+            tabpanel that does not exist). */}
+        <nav className="sgtoggle segmented" aria-label="Results view">
+          <Link href={areaHref} aria-current={gapsView ? undefined : "page"}>
             By area
           </Link>
-          <Link href={gapsHref} role="tab" aria-selected={gapsView} className={gapsView ? "on" : ""}>
+          <Link href={gapsHref} aria-current={gapsView ? "page" : undefined}>
             Strengths &amp; gaps
           </Link>
-        </div>
+        </nav>
 
         {gapsView ? (
           <StrengthsGaps fw={fw} assessment={assessment} />

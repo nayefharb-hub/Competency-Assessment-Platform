@@ -38,7 +38,7 @@ export default function ThemeToggle({ current }: { current: Theme }) {
   }
 
   return (
-    <div className="themetoggle" role="group" aria-label="Theme">
+    <div className="themetoggle segmented" role="group" aria-label="Theme">
       {OPTIONS.map((o) => (
         <button
           key={o.value}
