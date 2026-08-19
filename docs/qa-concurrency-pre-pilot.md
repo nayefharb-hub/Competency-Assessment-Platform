@@ -4,7 +4,7 @@
 (**production**, not a preview) · **Database:** the real Supabase project
 (`gkqydskmnexhneqsvvvt`), the one the nine PMs will use on Monday.
 
-**Result at nine PMs: 308 checks, 307 pass, 1 fail.** Every correctness and
+**Result at nine PMs: 312 checks, 311 pass, 1 fail.** Every correctness and
 containment check is green — no answer landed in the wrong record, no PM saw
 another's progress or results, nothing outside the run moved. The single failure
 is the stall gate, and it is a real finding rather than a flake: see
@@ -50,27 +50,45 @@ because completing a competency raises the milestone card and Continue goes to
 whatever is still *owed*. Nothing awaits the commit — the save and the
 navigation leave together (D9), and a PM who waits is not a PM.
 
-## Measured, not assumed: the requests really did overlap
+## Two claims, two measurements — and two failed attempts before that
 
-**The first version of this check could not fail, and that is the most important
-thing this document records.** It compared the burst's wall-clock against the
-*sum* of the measured durations. But all the promises start together, so under a
-perfectly serialising server their measured durations are cumulative and the sum
-is always far larger than the elapsed time. Simulated at N=2, 3 and 4: **passes
-under strict serialisation every time.** It was evidence of nothing, and it was
-the sole support for the claim that made every other result meaningful.
+**This check could not fail, twice, and that is the most important thing this
+document records.** Both times it was the sole support for the claim that makes
+every other result meaningful.
 
-It now measures when each POST was actually on the wire and asks how many
-*different* PMs had one outstanding at the same instant. Verified to return 1 for
-a strictly serial server, 4 for a fully overlapped one, and 2 for a partial
-overlap — it discriminates.
+**Attempt 1** compared the burst's wall-clock against the *sum* of the measured
+durations. All the promises start together, so under a perfectly serialising
+server their durations are cumulative and the sum always dwarfs the elapsed
+time. Simulated at N=2, 3 and 4: passes under strict serialisation every time.
 
-The first honest reading was **2 of 9**. The harness was arming the radio and
-typing evidence inside the raced section, so the POSTs went out staggered.
-Arming everyone first and racing only the clicks took it to **6 of 9**, on both
-the burst and the walk. Six concurrent requests on one deployment is a real test
-of instance sharing; nine would be better and is a harness-precision problem, not
-a product one, so the assertion's floor is 2 and **the peak is always printed**.
+**Attempt 2** replaced it with a sweep over when each POST was on the wire,
+asking how many different PMs had one outstanding at the same instant — and it
+was "verified" against a model where the requests were *sent* serially. That is
+not what a serialising server does. **A serialising server does not delay the
+client's send, only the response**, so nine POSTs fired at t=0 are all
+outstanding from t=0 whether the server runs them in parallel or one at a time.
+Re-simulated correctly: the sweep returns **9 for both**. Worse, its floor of
+`>= 2` was satisfied by the exact pre-fix behaviour it was written to catch.
+It checked the assumption, not the behaviour.
+
+The lesson is not "be careful with thresholds" — it is that **client wire time
+cannot distinguish service concurrency from queueing**, so no arrangement of it
+was ever going to answer the question. The two claims are separate and now have
+separate evidence:
+
+| Claim | Measurement | How it can fail |
+|---|---|---|
+| The harness got N requests onto the wire together | overlap sweep over POST send/finish instants | returns 1 if the harness serialises its own dispatch |
+| **The server served them together rather than queueing** | slowest commit under load vs a **solo baseline** commit timed with nothing else in flight | a queueing server makes the slowest of N wait behind N−1 others, landing near N × solo; the threshold sits at half that |
+
+The solo baseline is why the second row works, and it is a real commit by one PM
+with the other eight idle. Verified against both models before being trusted this
+time: a strictly serial server predicts ~9× solo and fails the check; a parallel
+server lands near solo and passes.
+
+The overlap number is still reported — it went from **2 of 9** (the harness was
+arming the radio and typing evidence inside the raced section) to **6 of 9**
+once everyone was armed first and only the clicks were raced.
 
 ## Proving the checks can fail
 
@@ -103,19 +121,21 @@ Two guards exist because the harness itself failed them:
 
 | Step | p50 | p95 | max |
 |---|---|---|---|
-| Sign in (10 at once) | 4565 ms | 5301 ms | 5301 ms |
-| Control render | 1051 ms | 1231 ms | 1231 ms |
-| Commit + advance | 981 ms | 1787 ms | 9382 ms |
-| Progress render | 1091 ms | 1396 ms | 1460 ms |
-| Submit | 3121 ms | 3222 ms | 3222 ms |
-| Approve | 1760 ms | 2257 ms | 2257 ms |
-| Results render | 1639 ms | 1847 ms | 1943 ms |
+| Sign in (10 at once) | 4234 ms | 4388 ms | 4388 ms |
+| Control render | 917 ms | 1483 ms | 1483 ms |
+| Commit + advance | 891 ms | 1699 ms | 9103 ms |
+| Progress render | 839 ms | 1118 ms | 1123 ms |
+| Submit | 2564 ms | 2842 ms | 2842 ms |
+| Approve | 1752 ms | 2333 ms | 2333 ms |
+| Results render | 1545 ms | 1827 ms | 1878 ms |
 
-Commit p50 holds under a second with nine PMs on it. The 9382 ms max is a stalled
-click plus its repeat, not a slow save. Against the earlier four-PM runs
-(commit p50 850 ms, results 1022 ms) the cost of going from four to nine is
-visible but not alarming: roughly +15% on a commit and +60% on the heavier
-results render.
+**The parallelism evidence, in one line:** a solo commit with nothing else in
+flight took **1059 ms**; the slowest of nine fired together took **1313 ms**. A
+server that queued them would have put the slowest near **9531 ms**. Nine
+commits cost 1.24× one — the concurrency premise is earned rather than assumed.
+
+Commit p50 holds under a second with nine PMs on it (891 ms, against 850 ms at
+four). The 9103 ms max is a stalled click plus its repeat, not a slow save.
 
 ## Containment — this runs against real staff data
 
@@ -172,22 +192,32 @@ nobody is looking at the dashboard.
 
 ## Clicks that do not move the screen
 
-**This is the open finding, and at nine PMs it is no longer rare.** Four clicks
-out of 90 neither navigated nor raised the milestone card, leaving the PM sitting
-on the control. Three of the four were on **the same control** (`4.5.9.1`) in
-three different sessions; the fourth was `4.5.12.1`. Both are the first control
-of a competency — where a milestone Continue lands.
+**This is the open finding, it is not rare at nine PMs, and it now has a
+pattern.** Across two nine-PM runs, **7 clicks out of 180** neither navigated nor
+raised the milestone card, leaving the PM sitting on the control:
+
+| Run | Stalls |
+|---|---|
+| 1 | PM 4 `4.5.9.1` · PM 3 `4.5.9.1` · PM 1 `4.5.9.1` · PM 8 `4.5.12.1` |
+| 2 | PM 6 `4.5.10.1` · PM 1 `4.5.8.1` · PM 8 `4.5.12.1` |
+
+**All seven are `.1` controls — the first control of a competency.** Only 28 of
+the 132 active controls are first-in-competency, so if stalls fell randomly the
+chance of seven out of seven landing there is about 1 in 55,000. PM 8 on
+`4.5.12.1` reproduced across both runs. Four clean four-PM runs produced zero.
+
+The first control of a competency is exactly where a milestone **Continue**
+lands. That is the concrete lead.
 
 **The answer is never at risk.** The panel showed "Saved on this device", the
-outbox held it, and every one of those records reconciled to 132 correct answers.
-What fails is the screen advancing, not the record.
+outbox held it, and every record reconciled to 132 correct answers with the
+right levels. What fails is the screen advancing, not the record.
 
-**What the instrumentation now rules out.** Every stall reported `onLine: true`
-and an **empty** `netEvents` array — no offline transition ever fired. That
+**What the instrumentation rules out.** Every stall reported `onLine: true` and
+an **empty** `netEvents` array — no offline transition ever fired. That
 eliminates the leading hypothesis: `goNext` in `app/assess/score-panel.tsx`
 commits and returns *without navigating* when the browser reports offline
-(decision D13), which would have produced exactly this symptom. It did not
-happen.
+(decision D13), which would produce exactly this symptom. It did not happen.
 
 **What survives.** Every stall shows the destination's RSC navigation fetch
 aborted:
@@ -198,20 +228,19 @@ POST /assess?c=<current>     — net::ERR_ABORTED
 onLine: true · netEvents: [] · milestone card in DOM: false · button enabled
 ```
 
-So `router.push` fired and its RSC fetch died, leaving the URL unchanged. Whether
-that is the egress proxy (ERR_ABORTED is the documented signature of this
-container's proxied Chromium — STATUS N21) or the app under nine-way load is
-**not established here**, and this note does not guess. Two things argue against
-pure proxy noise: the clustering on first-controls-of-a-competency, and that four
-clean four-PM runs produced zero.
+So `router.push` fired and its RSC fetch died, leaving the URL unchanged.
+Whether the proximate cause is the egress proxy (ERR_ABORTED is the documented
+signature of this container's proxied Chromium — STATUS N21) or the app under
+nine-way load is **not established here**, and this note does not guess. But the
+competency-boundary clustering is not something a proxy would produce, and it is
+the thing to pull on.
 
 **This wants `/investigate`** — it is a defect-shaped question with an iron law
-about root causes, and it should not be settled by a QA report.
+about root causes, and a QA report should not settle it.
 
 **For the pilot, today:** if a PM says "I clicked and nothing happened", the
-answer is safe and clicking again works. The harness now repeats the click up to
-three times, counts every repeat, and **fails the run** on any of them — printing
-`NUDGES` with the per-stall aborted-request delta and a screenshot.
+answer is safe and clicking again works. The harness repeats the click up to
+three times, counts every repeat, and **fails the run** on any of them.
 
 ## What this does not cover
 

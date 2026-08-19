@@ -14,18 +14,18 @@
  * those are keyed safely. This measures it.
  *
  * WHAT IT ASSERTS, in one line each:
- *   - four PMs signing in at the same moment each get their own session;
- *   - four commits fired in the SAME INSTANT land in four different records,
- *     each with the level and the evidence its own PM typed;
+ *   - every PM signing in at the same moment gets their own session;
+ *   - commits fired in the SAME INSTANT land in different records, each with
+ *     the level and the evidence its own PM typed;
  *   - a walk of ten controls each, run concurrently, never crosses over;
  *   - requests from different PMs were genuinely OVERLAPPING at the server,
  *     measured from when each POST was on the wire — not inferred from the fact
  *     that the test dispatched them together;
  *   - the progress figure each PM is shown is their own (the four counts are
  *     deliberately different, so a swap is visible rather than plausible);
- *   - four concurrent submits each move only their own row;
- *   - four concurrent /results renders each carry that PM's own 28 competency
- *     means, recomputed here from Postgres rather than trusted from the page.
+ *   - concurrent submits each move only their own row;
+ *   - concurrent /results renders each carry that PM's own 28 competency means,
+ *     recomputed here from Postgres and paired with the competency name.
  *
  * IT WRITES TO THE DATABASE IT IS POINTED AT, and the one it is pointed at is
  * the REAL one, with real staff on it. Containment is the whole safety
@@ -62,6 +62,9 @@ const SEEDS = [100, 102, 104, 106, 108, 110, 112, 114, 116];
 /** The control all four answer in the same instant, chosen past every seed and
  *  every walk range so nobody has touched it before the burst. */
 const BURST_POS = 130;
+/** One control answered ALONE, to time an uncontended commit. Past every seed
+ *  and every walk, and distinct from the burst control. */
+const SOLO_POS = BURST_POS - 1;
 /**
  * Stop after phase N and tear down. Only for proving the checks below can fail.
  */
@@ -94,8 +97,8 @@ if (PMS < 2 || PMS > SEEDS.length) {
 }
 /* Every walk must finish before the burst control, or a PM would answer it
    twice and the two phases would stop being independent. */
-if (Math.max(...SEEDS.slice(0, PMS)) + WALK >= BURST_POS) {
-  console.error(`CONC_WALK=${WALK} runs past the burst control at ${BURST_POS}.`);
+if (Math.max(...SEEDS.slice(0, PMS)) + WALK >= SOLO_POS) {
+  console.error(`CONC_WALK=${WALK} runs past the solo control at ${SOLO_POS}.`);
   process.exit(1);
 }
 
@@ -127,7 +130,6 @@ const BOSS = {
   email: `${FIXTURE_PREFIX}.admin@example.test`, name: "QA Concurrency Assessor",
   password: qaPassword(), role: "admin",
 };
-const ALL_EMAILS = [...FIXTURES.map((f) => f.email), BOSS.email];
 
 /* ------------------------------------------------------------ reporting */
 
@@ -262,6 +264,15 @@ async function ensure(person) {
 }
 
 let browser = null;
+/* THE SWEEP MUST NOT RUN BEFORE THIS RUN OWNS ANYTHING.
+   `crashed()` is registered before the start guard, and it purges by PREFIX
+   unconditionally — so any throw between registering it and creating the
+   fixtures (a transient failure inside the start guard itself, the control
+   fetch, the prior-assessment snapshot) would delete a CONCURRENT run's live
+   fixtures mid-walk. That is exactly the fabricated cross-contamination result
+   on production that the start guard exists to prevent, reintroduced through
+   the error path. */
+let createdFixtures = false;
 let teardownRun = null;
 const teardown = () => (teardownRun ??= doTeardown());
 
@@ -281,7 +292,8 @@ async function doTeardown() {
    * a live admin fixture on the production allowlist with no purge attempted.
    * The `catch` that was there protected against a throw, never against a hang.
    */
-  await purgeEverything();
+  try { await purgeEverything(); }
+  catch (e) { console.log(`  ⚠ cleanup raised: ${e.message}`); }
   try {
     if (browser) {
       closingOnPurpose = true;
@@ -316,7 +328,11 @@ async function doTeardown() {
  * admin survives. Ordering BOSS last is necessary and was already true; it is
  * not sufficient.
  */
-async function purgeEverything({ attempts = 3 } = {}) {
+async function purgeEverything({ attempts = 3, force = false } = {}) {
+  if (!createdFixtures && !force) {
+    console.log("  (nothing to clean up — this run had not created any fixtures yet)");
+    return;
+  }
   for (let attempt = 1; attempt <= attempts; attempt++) {
     let emails;
     try {
@@ -458,7 +474,9 @@ function summarise() {
  */
 if (process.env.CONC_CLEAN === "1") {
   console.log(`Removing ${FIXTURE_PREFIX}* fixtures from ${new URL(process.env.SUPABASE_URL).host}…`);
-  await purgeEverything();
+  // `force`: this mode exists precisely to clear fixtures this process did not
+  // create, so the guard above must not apply to it.
+  await purgeEverything({ force: true });
   summarise();
   process.exit(fail === 0 ? 0 : 1);
 }
@@ -499,11 +517,17 @@ const { data: activeControls, error: ctlErr } = await db
 if (ctlErr) throw new Error(`control fetch failed: ${ctlErr.message}`);
 const TOTAL = activeControls.length;
 /* Approval freezes one target row per control WITH AN ID — every control, not
-   only the active ones (lib/db/assessment.ts, approveAssessment). The count is
-   read from the database rather than assumed, so the assertion stays true if
-   the framework ever gains or loses a control. */
+   only the active ones (lib/db/assessment.ts, approveAssessment). Read from the
+   database rather than assumed, and SCOPED TO THE FRAMEWORK the way the app
+   scopes it: an unscoped count is right only while exactly one framework
+   exists, and "any organisation defines its own framework" is the stated
+   direction. That is CLAUDE.md's framework-arbitrary filter applied to an
+   assertion. */
+const { data: fwForCount } = await db.from("framework").select("id")
+  .eq("name", "IPMA ICB4").eq("version", "v4.0.1").maybeSingle();
 const { count: ALL_CONTROLS } = await db
-  .from("control").select("*", { count: "exact", head: true });
+  .from("control").select("*", { count: "exact", head: true })
+  .eq("framework_id", fwForCount?.id ?? "");
 const at = (pos1) => activeControls[pos1 - 1];
 const POS_OF = new Map(activeControls.map((c, i) => [c.code, i + 1]));
 const posOf = (code) => POS_OF.get(code);
@@ -923,37 +947,59 @@ async function settleAfterCommit(pm, before, code, timeout) {
 }
 
 /**
- * How many DIFFERENT PMs had a POST outstanding at the same instant.
+ * How many DIFFERENT PMs had a request in flight at the same instant.
  *
- * THE CHECK THIS REPLACES COULD NOT FAIL, and that is worth writing down
- * because it is the exact defect class this harness exists to catch, shipped in
- * the one assertion carrying its headline claim. It compared the wall-clock of
- * the whole burst against the SUM of the four measured durations
- * (`elapsed < serial * 0.75`). But all four promises start together, so under a
- * perfectly serialising server their measured durations are cumulative —
- * W/4, 2W/4, 3W/4, W — summing to 2.5W, and `W < 1.875W` is true. Simulated at
- * N=2, 3 and 4: passes under strict serialisation every time. It was evidence
- * of nothing.
+ * THIS MEASURES THE CLIENT, AND SAYING SO IS THE WHOLE POINT. Two earlier cuts
+ * of this check both claimed to prove the SERVER served requests concurrently,
+ * and neither could:
  *
- * A request is outstanding between the instant it goes on the wire and the
- * instant its response completes. If two PMs' intervals intersect, the server
- * genuinely held both at once — which is the precondition for a module-scope
- * leak, and therefore the precondition for this whole run meaning anything.
+ *   1. `elapsed < sum(durations) * 0.75` — the promises all start together, so
+ *      their durations are cumulative and the sum always dwarfs the elapsed
+ *      time. Simulated: passes under strict serialisation at N=2,3,4.
+ *   2. this sweep, read as server evidence — a serialising server does not
+ *      delay the client's SEND, only the response, so nine POSTs fired at t=0
+ *      are all outstanding from t=0 whether the server runs them in parallel or
+ *      one at a time. Simulated: returns 9 for BOTH. The verification that
+ *      "proved" it discriminated used intervals that were *sent* serially,
+ *      which is not what a serialising server does — it checked the assumption,
+ *      not the behaviour.
+ *
+ * So this answers only "did the harness get N requests onto the wire together",
+ * which is a real and necessary precondition. Whether the server then served
+ * them concurrently or queued them is a latency question, and `servedInParallel`
+ * below is what answers it. Two claims, two measurements.
+ *
+ * Bounds are inclusive: a zero-length interval (send and response inside one
+ * millisecond, which happens against a local target) would otherwise contain
+ * no instant at all and report an overlap of zero.
  */
 function overlapAcross(people, since = 0) {
   const intervals = people.flatMap((p) =>
-    (p.posts ?? []).filter((iv) => iv.end >= since).map((iv) => ({ ...iv, who: p.n ?? "boss" })));
+    (p.posts ?? []).filter((iv) => iv.end >= since).map((iv) => ({ ...iv, who: p.n })));
   let best = 0;
   for (const edge of intervals.map((iv) => iv.start)) {
-    /* Half-open [start, end): a request that finished at exactly the instant
-       another started did NOT overlap it. With inclusive bounds a strictly
-       serial server scores 2 rather than 1 — verified — which would have left
-       the replacement almost as weak as the assertion it replaced. */
     const who = new Set(
-      intervals.filter((iv) => iv.start <= edge && iv.end > edge).map((iv) => iv.who));
+      intervals.filter((iv) => iv.start <= edge && iv.end >= edge).map((iv) => iv.who));
     best = Math.max(best, who.size);
   }
   return best;
+}
+
+/**
+ * Did the SERVER serve them concurrently, or queue them?
+ *
+ * The only thing that separates those from outside is latency. A server that
+ * handles one request at a time makes the last of N wait behind the other N-1,
+ * so the slowest request under load lands near N x the solo latency. A server
+ * that serves them together leaves the slowest near the solo latency plus
+ * contention. The threshold sits at half of the serial prediction — far from
+ * both outcomes, so it is neither a coin-flip nor a formality.
+ *
+ * Verified against both models before being trusted this time.
+ */
+function servedInParallel(maxUnderLoad, soloMs, n) {
+  const serialPrediction = soloMs * n;
+  return { ok: maxUnderLoad < serialPrediction * 0.5, serialPrediction };
 }
 
 /** Bounded visibility probe — never blocks the poll loop it is inside. */
@@ -1011,9 +1057,34 @@ async function assessmentsThatMoved() {
   return [...changed, ...vanished];
 }
 
-/** Pre-existing assessments whose ANSWERS changed — a stray write into someone
- *  else's sheet leaves the assessment row untouched, so this is the only thing
- *  that would see it. */
+/**
+ * Any answer of THIS RUN'S making sitting in a record that is not this run's.
+ *
+ * This is the direct question, and it is worth more than the checksum below.
+ * The checksum catches an inserted or deleted row, but a stray commit that
+ * lands on an EXISTING score row of a real employee overwrites
+ * `{self_level, evidence}` together — and if the level it writes happens to
+ * equal what was already there (one in six on a 0-5 scale), the count and the
+ * sum are both unchanged while a `CONC-…` string sits in that person's record
+ * permanently, invisible to every other check and untouched by teardown, which
+ * only deletes by fixture id.
+ *
+ * One query, no arithmetic, no blind spot: every row whose evidence this
+ * harness wrote must belong to an assessment this harness owns.
+ */
+async function contaminatedRecords(ourAssessmentIds) {
+  const { data, error } = await db.from("score")
+    .select("assessment_id, evidence").like("evidence", "CONC-%").limit(5000);
+  if (error) throw new Error(`contamination sweep failed: ${error.message}`);
+  const ours = new Set(ourAssessmentIds);
+  return [...new Set((data ?? [])
+    .filter((r) => !ours.has(r.assessment_id))
+    .map((r) => r.assessment_id))];
+}
+
+/** Pre-existing assessments whose ANSWERS changed — count and level checksum.
+ *  Complements the sweep above: this catches a level changed on a row the
+ *  harness never signed, which the evidence query cannot see. */
 async function scoresThatMoved() {
   const nowShape = await priorScoreShape();
   return [...PRIOR_SCORES.entries()]
@@ -1029,6 +1100,8 @@ console.log(`${PMS} simulated PMs · ${TOTAL} active controls · walk of ${WALK}
 
 console.log("[0] Fixtures — QA accounts and their assignments");
 {
+  createdFixtures = true;   // set BEFORE the await: a throw part-way through
+                           // ensure() still leaves rows that must be swept.
   await Promise.all([...FIXTURES, BOSS].map(ensure));
   check("all QA fixtures exist", [...FIXTURES, BOSS].every((p) => !!p.id));
 
@@ -1101,42 +1174,63 @@ await stopIfAsked(1);
 console.log(`\n[2] All ${PMS} answer control ${at(BURST_POS).code} in the same instant, with different levels`);
 {
   const code = at(BURST_POS).code;
+  /* A SOLO BASELINE FIRST — one PM, nothing else in flight.
+     Without it there is no way to tell a server that served nine requests
+     together from one that queued them: both look identical on the wire. With
+     it, the arithmetic is simple. A queueing server makes the slowest of nine
+     wait behind eight others, so it lands near nine times this number; a server
+     that serves them together leaves it near this number plus contention. */
+  const soloCode = at(SOLO_POS).code;
+  const soloPm = FIXTURES[0];
+  await soloPm.page.goto(`/assess?c=${soloCode}`);
+  await armAnswer(soloPm, levelFor(soloPm, SOLO_POS), evidenceFor(soloPm, "SOLO", soloCode));
+  const soloAt = Date.now();
+  await fireCommit(soloPm, soloCode);
+  const soloMs = Date.now() - soloAt;
+  soloPm.extra = [...(soloPm.extra ?? []), SOLO_POS];
+  console.log(`    solo commit baseline (PM 1, nothing else in flight): ${soloMs}ms`);
+
+  /* Every PM now loads the SAME control and picks their answer, leaving nothing
+     to do but click. This is the tightest interleaving the app will ever see
+     from the whole pilot at once, and the moment where a request-scoped mix-up
+     would put one PM's level in another's record. */
   await Promise.all(FIXTURES.map((pm) =>
-    timed("control render (concurrent)", () => pm.page.goto(`/assess?c=${code}`))));
-  // Every PM is now sitting on the same control with the panel loaded. The
-  // commits go out together — this is the tightest interleaving the app will
-  // ever see from four people, and the one where a request-scoped mix-up would
-  // put one PM's level in another's record.
-  // Everyone armed FIRST, so the only thing left to race is the click itself.
-  await Promise.all(FIXTURES.map((pm) =>
-    armAnswer(pm, levelFor(pm, BURST_POS), evidenceFor(pm, "BURST", code))));
-  const t0 = Date.now();
-  const burstFrom = t0;
+    timed("control render (concurrent)", async () => {
+      await pm.page.goto(`/assess?c=${code}`);
+      await armAnswer(pm, levelFor(pm, BURST_POS), evidenceFor(pm, "BURST", code));
+    })));
+  const burstFrom = Date.now();
   await Promise.all(FIXTURES.map((pm) =>
     timed("burst commit (concurrent)", () => fireCommit(pm, code))));
-  const elapsed = Date.now() - t0;
+  const elapsed = Date.now() - burstFrom;
   console.log(`    ${PMS} simultaneous commits dispatched in ${elapsed}ms`);
 
-  /* "Concurrent" has to be a fact about the SERVER, not about how the test was
-     written — measured from when each POST was actually on the wire. Anything
-     less than every PM overlapping means the burst did not exercise the sharing
-     this run exists to check, and every result below it is worth less. */
+  /* TWO CLAIMS, TWO MEASUREMENTS. "The server served them together" is a
+     latency question (below); "the harness got them onto the wire together" is
+     an overlap question (after it). Two earlier cuts of this check collapsed
+     them into one number and neither could go red. */
+  const each = timings.get("burst commit (concurrent)") ?? [];
+  const maxUnderLoad = Math.max(...each);
+  const verdict = servedInParallel(maxUnderLoad, soloMs, PMS);
+  console.log(`    slowest commit under load ${maxUnderLoad}ms against `
+    + `${verdict.serialPrediction}ms if the server had queued them`);
+  check(`the server served the ${PMS} commits concurrently rather than queueing them`,
+    verdict.ok,
+    `slowest was ${maxUnderLoad}ms; a queueing server predicts ~${verdict.serialPrediction}ms `
+    + `(solo baseline ${soloMs}ms)`);
+
   const overlapped = overlapAcross(FIXTURES, burstFrom);
-  console.log(`    peak overlap: ${overlapped} of ${PMS} PMs had a POST outstanding at once`);
-  /* THE FLOOR IS 2, NOT ${PMS}, and the difference is the difference between an
-     assertion about the APP and one about the harness's dispatch precision.
-     Two requests overlapping is the precondition for everything below — it is
-     what makes one instance serve two people at once, and therefore what puts
-     `viewerMemo` and the framework memo under test at all. Demanding all nine
-     would be asserting that Playwright can land nine clicks inside one
-     request's flight time, which flaps for reasons that say nothing about the
-     product. The peak is printed either way, so a run that only ever managed
-     two is visible rather than buried. */
-  check(`commits from different PMs overlapped at the server (peak ${overlapped} of ${PMS})`,
+  console.log(`    peak overlap: ${overlapped} of ${PMS} PMs had a request in flight at once`);
+  /* This one is about the HARNESS: did it manage to put N requests on the wire
+     together. The floor is 2 because demanding all nine asserts Playwright's
+     click precision, which flaps for reasons that say nothing about the
+     product. The server question is the check above it, which has its own
+     evidence. The peak is printed either way. */
+  check(`the harness got requests from different PMs onto the wire together (peak ${overlapped} of ${PMS})`,
     overlapped >= 2,
     `no two requests were ever in flight together (wall-clock ${elapsed}ms)`);
 
-  const settled = await settle((pm) => pm.seed + 1);
+  const settled = await settle((pm) => pm.seed + 1 + (pm.extra?.length ?? 0));
   check("every simultaneous answer reached the database",
     settled.ok, `counts ${settled.counts.join("/")} after ${settled.ms}ms`);
 
@@ -1192,6 +1286,7 @@ console.log(`\n[3] All ${PMS} walk ${WALK} controls concurrently, from different
     const expected = new Map();
     for (let p = 1; p <= pm.seed; p++) expected.set(at(p).code, levelFor(pm, p));
     expected.set(at(BURST_POS).code, levelFor(pm, BURST_POS));
+    for (const pos of pm.extra ?? []) expected.set(at(pos).code, levelFor(pm, pos));
     for (const code of pm.walked) expected.set(code, levelFor(pm, posOf(code)));
     pm.expected = expected;
     console.log(`    PM ${pm.n} walked ${pm.walked.join(" → ")}`
@@ -1276,7 +1371,7 @@ await stopIfAsked(4);
 console.log(`\n[5] Progress — ${PMS} concurrent renders of the one screen whose job is to report it`);
 {
   const expectedDone = new Map(FIXTURES.map((pm) => [pm.n, pm.expected.size]));
-  check("the four PMs are at four different points, so a swap would be visible",
+  check(`the ${PMS} PMs are at ${PMS} different points, so a swap would be visible`,
     new Set(expectedDone.values()).size === PMS,
     [...expectedDone.values()].join("/"));
 
@@ -1290,12 +1385,12 @@ console.log(`\n[5] Progress — ${PMS} concurrent renders of the one screen whos
     for (const [i, text] of pages.entries()) {
       const pm = FIXTURES[i];
       const want = `${expectedDone.get(pm.n)} / ${TOTAL} controls scored`;
-      const others = [...expectedDone.entries()].filter(([n]) => n !== pm.n)
+      const otherFigures = [...expectedDone.entries()].filter(([n]) => n !== pm.n)
         .map(([, d]) => `${d} / ${TOTAL} controls scored`)
         .filter((s) => text.includes(s));
       check(`round ${round}: PM ${pm.n} is shown their own progress (${want})`,
-        text.includes(want) && others.length === 0,
-        others.length ? `also showed ${others.join(" & ")}` : text.match(/\d+ \/ \d+ controls scored/)?.[0] ?? "no figure found");
+        text.includes(want) && otherFigures.length === 0,
+        otherFigures.length ? `also showed ${otherFigures.join(" & ")}` : text.match(/\d+ \/ \d+ controls scored/)?.[0] ?? "no figure found");
     }
   }
 
@@ -1358,8 +1453,11 @@ console.log(`\n[6] ${PMS} concurrent submits`);
   check("no assessment outside this run changed state while it ran",
     moved.length === 0, moved.join(", "));
   const strayScores = await scoresThatMoved();
-  check("no answer was written into anyone else's record",
+  check("no pre-existing record's answers changed",
     strayScores.length === 0, strayScores.join(", "));
+  const contaminated = await contaminatedRecords(FIXTURES.map((pm) => pm.assessmentId));
+  check("no answer of this run's making is in anyone else's record",
+    contaminated.length === 0, contaminated.join(", "));
 }
 
 await stopIfAsked(6);
@@ -1449,7 +1547,7 @@ console.log(`\n[8] Results — ${PMS} concurrent renders, each checked against i
   // Say so rather than passing on a comparison that could not have failed.
   const fingerprints = FIXTURES.map((pm) =>
     expected.get(pm.n).map((r) => r.actual.toFixed(1)).sort().join(","));
-  check("the four PMs' competency means are pairwise distinct, so a swap would fail this",
+  check(`the ${PMS} PMs' competency means are pairwise distinct, so a swap would fail this`,
     new Set(fingerprints).size === PMS);
 
   for (let round = 1; round <= 3; round++) {
@@ -1535,8 +1633,11 @@ console.log("\n[9] The finished records");
   const moved = await assessmentsThatMoved();
   check("still no assessment outside this run has changed", moved.length === 0, moved.join(", "));
   const strayScores = await scoresThatMoved();
-  check("still no answer has been written into anyone else's record",
+  check("still no pre-existing record's answers have changed",
     strayScores.length === 0, strayScores.join(", "));
+  const contaminated = await contaminatedRecords(FIXTURES.map((pm) => pm.assessmentId));
+  check("still no answer of this run's making is in anyone else's record",
+    contaminated.length === 0, contaminated.join(", "));
 }
 
 await teardown();
