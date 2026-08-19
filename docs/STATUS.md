@@ -168,6 +168,67 @@ deploys from `main`.
   (harmless — no PMs live until the pilot). Gates: `/review` (full dependency
   sweep) · `/qa` preview archive-flow green + local **438/0**.
 
+## Pre-pilot concurrency check — RUN at nine PMs (2026-08-19)
+
+`scripts/concurrency.mjs` (`npm run concurrency`) drives **nine** simulated PMs
+plus an assessor through the real loop simultaneously **against production**.
+**312 checks: 311 pass, 1 fail.** Full write-up:
+`docs/qa-concurrency-pre-pilot.md`.
+
+**The concurrency premise is now earned, after two attempts that could not fail.**
+A solo commit with nothing else in flight took 1059ms; the slowest of nine fired
+together took 1313ms, against 9531ms if the server had queued them. Nine commits
+cost 1.24x one.
+
+**Green:** no cross-contamination anywhere — nine commits on one control in the
+same instant, 90 concurrent walked commits, per-PM progress and results all
+correct. Nothing outside the run moved: pre-existing assessments are
+fingerprinted across nine columns, their score rows counted and checksummed, AND
+a direct sweep asserts no `CONC-%` evidence exists in any record but the run's
+own. Database returns to baseline exactly, verified after every run.
+
+**The one failure is a real finding with a pattern.** Across two nine-PM runs,
+7 clicks in 180 neither navigated nor raised the milestone card. **All seven
+were `.1` controls — the first control of a competency**, which is where a
+milestone Continue lands. Only 28 of 132 controls are first-in-competency, so
+7-of-7 by chance is about 1 in 55,000; PM 8 on `4.5.12.1` reproduced across both
+runs; four clean four-PM runs produced zero. The answer is never at risk (the
+outbox holds it; every record reconciled to 132). Instrumentation **rules out**
+the `goNext` offline guard — `onLine: true`, no offline events, on all seven.
+What survives is the destination's RSC navigation fetch being aborted.
+**Wants `/investigate`;** the competency boundary is the lead.
+
+**Two review rounds on the harness found nine defects in it, and the second
+round caught the first round's fix.** Recorded because the pattern is the point:
+
+- **The concurrency assertion could not fail — twice.** v1 compared elapsed
+  against the SUM of durations that all start together (passes under strict
+  serialisation, simulated). v2 replaced it with a wire-time overlap sweep and
+  "verified" it against a model where requests are *sent* serially — but a
+  serialising server delays the RESPONSE, not the send, so nine POSTs fired at
+  t=0 are all outstanding from t=0 either way. Re-simulated: returns 9 for both.
+  Its `>= 2` floor was also satisfied by the exact pre-fix behaviour it was
+  written to catch. **Client wire time cannot distinguish service concurrency
+  from queueing** — that needs a latency baseline, which v3 has.
+- teardown closed the browser FIRST, unbounded, before purging anything;
+- SIGHUP/SIGQUIT uncovered; the leftover sweep used one invocation's list;
+  destructive calls discarded their errors (`assigned_by` has no ON DELETE, so a
+  failed purge leaves the admin alive);
+- "nothing outside this run changed" was blind to deletion and to the score
+  table; the score checksum was then blind to a same-level overwrite, so a
+  direct `evidence like 'CONC-%'` sweep was added;
+- `target_snapshot` asserted with `> 0`; the admin excluded from every
+  foreign-identity check; nudges and page errors printed but never gated;
+- the crash handler purged by prefix unconditionally and was registered BEFORE
+  the start guard, so a throw before phase 0 would have deleted a concurrent
+  run's live fixtures;
+- `ALL_CONTROLS` was counted unscoped, which breaks the moment a second
+  framework exists — CLAUDE.md's framework-arbitrary filter, applied to an
+  assertion;
+- the level formula collided again at nine PMs (any affine function of n mod 6
+  repeats every six) — caught by the pairwise-distinctness guard, now FNV-1a,
+  verified distinct at N=4 and N=9.
+
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
   scheduled by the owner for **Monday next week**. `npm run invite` + the
