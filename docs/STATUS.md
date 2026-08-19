@@ -168,40 +168,54 @@ deploys from `main`.
   (harmless — no PMs live until the pilot). Gates: `/review` (full dependency
   sweep) · `/qa` preview archive-flow green + local **438/0**.
 
-## Pre-pilot concurrency check — RUN, CLEAN (2026-08-19)
+## Pre-pilot concurrency check — RUN at nine PMs (2026-08-19)
 
-The pilot puts nine people on the app in the same week, and the whole assessment
-loop was built and measured **one PM at a time**. `scripts/concurrency.mjs`
-(`npm run concurrency`) drives four simulated PMs plus an assessor through the
-real loop simultaneously **against production** and checks Postgres for what the
-screens claim. **Four consecutive clean runs, 136 checks each, 0 failures.**
+`scripts/concurrency.mjs` (`npm run concurrency`) drives **nine** simulated PMs
+plus an assessor through the real loop simultaneously **against production** and
+checks Postgres for what the screens claim. **308 checks: 307 pass, 1 fail.**
+Full write-up: `docs/qa-concurrency-pre-pilot.md`.
 
-- No answer landed in the wrong record — four commits fired in the same instant
-  on the same control produced four correctly-owned rows; 40 concurrent walked
-  commits likewise. Every answer is signed in its evidence field, so ownership
-  is read off the row rather than inferred.
-- Each PM was shown their own progress and their own 28 competency means (the
-  four are seeded to different depths on purpose, so a swap fails an assertion
-  rather than looking plausible). Results were recomputed from Postgres and
-  compared against the rendered page.
-- **Nothing outside the run moved** — every pre-existing assessment's state is
-  snapshotted and re-checked. The database is back to baseline exactly
-  afterwards (14 accounts, 4 assessments, 276 scores, zero `@example.test`).
-- No latency cost from four-way concurrency: commit p50 850ms / p95 1493ms, the
-  outbox drained ~220–330ms after the last click.
-- The detector was **proved able to fail** first (`CONC_SABOTAGE=1` injects a
-  real cross-contamination; 6 and 10 red respectively) — ground rule 0.
+**Green, and now on evidence rather than assertion:**
+- No answer landed in the wrong record — nine commits fired on one control in
+  the same instant, and 90 concurrent walked commits, all correctly owned.
+  Every answer is signed in its evidence field.
+- Each PM saw their own progress figure and their own 28 competency means, now
+  compared **paired with the competency name** rather than as a sorted multiset.
+- Nothing outside the run moved — pre-existing assessments are fingerprinted
+  across nine columns AND their score rows counted and checksummed, so a stray
+  write into a real employee's sheet would be caught. Deletion is detected too.
+- Latency holds: commit p50 981ms at nine-way concurrency (850ms at four).
+- The database returns to baseline exactly (14 accounts, 4 assessments, 276
+  scores, zero residue), verified after every run.
 
-**One open observation, not a defect and not explained:** twice, a commit click
-neither navigated nor raised the milestone card, leaving the PM on the control.
-The answer was never at risk (the outbox held it and the database reconciled),
-and it has not recurred in four runs since. `ERR_ABORTED` on the commit POST and
-the navigation RSC fetch is the documented signature of *this container's*
-proxied Chromium (N21), not of the app, so it is recorded rather than fixed. The
-harness now records `online`/`offline` events as they fire, re-presses the button
-the way a PM would, and **counts every such nudge in its summary** — zero across
-the four clean runs. Full write-up, including what this does NOT cover:
-`docs/qa-concurrency-pre-pilot.md`.
+**The one failure is a real finding, not a flake.** Four clicks in 90 neither
+navigated nor raised the milestone card; three of them on the SAME control
+(`4.5.9.1`) in three different sessions, the fourth on `4.5.12.1` — both first
+controls of a competency. The answer is never at risk (the outbox holds it and
+every record reconciled to 132), but the screen does not advance. Instrumentation
+**rules out** the `goNext` offline guard (`onLine: true`, no offline events on
+any of the four); what survives is the destination's RSC fetch being aborted.
+Proxy or app under load is **not established** — but four clean four-PM runs
+produced zero, and the clustering is not random. **Wants `/investigate`.**
+
+**`/review` on the harness found seven real defects in it, including two that
+invalidated its own headline claim** — recorded because the pattern is the point:
+- the "requests were served concurrently" assertion **could not fail** (it
+  compared elapsed against the SUM of durations that all start together;
+  simulated as passing under a strictly serial server). Replaced with a
+  wire-time overlap sweep, verified to return 1 for serial and 4 for parallel.
+  The honest first reading was 2 of 9; arming the answers before racing only the
+  clicks took it to **6 of 9**;
+- teardown closed the browser FIRST, unbounded, before purging anything — in the
+  container documented to hang Chromium behind the proxy;
+- SIGHUP/SIGQUIT were uncovered (`e2e.mjs` carries them for a recorded reason);
+- the leftover sweep used this invocation's fixture list, so a smaller run could
+  not see a bigger run's leak;
+- the "nothing outside this run changed" check was blind to deletion and to the
+  score table entirely;
+- the level formula collided again at nine PMs (any affine function of n mod 6
+  repeats every six) — caught by the pairwise-distinctness guard, now an FNV-1a
+  hash verified distinct at N=4 and N=9.
 
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
