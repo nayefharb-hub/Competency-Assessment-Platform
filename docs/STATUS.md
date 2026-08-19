@@ -168,6 +168,41 @@ deploys from `main`.
   (harmless — no PMs live until the pilot). Gates: `/review` (full dependency
   sweep) · `/qa` preview archive-flow green + local **438/0**.
 
+## Pre-pilot concurrency check — RUN, CLEAN (2026-08-19)
+
+The pilot puts nine people on the app in the same week, and the whole assessment
+loop was built and measured **one PM at a time**. `scripts/concurrency.mjs`
+(`npm run concurrency`) drives four simulated PMs plus an assessor through the
+real loop simultaneously **against production** and checks Postgres for what the
+screens claim. **Four consecutive clean runs, 136 checks each, 0 failures.**
+
+- No answer landed in the wrong record — four commits fired in the same instant
+  on the same control produced four correctly-owned rows; 40 concurrent walked
+  commits likewise. Every answer is signed in its evidence field, so ownership
+  is read off the row rather than inferred.
+- Each PM was shown their own progress and their own 28 competency means (the
+  four are seeded to different depths on purpose, so a swap fails an assertion
+  rather than looking plausible). Results were recomputed from Postgres and
+  compared against the rendered page.
+- **Nothing outside the run moved** — every pre-existing assessment's state is
+  snapshotted and re-checked. The database is back to baseline exactly
+  afterwards (14 accounts, 4 assessments, 276 scores, zero `@example.test`).
+- No latency cost from four-way concurrency: commit p50 850ms / p95 1493ms, the
+  outbox drained ~220–330ms after the last click.
+- The detector was **proved able to fail** first (`CONC_SABOTAGE=1` injects a
+  real cross-contamination; 6 and 10 red respectively) — ground rule 0.
+
+**One open observation, not a defect and not explained:** twice, a commit click
+neither navigated nor raised the milestone card, leaving the PM on the control.
+The answer was never at risk (the outbox held it and the database reconciled),
+and it has not recurred in four runs since. `ERR_ABORTED` on the commit POST and
+the navigation RSC fetch is the documented signature of *this container's*
+proxied Chromium (N21), not of the app, so it is recorded rather than fixed. The
+harness now records `online`/`offline` events as they fire, re-presses the button
+the way a PM would, and **counts every such nudge in its summary** — zero across
+the four clean runs. Full write-up, including what this does NOT cover:
+`docs/qa-concurrency-pre-pilot.md`.
+
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
   scheduled by the owner for **Monday next week**. `npm run invite` + the
