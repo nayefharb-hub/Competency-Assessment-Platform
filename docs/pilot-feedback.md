@@ -3096,3 +3096,76 @@ with nothing written to Postgres. Shown failing on the pre-fix production build
 first — `shown 0, own 3` on Next and `shown 0, own 2` on Previous — then green.
 Because it only bites on a prod build, the local suite must run against
 `next start`, not `next dev`.
+
+### N55 — a click at a competency boundary sometimes does not advance the screen (9-way load)
+
+**Surfaced by the pre-pilot concurrency check** (`docs/qa-concurrency-pre-pilot.md`,
+2026-08-19), which deliberately left the root cause open for `/investigate`. At
+**nine** simultaneous PMs against production, **7 clicks out of 180 across two runs**
+neither navigated nor raised the milestone — the PM stayed on the control. **All
+seven were `.1` controls** (the first control of a competency); only 28 of the 132
+active controls are first-in-competency, so 7-of-7 landing there is p ≈ 1/55,000.
+PM8 on `4.5.12.1` reproduced across both runs. **Four-PM runs produced zero.** At
+each stall: `onLine: true`, `netEvents: []` (no offline transition), milestone card
+not in the DOM, primary button enabled, and BOTH the destination RSC GET
+(`/assess?c=<next>&_rsc`) and the current control's save POST reported
+`net::ERR_ABORTED`. **The answer is never lost** — the panel showed "Saved on this
+device", the outbox held it, and every record reconciled to 132 correct answers.
+Only the screen advancing fails.
+
+**Root-cause HYPOTHESIS — argued from the code, NOT yet measured.** Stated as a
+hypothesis on purpose: this codebase has been wrong about four asserted mechanisms
+before measurement (see the performance arc), and `/investigate`'s iron law is no
+fix without a confirmed root cause. The confirming experiment is below; nothing
+should be fixed until it runs.
+
+The mechanism (leading hypothesis, H1): a save POST / navigation GET collision in
+Next's single router request queue, made specific to `.1` controls by the milestone.
+
+1. Finishing a competency raises the milestone card **in place and returns without
+   navigating** (`app/assess/score-panel.tsx:419`), so that competency's last save
+   POST floats free — no navigation beside it.
+2. The outbox is **single-flight** (`lib/outbox.ts:324` — one flush at a time), and
+   under nine-way load a save takes 400–780ms (cold Fluid-Compute overhead, N21)
+   rather than the warm ~200ms.
+3. Continue lands on the next competency's first control (a `.1`); the PM answers it
+   and clicks Next. `router.push('.2')` fires at once (`score-panel.tsx:440`), but
+   the `.1` save POST is **deferred** behind the still-draining boundary save, so it
+   lands *inside* the `.2` navigation fetch. The App Router's shared AbortController
+   tears one down against the other → both abort → URL unchanged → stall.
+4. Mid-competency controls never hit this: no floating prior save, so save and push
+   leave together and settle cleanly. Hence the `.1` clustering, and hence why it
+   needs nine-way load — at four-way, saves land in ~200ms and are gone before the
+   next click.
+
+Consistent with every observation: both requests abort together (one queue, one
+AbortController), `onLine` stays true (no network fault), no offline event, milestone
+card absent (PM on the `.1` panel), and the answer survives because it is in the
+outbox + localStorage mirror before either request matters. The score panel's own
+arrival-effect comment already names the underlying race ("the save POST races the
+next page's RSC GET", `score-panel.tsx:98-99`).
+
+Alternatives held open: **H2** an unsettled `useTransition` from Continue
+(`score-panel.tsx:459`) colliding with the next plain `router.push`; **H3 / null**
+cold-render slowness amplifying the container's proxy `ERR_ABORTED` (N21). Rejected
+as *sole* cause: a proxy artifact scatters uniformly, it does not cluster 7/7 on
+competency boundaries or reproduce PM8/`4.5.12.1`.
+
+**The discriminating experiment (needs Supabase creds).** Run `scripts/concurrency.mjs`
+at **nine-way and four-way**, same script. Per context wrap `window.fetch` to log
+`{id, method, url, t_dispatch}` for every RSC GET and server-action POST, and log an
+app-side event on each `goNext`/`continueRun` capturing `control`, `isDotOne`, the
+`navigating` flag (H2 probe) and an outbox snapshot `{flushing, pending, nextAttemptAt}`
+(H1 probe); attach `requestfailed`/`requestfinished` in the driver. At each `.1`
+stall read the discriminator: **H1** if the outbox was `flushing` a prior boundary
+save and/or the aborted POST dispatched *after* the aborted GET (present on `.1`
+stalls, absent on the mid-competency clicks that succeed, and absent entirely at
+four-way); **H2** if `navigating === true` with an idle outbox; **H3/null** if no
+POST is temporally adjacent and the same abort rate appears on non-`.1` controls once
+destination render latency is matched.
+
+**For the pilot (2026-08-20): not blocking.** The answer is always safe and clicking
+again works. The PMs get one line: *"if a click doesn't move the screen, click again
+— your answer is saved."* Confirm the root cause, then fix behind `/review` + `/qa`,
+after the pilot rather than the night before it — the fix touches the outbox / commit /
+milestone seam, the most-defended code in the app.
