@@ -29,6 +29,17 @@ interface Level {
  * holds, not what they nearly chose. Committing on the way out would put an
  * answer in the record that nobody agreed to.
  */
+
+/**
+ * Evidence field visibility (owner, 2026-08-13 — for the pilot).
+ * Hidden so PMs don't feel obliged to fill an optional field that is not needed
+ * at this stage. The feature is intact, NOT deleted: `evidence` state, the commit
+ * path (evidence is still written on Next), and `savedEvidence` all remain, and
+ * any evidence already stored is preserved and re-committed unchanged. To bring
+ * the field back, flip this to true — nothing else is needed.
+ */
+const SHOW_EVIDENCE = false;
+
 export default function ScorePanel({
   control,
   assessmentId,
@@ -619,18 +630,20 @@ export default function ScorePanel({
         ))}
       </div>
 
-      <div className="field" style={{ marginTop: 14 }}>
-        <label htmlFor="evidence">Evidence or example (optional, not scored)</label>
-        <input
-          className="input"
-          id="evidence"
-          name="evidence"
-          value={evidence}
-          onChange={(e) => setEvidence(e.target.value)}
-          disabled={locked}
-          placeholder="A short example of when you did this…"
-        />
-      </div>
+      {SHOW_EVIDENCE && (
+        <div className="field" style={{ marginTop: 14 }}>
+          <label htmlFor="evidence">Evidence or example (optional, not scored)</label>
+          <input
+            className="input"
+            id="evidence"
+            name="evidence"
+            value={evidence}
+            onChange={(e) => setEvidence(e.target.value)}
+            disabled={locked}
+            placeholder="A short example of when you did this…"
+          />
+        </div>
+      )}
 
       {/* The only place the commit rule is stated to the PM. It appears while
           an answer is unconfirmed and says what will confirm it, so nobody has
