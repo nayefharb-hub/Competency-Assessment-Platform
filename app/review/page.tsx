@@ -1,10 +1,10 @@
 import Link from "@/app/link";
 import { requireRole } from "@/lib/auth";
 import { getFramework } from "@/lib/framework";
-import { completionStats, listAssessments, loadAssessment } from "@/lib/db/assessment";
+import { completionStats, listAssessmentSummaries, loadAssessment } from "@/lib/db/assessment";
 import { fmtLevel } from "@/lib/rollup";
 import { acceptAllAction, approveAction, saveRevisionsAction } from "@/app/actions";
-import type { Assessment, CompletionStats } from "@/lib/types";
+import type { AssessmentState, CompletionStats } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -213,14 +213,13 @@ export default async function ReviewPage({
 async function Overview({ error }: { error?: string }) {
   const [fw, assessments, stats] = await Promise.all([
     getFramework(),
-    listAssessments(),
+    listAssessmentSummaries(),
     completionStats(),
   ]);
   // Every assessment is listed and openable — including the Head of PMO's own,
   // which is how you walk the loop solo. Every row is also COUNTED: an
   // assessment now exists only because an admin assigned it, so there is no
   // longer such a thing as a row that appeared unbidden and has to be excluded.
-  const activeCodes = new Set(fw.activeControls.map((c) => c.code));
 
   return (
     <div className="section">
@@ -258,30 +257,26 @@ async function Overview({ error }: { error?: string }) {
             </thead>
             <tbody>
               {assessments.map((a) => {
-                const scored = a.scores.filter(
-                  (s) => s.self_level !== null && activeCodes.has(s.control_code),
-                ).length;
                 const hours =
                   a.started_at && a.completed_at
                     ? (Date.parse(a.completed_at) - Date.parse(a.started_at)) / 3_600_000
                     : null;
-                const row = { scored, finished: a.completed_at != null, hours };
                 return (
                   <tr key={a.id}>
                     <td data-label="Name">{a.assessee_name}</td>
                     <td data-label="State">
-                      <StateChip a={a} />
+                      <StateChip state={a.state} />
                     </td>
                     <td className="num tnum" data-label="Scored">
-                      {row?.scored ?? 0}/{fw.activeControls.length}
+                      {a.scored}/{fw.activeControls.length}
                     </td>
-                    <td data-label="Finished">{row?.finished ? "Yes" : "—"}</td>
+                    <td data-label="Finished">{a.completed_at != null ? "Yes" : "—"}</td>
                     <td className="num tnum" data-label="Hours">
-                      {row?.hours == null
+                      {hours == null
                         ? "—"
-                        : row.hours < 0.05
+                        : hours < 0.05
                           ? "<0.1"
-                          : row.hours.toFixed(1)}
+                          : hours.toFixed(1)}
                     </td>
                     <td data-label="">
                       <Link href={`/review?a=${a.id}`}>
@@ -300,11 +295,11 @@ async function Overview({ error }: { error?: string }) {
   );
 }
 
-function StateChip({ a }: { a: Assessment }) {
+function StateChip({ state }: { state: AssessmentState }) {
   const label =
-    a.state === "approved" ? "Approved" : a.state === "self_submitted" ? "Awaiting review" : "In progress";
+    state === "approved" ? "Approved" : state === "self_submitted" ? "Awaiting review" : "In progress";
   // "In progress" is not a capability deficit — neutral, not red.
-  const tier = a.state === "approved" ? "ready" : a.state === "self_submitted" ? "minor" : "neutral";
+  const tier = state === "approved" ? "ready" : state === "self_submitted" ? "minor" : "neutral";
   return (
     <span className={`pill pill-${tier}`}>
       <span className="dot" />
