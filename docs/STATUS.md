@@ -229,6 +229,30 @@ round caught the first round's fix.** Recorded because the pattern is the point:
   repeats every six) — caught by the pairwise-distinctness guard, now FNV-1a,
   verified distinct at N=4 and N=9.
 
+**PR #37** carries the above (concurrency QA) plus one unrelated fix picked up
+mid-flight, 2026-09-06: the owner reported two PMs' genuine finished
+assessments showing the wrong "Scored" count on `/review` (128/132 and
+17/132). Root-caused live: `listAssessments` fetched every `score` row for the
+cycle to build the overview table, and PostgREST silently caps a response at
+~1000 rows — cycle "2026" had 1,125, so the fetch came back truncated.
+`listAssessmentSummaries` (`lib/db/assessment.ts`) replaces it with a database
+`COUNT` per assessment via a `score(count)` embed, used by `/review`'s
+overview and by `completionStats`; `listAssessments` itself is untouched
+(`departmentData()` still needs full per-control data). `/review`'s testing
+specialist then caught a second bug in the fix itself before it shipped: the
+count included rows where only the assessor set a level and the PM never
+scored the control (`setAssessorLevels` upserts with no `self_level`), which
+would have overcounted a PM's progress — fixed with a
+`score.self_level=not.is.null` embedded filter, verified live with a
+synthetic row (unfiltered count 0→1, filtered count stayed 0). Full incident:
+`docs/pilot-feedback.md` N55. Gates: typecheck, unit 182/182, build clean,
+`/review` (one CRITICAL caught and fixed, re-verified by an adversarial
+pass), `/qa` on the live Vercel preview (401/402, the one failure an
+unrelated network-timeout flake, not a regression). The PR description was
+updated to describe this (previously said "No application code is touched",
+now false) — owner's call, 2026-09-06, over splitting it into a separate PR.
+**Still a draft; moving to "Ready for review" and merging are the owner's.**
+
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
   scheduled by the owner for **Monday next week**. `npm run invite` + the
