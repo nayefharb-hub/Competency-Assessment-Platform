@@ -12,6 +12,8 @@
     "verify:db": "node --env-file=.env.local scripts/verify-db.mjs",
     "verify:navprogress": "node --env-file=.env.local scripts/verify-navprogress.mjs",
     "e2e": "node --env-file=.env.local scripts/e2e.mjs --write",
+    "concurrency": "node --env-file=.env.local scripts/concurrency.mjs --write",
+    "concurrency:clean": "CONC_CLEAN=1 node --env-file=.env.local scripts/concurrency.mjs --write",
     "demo": "node --env-file=.env.local scripts/demo.mjs",
     "test:unit": "node --experimental-strip-types --test scripts/ttl-map.test.mjs scripts/shape.test.mjs scripts/pace.test.mjs scripts/routes.test.mjs scripts/outbox.test.mjs scripts/commit-label.test.mjs scripts/control-filter.test.mjs scripts/rollup.test.mjs scripts/narrative.test.mjs scripts/department.test.mjs",
     "perf:save": "node --env-file=.env.local scripts/perf-save.mjs"

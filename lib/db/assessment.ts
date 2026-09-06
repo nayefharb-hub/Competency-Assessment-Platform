@@ -13,7 +13,7 @@ import "server-only";
 import { db, unwrap } from "../supabase/server";
 import { DEFAULT_PROFILE, getFramework } from "../framework";
 import type {
-  Assessment, AssessmentState, AppUser, CompletionStats, Level, Score,
+  Assessment, AssessmentState, AssessmentSummary, AppUser, CompletionStats, Level, Score,
 } from "../types";
 import type { PaceScore } from "../pace";
 
@@ -1000,15 +1000,85 @@ export async function approveAssessment(
 /* -------------------------------------------------- completion (T9, P1) */
 
 /**
+ * Per-assessment counts and timestamps for the review overview's people table
+ * and `completionStats` — screens that never read a per-control value, only
+ * how many controls are answered. `listAssessments` fetches every score row
+ * for the cycle to get that number, which is what let it silently undercount
+ * once a cycle's total answered controls passed Supabase's response-row cap
+ * (~1000): the fetch came back truncated and nobody who saw the wrong number
+ * was told. `scored` here is a database COUNT instead — its response is one
+ * row per assessment regardless of how many controls exist across the
+ * pilot, so it cannot approach that cap as the pilot grows. Verified against
+ * the pilot cycle that first tripped the cap: docs/pilot-feedback.md.
+ *
+ * A `score` row does NOT always mean "the PM answered it": `setAssessorLevels`
+ * (the review screen's revise form renders a select for every control, gated
+ * only on whether the assessment is open for review — not on whether the PM
+ * scored that control) upserts `{assessor_level, assessor_touched}` with no
+ * `self_level` key, so a control the assessor sets but the PM never touched
+ * gets a row with `self_level` NULL. `score.self_level=not.is.null` filters
+ * the embedded rows before PostgREST aggregates them, so the count stays "PM
+ * answered", matching what `submitSelfAssessment` and `unassignAssessment`
+ * already require elsewhere in this file. It does not separately exclude a
+ * control that was answered and only later deactivated; today that is zero
+ * rows system-wide (the one inactive control has never been scored, checked
+ * against the live database) and `scripts/verify-db.mjs` has no check that
+ * would catch it if that changed, so this is not guarded against a scenario
+ * that cannot currently happen, tracked rather than silently assumed safe.
+ *
+ * One request: PostgREST embeds the score count and the assessee's name
+ * through the existing foreign keys. `assessment` has two foreign keys to
+ * `app_user` (`assessee_id`, `assigned_by`), so the embed is addressed by
+ * column to disambiguate which one.
+ */
+export async function listAssessmentSummaries(
+  cycle = currentCycle(),
+  opts: { archived?: boolean } = {},
+): Promise<AssessmentSummary[]> {
+  const sb = db();
+  // Cast to `any` here: one more chained filter than supabase-js's untyped
+  // builder can carry without TS2589 ("type instantiation is excessively
+  // deep"). The real shape is asserted below regardless, so nothing is lost.
+  const query = sb
+    .from("assessment")
+    .select("id, assessee_id, state, started_at, completed_at, archived_at, score(count), app_user:assessee_id(full_name)")
+    .eq("cycle", cycle)
+    .not("score.self_level", "is", null) as any;
+  const rows = unwrap(
+    "assessment summary list",
+    await (opts.archived
+      ? query.not("archived_at", "is", null).order("archived_at", { ascending: false })
+      : query.is("archived_at", null).order("created_at")),
+  ) as unknown as {
+    id: string;
+    assessee_id: string;
+    state: AssessmentState;
+    started_at: string | null;
+    completed_at: string | null;
+    archived_at: string | null;
+    score: { count: number }[];
+    app_user: { full_name: string } | null;
+  }[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    assessee_id: r.assessee_id,
+    assessee_name: r.app_user?.full_name ?? "Unknown",
+    state: r.state,
+    started_at: r.started_at,
+    completed_at: r.completed_at,
+    archived_at: r.archived_at,
+    scored: r.score?.[0]?.count ?? 0,
+  }));
+}
+
+/**
  * Completion instrumentation. The prototype's central question is whether PMs
  * actually FINISH online when they would not finish a spreadsheet, so this is
  * a first-class metric, not an afterthought: who finished, and how long the
  * median finisher took from first score to submit.
  */
 export async function completionStats(cycle = currentCycle()): Promise<CompletionStats> {
-  const fw = await getFramework();
-  const activeCodes = new Set(fw.activeControls.map((c) => c.code));
-
   // The denominator is the number of people ASKED — one row per assignment,
   // nothing inferred. Before assignment existed this had to be guessed with
   // `Math.max(count of assessee logins, count of assessments)`, and filtered
@@ -1017,31 +1087,16 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
   // both are deleted rather than left as belt-and-braces that would quietly
   // disagree with this one.
   const [assessments, archived] = await Promise.all([
-    listAssessments(cycle),
-    listAssessments(cycle, { archived: true }),
+    listAssessmentSummaries(cycle),
+    listAssessmentSummaries(cycle, { archived: true }),
   ]);
 
   const durations: number[] = [];
-  const rows: CompletionStats["rows"] = assessments.map((a) => {
-    const scored = a.scores.filter(
-      (s) => s.self_level !== null && activeCodes.has(s.control_code),
-    ).length;
-    const finished = a.completed_at != null;
-    const hours =
-      a.started_at && a.completed_at
-        ? (Date.parse(a.completed_at) - Date.parse(a.started_at)) / 3_600_000
-        : null;
-    if (finished && hours !== null) durations.push(hours);
-    return {
-      assessment_id: a.id,
-      assessee_name: a.assessee_name,
-      state: a.state,
-      scored,
-      active_controls: fw.activeControls.length,
-      finished,
-      hours,
-    };
-  });
+  for (const a of assessments) {
+    if (a.completed_at != null && a.started_at) {
+      durations.push((Date.parse(a.completed_at) - Date.parse(a.started_at)) / 3_600_000);
+    }
+  }
 
   return {
     cycle,
@@ -1058,7 +1113,6 @@ export async function completionStats(cycle = currentCycle()): Promise<Completio
     // screen states its own rule: "4 of 5 · 1 archived, excluded".
     archived: archived.length,
     archived_finished: archived.filter((a) => a.completed_at != null).length,
-    rows,
   };
 }
 

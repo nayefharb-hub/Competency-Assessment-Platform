@@ -178,15 +178,23 @@ export interface CompletionStats {
   archived: number;
   /** of those archived, how many had been finished — the ones that moved the median */
   archived_finished: number;
-  rows: {
-    assessment_id: string;
-    assessee_name: string;
-    state: AssessmentState;
-    scored: number;
-    active_controls: number;
-    finished: boolean;
-    hours: number | null;
-  }[];
+}
+
+/**
+ * Per-assessment figures for screens that only need counts and timestamps —
+ * the review overview's people table — not the 132 per-control values
+ * `Assessment.scores` carries. `scored` comes from the database as a row
+ * count, not from fetching every score and counting client-side.
+ */
+export interface AssessmentSummary {
+  id: string;
+  assessee_id: string;
+  assessee_name: string;
+  state: AssessmentState;
+  started_at: string | null;
+  completed_at: string | null;
+  archived_at: string | null;
+  scored: number;
 }
 
 /* ---------- rollup output ---------- */

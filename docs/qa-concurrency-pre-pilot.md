@@ -1,0 +1,273 @@
+# Pre-pilot concurrency check — the whole pilot scoring at once, against production
+
+**Run:** 2026-08-19 · **Target:** `https://competency-assessment-platform.vercel.app`
+(**production**, not a preview) · **Database:** the real Supabase project
+(`gkqydskmnexhneqsvvvt`), the one the nine PMs will use on Monday.
+
+**Result at nine PMs: 312 checks, 311 pass, 1 fail.** Every correctness and
+containment check is green — no answer landed in the wrong record, no PM saw
+another's progress or results, nothing outside the run moved. The single failure
+is the stall gate, and it is a real finding rather than a flake: see
+[Clicks that do not move the screen](#clicks-that-do-not-move-the-screen).
+
+Harness: `scripts/concurrency.mjs` (`npm run concurrency`).
+
+## Why this exists
+
+The assessment loop was built and measured **one PM at a time**. Everything that
+could mix two people's work up lives in state that is per-INSTANCE rather than
+per-request — `viewerMemo` (token-keyed, 2s TTL), the framework memo, the
+service client — and Fluid Compute serves several requests concurrently on one
+instance, so `docs/deploy.md` is right that a module-level variable holding
+anything user-specific is a cross-user leak rather than a code smell. The design
+argument says those keys are safe. This measures it.
+
+---
+
+## What it does
+
+Nine simulated PMs and one assessor, all fixtures the run creates and deletes
+itself. Every answer is **signed**: the level is a function of who gave it, and
+the evidence field carries `CONC-<phase>-P<n>-<control>`. "Whose answer is this?"
+is a fact readable off the row, not an inference.
+
+| # | Phase | What it establishes |
+|---|---|---|
+| 0 | Fixtures + prior sittings | nine assessments, seeded to **different depths** (100–116 of 132) so every progress figure in the run is unique |
+| 1 | Ten concurrent sign-ins | each session resolves to its own holder |
+| 2 | **Same control, same instant** | all nine armed first, then only the clicks raced, so the POSTs actually collide |
+| 3 | Concurrent walk, 10 controls each | 90 commits across nine live sessions, each starting from a different place in the framework |
+| 4 | Ownership | every row of every record checked against who typed it — signature, level, strays, unsigned |
+| 5 | Progress | three rounds of nine concurrent renders; each PM must see their own count and no other |
+| 6 | Concurrent submits | nine at once; each moves only its own row |
+| 7 | Review and approve | the assessor opens each by id; the review screen must carry no other PM's record |
+| 8 | Results | three rounds of nine concurrent renders, each checked against **28 competency means recomputed from Postgres and paired with their competency name** |
+| 9 | Finished records | 132 answers each, all their own; targets frozen at approval, all 133 |
+
+The walk **arrives the way a PM arrives**: it answers whatever control the app
+put on screen, reading the code out of the URL rather than predicting it,
+because completing a competency raises the milestone card and Continue goes to
+whatever is still *owed*. Nothing awaits the commit — the save and the
+navigation leave together (D9), and a PM who waits is not a PM.
+
+## Two claims, two measurements — and two failed attempts before that
+
+**This check could not fail, twice, and that is the most important thing this
+document records.** Both times it was the sole support for the claim that makes
+every other result meaningful.
+
+**Attempt 1** compared the burst's wall-clock against the *sum* of the measured
+durations. All the promises start together, so under a perfectly serialising
+server their durations are cumulative and the sum always dwarfs the elapsed
+time. Simulated at N=2, 3 and 4: passes under strict serialisation every time.
+
+**Attempt 2** replaced it with a sweep over when each POST was on the wire,
+asking how many different PMs had one outstanding at the same instant — and it
+was "verified" against a model where the requests were *sent* serially. That is
+not what a serialising server does. **A serialising server does not delay the
+client's send, only the response**, so nine POSTs fired at t=0 are all
+outstanding from t=0 whether the server runs them in parallel or one at a time.
+Re-simulated correctly: the sweep returns **9 for both**. Worse, its floor of
+`>= 2` was satisfied by the exact pre-fix behaviour it was written to catch.
+It checked the assumption, not the behaviour.
+
+The lesson is not "be careful with thresholds" — it is that **client wire time
+cannot distinguish service concurrency from queueing**, so no arrangement of it
+was ever going to answer the question. The two claims are separate and now have
+separate evidence:
+
+| Claim | Measurement | How it can fail |
+|---|---|---|
+| The harness got N requests onto the wire together | overlap sweep over POST send/finish instants | returns 1 if the harness serialises its own dispatch |
+| **The server served them together rather than queueing** | slowest commit under load vs a **solo baseline** commit timed with nothing else in flight | a queueing server makes the slowest of N wait behind N−1 others, landing near N × solo; the threshold sits at half that |
+
+The solo baseline is why the second row works, and it is a real commit by one PM
+with the other eight idle. Verified against both models before being trusted this
+time: a strictly serial server predicts ~9× solo and fails the check; a parallel
+server lands near solo and passes.
+
+The overlap number is still reported — it went from **2 of 9** (the harness was
+arming the radio and typing evidence inside the raced section) to **6 of 9**
+once everyone was armed first and only the clicks were raced.
+
+## Proving the checks can fail
+
+A test that has never been red proves only that it agrees with the code in front
+of it (ground rule 0). `CONC_SABOTAGE=1` injects two real defects between the
+walk and the ownership check: it moves one PM's answer into another's record, and
+strips the signature off a third row.
+
+At nine PMs the sabotage run reports **81 passed, 14 failed**. Every ownership
+check in phase 4 now goes red for a real reason — including *"no unsigned answer
+appeared in any record"*, which had never been exercised through two earlier
+sabotage runs and was therefore worth nothing until now.
+
+Two guards exist because the harness itself failed them:
+
+- **Pairwise-distinct competency means.** If two PMs' numbers are identical, "PM 1
+  was not shown PM 4's report" cannot fail. It fired twice. First on
+  `(2n + pos) % 6` — 2 ≡ 8 (mod 6), so PM 1 and PM 4 gave byte-identical answers
+  to all 132 controls. Then again at nine PMs on `(n + pos) % 6`, because **any
+  affine function of `n` mod 6 repeats every six PMs**. Five arithmetic
+  candidates were swept against the real 28-competency structure at N=9 and all
+  five collided; the formula is now an FNV-1a hash of `n:pos`, verified to give
+  distinct answer vectors and distinct 28-mean sets at N=4 and N=9, with all six
+  levels evenly used.
+- **Competency means are compared paired with their competency**, not as a sorted
+  multiset. The multiset form would pass on all 28 correct numbers attached to
+  the wrong 28 names.
+
+## Latency at nine-way concurrency
+
+| Step | p50 | p95 | max |
+|---|---|---|---|
+| Sign in (10 at once) | 4234 ms | 4388 ms | 4388 ms |
+| Control render | 917 ms | 1483 ms | 1483 ms |
+| Commit + advance | 891 ms | 1699 ms | 9103 ms |
+| Progress render | 839 ms | 1118 ms | 1123 ms |
+| Submit | 2564 ms | 2842 ms | 2842 ms |
+| Approve | 1752 ms | 2333 ms | 2333 ms |
+| Results render | 1545 ms | 1827 ms | 1878 ms |
+
+**The parallelism evidence, in one line:** a solo commit with nothing else in
+flight took **1059 ms**; the slowest of nine fired together took **1313 ms**. A
+server that queued them would have put the slowest near **9531 ms**. Nine
+commits cost 1.24× one — the concurrency premise is earned rather than assumed.
+
+Commit p50 holds under a second with nine PMs on it (891 ms, against 850 ms at
+four). The 9103 ms max is a stalled click plus its repeat, not a slow save.
+
+## Containment — this runs against real staff data
+
+The database holds 14 real accounts and 4 real assessments. The safety argument
+is structural, and several parts of it were **added after review found them
+missing**:
+
+- only `qa.conc*@example.test` accounts the run creates itself, with per-run
+  generated passwords nobody knows once the process exits;
+- **the admin assign form is never opened.** That screen lists the real staff who
+  are not yet assigned, and one stray click would assign them a cycle.
+  Assignments are inserted directly, mirroring `assignAssessment`'s write (not
+  its whole body: the real one falls back to `fw.profiles[0]` if the default
+  profile is missing, where this throws);
+- the assessor fixture only opens `/review?a=` for the run's own assessments;
+- **teardown purges the database FIRST and closes the browser LAST**, on a 10s
+  timer. It used to close the browser first, unbounded — putting the component
+  most likely to hang in front of the one step that must not be skipped, in the
+  container documented to reset Chromium's TLS;
+- **it covers SIGHUP and SIGQUIT** as well as SIGINT/SIGTERM. A closed terminal
+  or dropped SSH session is as ordinary a way to end a long run as Ctrl-C, and
+  Node terminates on both by default;
+- **it sweeps by fixture prefix**, not by the list one invocation happens to
+  hold, so a run at `CONC_PMS=4` cleans up after an interrupted run at 9 —
+  scoped to `qa.conc` so it cannot delete `e2e.mjs`'s fixtures;
+- every destructive call **checks its error** and the purge **retries**.
+  `assessment.assigned_by` references `app_user(id)` with no ON DELETE, so a
+  failed assessee purge makes the admin delete fail with an FK violation — which
+  was previously discarded;
+- **it refuses to start** if fixtures from an earlier run are present, so it can
+  neither collide with a concurrent run (which would fabricate a
+  cross-contamination result) nor silently adopt a leaked admin;
+- `CONC_CLEAN=1 npm run concurrency` clears fixtures without running anything.
+
+**What is checked, not assumed.** Every pre-existing assessment is fingerprinted
+across nine columns before the run and re-checked twice during it, **including
+detecting outright deletion** — the first version compared only rows that still
+existed, so a vanished record was invisible to the check written to catch exactly
+that. Separately, every pre-existing assessment's **score rows** are counted and
+checksummed, because the canonical failure — a commit resolving the wrong
+`assessment_id` — leaves the assessment row untouched and would otherwise
+deposit a `CONC-…` answer in a real employee's sheet permanently, since teardown
+only deletes by fixture id.
+
+After the nine-PM run the database is back to baseline exactly: **14 accounts, 4
+assessments, 276 score rows, zero `qa.conc` residue.**
+
+**One caveat with no fix.** While a run is in flight, the fixtures are real rows:
+the app has no `@example.test` filter (`grep -rn "example.test" app lib` returns
+nothing), so for the few minutes a run takes, the PMO department rollup,
+`/admin/people` and the review queue all include nine "QA Concurrency PM"s and a
+second Head of PMO. A screenshot taken during a run would be wrong. Run it when
+nobody is looking at the dashboard.
+
+## Clicks that do not move the screen
+
+**This is the open finding, it is not rare at nine PMs, and it now has a
+pattern.** Across two nine-PM runs, **7 clicks out of 180** neither navigated nor
+raised the milestone card, leaving the PM sitting on the control:
+
+| Run | Stalls |
+|---|---|
+| 1 | PM 4 `4.5.9.1` · PM 3 `4.5.9.1` · PM 1 `4.5.9.1` · PM 8 `4.5.12.1` |
+| 2 | PM 6 `4.5.10.1` · PM 1 `4.5.8.1` · PM 8 `4.5.12.1` |
+
+**All seven are `.1` controls — the first control of a competency.** Only 28 of
+the 132 active controls are first-in-competency, so if stalls fell randomly the
+chance of seven out of seven landing there is about 1 in 55,000. PM 8 on
+`4.5.12.1` reproduced across both runs. Four clean four-PM runs produced zero.
+
+The first control of a competency is exactly where a milestone **Continue**
+lands. That is the concrete lead.
+
+**The answer is never at risk.** The panel showed "Saved on this device", the
+outbox held it, and every record reconciled to 132 correct answers with the
+right levels. What fails is the screen advancing, not the record.
+
+**What the instrumentation rules out.** Every stall reported `onLine: true` and
+an **empty** `netEvents` array — no offline transition ever fired. That
+eliminates the leading hypothesis: `goNext` in `app/assess/score-panel.tsx`
+commits and returns *without navigating* when the browser reports offline
+(decision D13), which would produce exactly this symptom. It did not happen.
+
+**What survives.** Every stall shows the destination's RSC navigation fetch
+aborted:
+
+```
+GET  /assess?c=<next>&_rsc=… — net::ERR_ABORTED
+POST /assess?c=<current>     — net::ERR_ABORTED
+onLine: true · netEvents: [] · milestone card in DOM: false · button enabled
+```
+
+So `router.push` fired and its RSC fetch died, leaving the URL unchanged.
+Whether the proximate cause is the egress proxy (ERR_ABORTED is the documented
+signature of this container's proxied Chromium — STATUS N21) or the app under
+nine-way load is **not established here**, and this note does not guess. But the
+competency-boundary clustering is not something a proxy would produce, and it is
+the thing to pull on.
+
+**This wants `/investigate`** — it is a defect-shaped question with an iron law
+about root causes, and a QA report should not settle it.
+
+**For the pilot, today:** if a PM says "I clicked and nothing happened", the
+answer is safe and clicking again works. The harness repeats the click up to
+three times, counts every repeat, and **fails the run** on any of them.
+
+## What this does not cover
+
+- **Instance co-residency is not observable from outside.** Overlap at the
+  server is now measured (peak 6 of 9); whether Vercel served those from *one*
+  Fluid instance — the configuration where a module-scope leak would bite —
+  cannot be seen from the client.
+- **Only 11 of each PM's 132 answers are written through the app** (one burst +
+  ten walked = 99 across the run). The rest are seeded directly as prior
+  sittings so that Submit has a complete sheet. Phase 9's "132 answers, all
+  their own" is therefore mostly the harness verifying its own service-role
+  upserts. Raise `CONC_WALK` to widen it.
+- **One assessor**, matching the pilot. Two assessors revising one sheet at once
+  is untested.
+- **Sustained load is not tested** — each run is a burst of ~100 commits, not a
+  two-hour sitting.
+- The **`viewerMemo` 2s staleness window** is unchanged and untested by this:
+  that is the documented trade in `docs/deploy.md`, not a finding here.
+
+## Re-running it
+
+```bash
+CONC_CHROMIUM=/opt/pw-browsers/chromium npm run concurrency   # nine PMs, production
+CONC_CLEAN=1 npm run concurrency                              # remove fixtures, run nothing
+```
+
+`CONC_BASE_URL` retargets it (it probes the target before writing anything);
+`CONC_PMS` (2–9) and `CONC_WALK` size it; `CONC_SABOTAGE=1` with
+`CONC_STOP_AFTER=5` re-proves the detector in a couple of minutes;
+`CONC_ARTIFACTS=<dir>` says where stall screenshots go.
