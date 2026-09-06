@@ -3096,3 +3096,58 @@ with nothing written to Postgres. Shown failing on the pre-fix production build
 first — `shown 0, own 3` on Next and `shown 0, own 2` on Previous — then green.
 Because it only bites on a prod build, the local suite must run against
 `next start`, not `next dev`.
+
+### N55 — the review overview undercounted, then a fix nearly overcounted
+
+**Status:** Fixed · reported by the owner, 2026-09-06 — two people's genuine
+finished assessments showed the wrong number of controls scored
+
+> "rathna is showing that she finished her full assessment however it shows
+> only 128/132 controls why is that , also abdelsamie Ali has reported to me
+> that he as well finished however it is showing 17/132 only can you check"
+
+Two independent findings came out of this, one genuine bug and one data-hygiene
+issue that only looked like the same thing.
+
+**Abdelsamie Ali (17/132): not a bug.** His account genuinely has 17 controls
+answered, `state: draft`, never submitted. Confirmed against the live database.
+
+**Rathna Murali (128/132 shown, should be 132): a real defect, root-caused
+live rather than guessed.** `listAssessments` — the function `app/review/page.tsx`
+used to build the overview table — fetches every `score` row for the whole
+cycle in one request to compute each person's count client-side. PostgREST
+silently caps a response at ~1000 rows with no error; cycle "2026" had 1,125
+live score rows at the time, so the fetch came back truncated and every count
+built from it was quietly wrong for whoever's rows fell past the cut. Confirmed
+by querying `score` row timestamps directly: Rathna at 128/132 and Ehab Hasan at
+62/132 were both undercounts caused by the same truncation, not a data problem.
+(Rathna also has a second, unrelated `app_user` row from an abandoned empty
+draft — a real data-hygiene finding, but not what produced the 128.)
+
+**The fix.** `listAssessmentSummaries` (new, `lib/db/assessment.ts`) replaces the
+per-cycle full-row fetch with a database `COUNT` per assessment, via PostgREST's
+`score(count)` embed — one row per assessment regardless of how many score rows
+exist cycle-wide, so it cannot approach the response cap as the pilot grows.
+`app/review/page.tsx`'s overview and `completionStats` were switched to it;
+`listAssessments` itself was left untouched because `departmentData()` (the
+department rollup) genuinely needs full per-control `assessor_level` values,
+not a count.
+
+**A second bug, found by `/review`'s testing specialist before this shipped,
+not after.** The first version of the fix counted every `score` row
+unconditionally, which is not the same as "the PM answered it": the assessor's
+revise form (`app/review/page.tsx`) renders a level select for every control
+regardless of whether the PM scored it, and `setAssessorLevels` upserts
+`{assessor_level, assessor_touched}` with no `self_level` key — so a control the
+assessor sets on a PM-unscored control creates a row with `self_level` NULL.
+The new count would have shipped a second, opposite-direction defect: overcounting
+a PM's progress the moment an assessor touched something the PM skipped. Confirmed
+live, not assumed: a synthetic `self_level: null` score row made the unfiltered
+`score(count)` go from 0 to 1 while a `score.self_level=not.is.null`-filtered
+version stayed at 0, then the synthetic row was deleted. Fixed by adding that
+embedded filter before the count runs, matching the same "PM answered" semantics
+`submitSelfAssessment` and `unassignAssessment` already use elsewhere in the file.
+
+**Verified:** `npm run typecheck`, `npm run test:unit` (182/182), `npm run build`,
+and the live query re-run against the current cycle showing no discrepancy
+against the previous (correct, uncapped) counts for anyone under the cap.

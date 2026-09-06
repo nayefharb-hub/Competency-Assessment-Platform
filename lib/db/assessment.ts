@@ -1011,15 +1011,20 @@ export async function approveAssessment(
  * pilot, so it cannot approach that cap as the pilot grows. Verified against
  * the pilot cycle that first tripped the cap: docs/pilot-feedback.md.
  *
- * Relies on the same invariant `saveSelfScore` establishes: a `score` row is
- * created only once, on the first save for that control (the write is an
- * upsert), so a plain row count already equals "controls answered" — no
- * self_level filter needed. It does not separately exclude a control that
- * was answered and only later deactivated; today that is zero rows
- * system-wide (the one inactive control has never been scored, checked
- * against the live database), and `scripts/verify-db.mjs` would catch that
- * drifting, so this is not guarded against a scenario that cannot currently
- * happen.
+ * A `score` row does NOT always mean "the PM answered it": `setAssessorLevels`
+ * (the review screen's revise form renders a select for every control, gated
+ * only on whether the assessment is open for review — not on whether the PM
+ * scored that control) upserts `{assessor_level, assessor_touched}` with no
+ * `self_level` key, so a control the assessor sets but the PM never touched
+ * gets a row with `self_level` NULL. `score.self_level=not.is.null` filters
+ * the embedded rows before PostgREST aggregates them, so the count stays "PM
+ * answered", matching what `submitSelfAssessment` and `unassignAssessment`
+ * already require elsewhere in this file. It does not separately exclude a
+ * control that was answered and only later deactivated; today that is zero
+ * rows system-wide (the one inactive control has never been scored, checked
+ * against the live database) and `scripts/verify-db.mjs` has no check that
+ * would catch it if that changed, so this is not guarded against a scenario
+ * that cannot currently happen, tracked rather than silently assumed safe.
  *
  * One request: PostgREST embeds the score count and the assessee's name
  * through the existing foreign keys. `assessment` has two foreign keys to
@@ -1031,10 +1036,14 @@ export async function listAssessmentSummaries(
   opts: { archived?: boolean } = {},
 ): Promise<AssessmentSummary[]> {
   const sb = db();
+  // Cast to `any` here: one more chained filter than supabase-js's untyped
+  // builder can carry without TS2589 ("type instantiation is excessively
+  // deep"). The real shape is asserted below regardless, so nothing is lost.
   const query = sb
     .from("assessment")
     .select("id, assessee_id, state, started_at, completed_at, archived_at, score(count), app_user:assessee_id(full_name)")
-    .eq("cycle", cycle);
+    .eq("cycle", cycle)
+    .not("score.self_level", "is", null) as any;
   const rows = unwrap(
     "assessment summary list",
     await (opts.archived
