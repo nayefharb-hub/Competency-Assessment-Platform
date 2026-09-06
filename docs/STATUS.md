@@ -251,7 +251,10 @@ pass), `/qa` on the live Vercel preview (401/402, the one failure an
 unrelated network-timeout flake, not a regression). The PR description was
 updated to describe this (previously said "No application code is touched",
 now false) — owner's call, 2026-09-06, over splitting it into a separate PR.
-**Still a draft; moving to "Ready for review" and merging are the owner's.**
+**MERGED to `main` as `dd39aae`, 2026-09-06 (owner's call — marked ready for
+review, then merged).** Deploys to production automatically from `main`; the
+production pass itself is the owner's own hand-run check, per CLAUDE.md, not
+something run here.
 
 ## Next
 - **Task #10 — start the pilot** (invite the nine PMs, assign the cycle):
